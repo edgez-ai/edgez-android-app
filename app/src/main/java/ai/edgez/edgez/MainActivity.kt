@@ -49,6 +49,7 @@ import ai.edgez.edgez.ui.theme.EdgeZTheme
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
+import java.util.Arrays
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.math.min
@@ -63,6 +64,7 @@ private const val EDGEZ_TYPE_ECHO_RESP = 2
 private const val EDGEZ_TYPE_ERROR = 0x7f
 private const val EDGEZ_HEADER_LEN = 8
 private const val EDGEZ_MAX_PAYLOAD = 256
+private const val EDGEZ_MAX_FRAME = EDGEZ_HEADER_LEN + EDGEZ_MAX_PAYLOAD
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -85,7 +87,13 @@ private data class UsbCandidate(
     val outEndpoint: UsbEndpoint,
 ) {
     val label: String
-        get() = "VID=%04x PID=%04x ${device.productName ?: "USB device"}".format(device.vendorId, device.productId)
+        get() = "VID=%04x PID=%04x ${device.productName ?: "USB device"} if=${intf.id} ${outEndpoint.describe()} ${inEndpoint.describe()}"
+            .format(device.vendorId, device.productId)
+}
+
+private fun UsbEndpoint.describe(): String {
+    val directionName = if (direction == UsbConstants.USB_DIR_IN) "IN" else "OUT"
+    return "%s ep=0x%02x max=%d".format(directionName, address, maxPacketSize)
 }
 
 private class EdgezUsbClient(private val context: Context) {
@@ -94,6 +102,12 @@ private class EdgezUsbClient(private val context: Context) {
     private var claimedInterface: UsbInterface? = null
     private var inEndpoint: UsbEndpoint? = null
     private var outEndpoint: UsbEndpoint? = null
+    @Volatile
+    private var frameListener: ((ByteArray) -> Unit)? = null
+    private val rxBuffer = ByteArray(EDGEZ_MAX_FRAME * 4)
+    private var rxLen = 0
+    private var rxTaskRunning = false
+    private var rxTask: Thread? = null
     private var seq = 0
 
     fun scan(): List<UsbCandidate> {
@@ -128,10 +142,12 @@ private class EdgezUsbClient(private val context: Context) {
         claimedInterface = candidate.intf
         inEndpoint = candidate.inEndpoint
         outEndpoint = candidate.outEndpoint
+        startRxTask(opened, candidate.inEndpoint)
         return "Connected to ${candidate.label}"
     }
 
     fun close() {
+        stopRxTask()
         val conn = connection
         val intf = claimedInterface
         if (conn != null && intf != null) {
@@ -144,10 +160,100 @@ private class EdgezUsbClient(private val context: Context) {
         outEndpoint = null
     }
 
+    fun setFrameListener(listener: (ByteArray) -> Unit) {
+        frameListener = listener
+    }
+
+    private fun startRxTask(conn: UsbDeviceConnection, inEndpoint: UsbEndpoint) {
+        stopRxTask()
+        rxLen = 0
+        rxTaskRunning = true
+        rxTask = Thread {
+            val scratch = ByteArray(EDGEZ_MAX_FRAME)
+            while (rxTaskRunning) {
+                val read = conn.bulkTransfer(inEndpoint, scratch, scratch.size, 100)
+                if (!rxTaskRunning) {
+                    break
+                }
+                if (read <= 0) {
+                    continue
+                }
+
+                if (rxLen + read > rxBuffer.size) {
+                    rxLen = 0
+                }
+                System.arraycopy(scratch, 0, rxBuffer, rxLen, read)
+                rxLen += read
+
+                while (rxLen >= EDGEZ_HEADER_LEN) {
+                    val magicOffset = findMagicOffset(rxBuffer, rxLen)
+                    if (magicOffset < 0) {
+                        rxLen = 0
+                        break
+                    }
+                    if (magicOffset > 0) {
+                        System.arraycopy(rxBuffer, magicOffset, rxBuffer, 0, rxLen - magicOffset)
+                        rxLen -= magicOffset
+                    }
+
+                    if (rxLen < EDGEZ_HEADER_LEN || rxBuffer[2] != EDGEZ_VERSION) {
+                        break
+                    }
+
+                    val payloadLen = readLe16(rxBuffer, 6)
+                    if (payloadLen > EDGEZ_MAX_PAYLOAD) {
+                        rxLen = 0
+                        break
+                    }
+                    val frameLen = EDGEZ_HEADER_LEN + payloadLen
+                    if (rxLen < frameLen) {
+                        break
+                    }
+
+                    val frame = Arrays.copyOf(rxBuffer, frameLen)
+                    frameListener?.invoke(frame)
+                    if (rxLen == frameLen) {
+                        rxLen = 0
+                    } else {
+                        System.arraycopy(rxBuffer, frameLen, rxBuffer, 0, rxLen - frameLen)
+                        rxLen -= frameLen
+                    }
+                }
+            }
+        }.also { thread ->
+            thread.name = "edgez-usb-rx"
+            thread.isDaemon = true
+            thread.start()
+        }
+    }
+
+    private fun stopRxTask() {
+        rxTaskRunning = false
+        val thread = rxTask
+        if (thread != null && thread.isAlive) {
+            thread.interrupt()
+        }
+        rxTask = null
+    }
+
+    private fun findMagicOffset(data: ByteArray, length: Int): Int {
+        var i = 0
+        while (i + 2 <= length) {
+            if (data[i] == EDGEZ_MAGIC_0 && data[i + 1] == EDGEZ_MAGIC_1) {
+                return i
+            }
+            i++
+        }
+        return -1
+    }
+
+    private fun readLe16(data: ByteArray, start: Int): Int {
+        return (data[start].toInt() and 0xff) or ((data[start + 1].toInt() and 0xff) shl 8)
+    }
+
     fun echo(message: String, timeoutMs: Int = 1500): Result<String> {
         val conn = connection ?: return Result.failure(IllegalStateException("USB is not connected"))
         val outEp = outEndpoint ?: return Result.failure(IllegalStateException("Missing OUT endpoint"))
-        val inEp = inEndpoint ?: return Result.failure(IllegalStateException("Missing IN endpoint"))
 
         val payload = message.toByteArray(StandardCharsets.UTF_8).let { bytes ->
             bytes.copyOf(min(bytes.size, EDGEZ_MAX_PAYLOAD))
@@ -165,34 +271,9 @@ private class EdgezUsbClient(private val context: Context) {
         val txBytes = tx.array()
         val written = conn.bulkTransfer(outEp, txBytes, txBytes.size, timeoutMs)
         if (written != txBytes.size) {
-            return Result.failure(IllegalStateException("USB write failed: $written/${txBytes.size}"))
+            return Result.failure(IllegalStateException("USB write failed on ${outEp.describe()}: $written/${txBytes.size}"))
         }
-
-        val rx = ByteArray(EDGEZ_HEADER_LEN + EDGEZ_MAX_PAYLOAD)
-        val read = conn.bulkTransfer(inEp, rx, rx.size, timeoutMs)
-        if (read < EDGEZ_HEADER_LEN) {
-            return Result.failure(IllegalStateException("USB read failed: $read"))
-        }
-        if (rx[0] != EDGEZ_MAGIC_0 || rx[1] != EDGEZ_MAGIC_1 || rx[2] != EDGEZ_VERSION) {
-            return Result.failure(IllegalStateException("Bad response header"))
-        }
-
-        val responseType = rx[3].toInt() and 0xff
-        val responseSeq = ByteBuffer.wrap(rx, 4, 2).order(ByteOrder.LITTLE_ENDIAN).short.toInt() and 0xffff
-        val responseLen = ByteBuffer.wrap(rx, 6, 2).order(ByteOrder.LITTLE_ENDIAN).short.toInt() and 0xffff
-        if (responseSeq != currentSeq) {
-            return Result.failure(IllegalStateException("Sequence mismatch: got $responseSeq expected $currentSeq"))
-        }
-        if (responseLen > read - EDGEZ_HEADER_LEN) {
-            return Result.failure(IllegalStateException("Bad response length: $responseLen/$read"))
-        }
-
-        val text = String(rx, EDGEZ_HEADER_LEN, responseLen, StandardCharsets.UTF_8)
-        return when (responseType) {
-            EDGEZ_TYPE_ECHO_RESP -> Result.success(text)
-            EDGEZ_TYPE_ERROR -> Result.failure(IllegalStateException("Device error: $text"))
-            else -> Result.failure(IllegalStateException("Unexpected response type: $responseType"))
-        }
+        return Result.success("Sent")
     }
 
     private fun findVendorInterface(device: UsbDevice): Triple<UsbInterface, UsbEndpoint, UsbEndpoint>? {
@@ -233,12 +314,44 @@ private fun UsbEchoApp() {
     var status by remember { mutableStateOf("Connect the ESP32-S3 USB port, then scan.") }
     var response by remember { mutableStateOf("") }
     var log by remember { mutableStateOf(listOf<String>()) }
+    val activity = context as? ComponentActivity
 
     fun appendLog(line: String) {
         log = (listOf(line) + log).take(16)
     }
 
+    fun handleFrame(frame: ByteArray) {
+        if (frame.size < EDGEZ_HEADER_LEN || frame[0] != EDGEZ_MAGIC_0 || frame[1] != EDGEZ_MAGIC_1 || frame[2] != EDGEZ_VERSION) {
+            return
+        }
+
+        val responseType = frame[3].toInt() and 0xff
+        val responseSeq = ByteBuffer.wrap(frame, 4, 2).order(ByteOrder.LITTLE_ENDIAN).short.toInt() and 0xffff
+        val responseLen = ByteBuffer.wrap(frame, 6, 2).order(ByteOrder.LITTLE_ENDIAN).short.toInt() and 0xffff
+        if (responseLen > EDGEZ_MAX_PAYLOAD || EDGEZ_HEADER_LEN + responseLen > frame.size) {
+            return
+        }
+
+        val text = String(frame, EDGEZ_HEADER_LEN, responseLen, StandardCharsets.UTF_8)
+        activity?.runOnUiThread {
+            when (responseType) {
+                EDGEZ_TYPE_ECHO_RESP -> {
+                    response = text
+                    status = "RX seq=$responseSeq: $text"
+                }
+                EDGEZ_TYPE_ERROR -> {
+                    status = "Device error on seq=$responseSeq: $text"
+                }
+                else -> {
+                    status = "Unknown packet on seq=$responseSeq: type=$responseType"
+                }
+            }
+            appendLog(status)
+        }
+    }
+
     DisposableEffect(Unit) {
+        client.setFrameListener(::handleFrame)
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context, intent: Intent) {
                 if (intent.action != ACTION_USB_PERMISSION) return
@@ -253,6 +366,7 @@ private fun UsbEchoApp() {
         context.registerReceiver(receiver, IntentFilter(ACTION_USB_PERMISSION), flags)
         onDispose {
             context.unregisterReceiver(receiver)
+            client.setFrameListener { _ -> }
             client.close()
             executor.shutdownNow()
         }
