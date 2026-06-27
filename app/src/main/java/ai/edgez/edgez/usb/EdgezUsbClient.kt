@@ -15,6 +15,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
 import java.util.Arrays
+import java.util.concurrent.CopyOnWriteArraySet
 
 const val ACTION_USB_PERMISSION = "ai.edgez.edgez.USB_PERMISSION"
 const val EDGEZ_MAGIC_0 = 'E'.code.toByte()
@@ -30,9 +31,9 @@ const val USB_CONTROL_ACTION_SET_BLE_ENABLED = 1
 const val USB_CONTROL_ACTION_SET_PAIRING_ENABLED = 2
 const val USB_CONTROL_ACTION_SET_WIFI_CREDENTIALS = 3
 const val USB_CONTROL_ACTION_GET_STATUS = 4
+const val USB_CONTROL_ACTION_ECHO = 5
 
 private const val ESPRESSIF_VID = 0x303A
-private const val EDGEZ_TYPE_ECHO_REQ = 1.toByte()
 private const val EDGEZ_TYPE_CONTROL_REQ = 3.toByte()
 private const val EDGEZ_MAX_FRAME = EDGEZ_HEADER_LEN + EDGEZ_MAX_PAYLOAD
 private const val USB_CONTROL_STATUS_OK = 1
@@ -55,6 +56,7 @@ data class UsbControlResponse(
     val message: String = "",
     val bleEnabled: Boolean = false,
     val pairingEnabled: Boolean = false,
+    val echoPayload: String = "",
 ) {
     val ok: Boolean get() = status == USB_CONTROL_STATUS_OK && espErr == 0
 }
@@ -72,6 +74,7 @@ object EdgezUsbControlProto {
         wifiSsid: String = "",
         wifiPassphrase: String = "",
         connectAfterSet: Boolean = false,
+        echoPayload: String = "",
     ): ByteArray {
         val out = ByteArrayOutputStream()
         writeVarintField(out, 1, action.toLong())
@@ -83,6 +86,7 @@ object EdgezUsbControlProto {
                 writeStringField(out, 5, wifiPassphrase.take(64))
                 writeVarintField(out, 6, if (connectAfterSet) 1 else 0)
             }
+            USB_CONTROL_ACTION_ECHO -> writeStringField(out, 7, echoPayload.take(128))
         }
         return out.toByteArray()
     }
@@ -95,6 +99,7 @@ object EdgezUsbControlProto {
         var message = ""
         var bleEnabled = false
         var pairingEnabled = false
+        var echoPayload = ""
 
         while (offset < payload.size) {
             val tagRead = readVarint(payload, offset) ?: return null
@@ -119,8 +124,10 @@ object EdgezUsbControlProto {
                     offset = lenRead.nextOffset
                     val len = lenRead.value.toInt()
                     if (len < 0 || offset + len > payload.size) return null
-                    if (field == 4) {
-                        message = String(payload, offset, len, StandardCharsets.UTF_8)
+                    val text = String(payload, offset, len, StandardCharsets.UTF_8)
+                    when (field) {
+                        4 -> message = text
+                        7 -> echoPayload = text
                     }
                     offset += len
                 }
@@ -135,6 +142,7 @@ object EdgezUsbControlProto {
             message = message,
             bleEnabled = bleEnabled,
             pairingEnabled = pairingEnabled,
+            echoPayload = echoPayload,
         )
     }
 
@@ -184,10 +192,10 @@ class EdgezUsbClient(private val context: Context) {
     private var claimedInterface: UsbInterface? = null
     private var inEndpoint: UsbEndpoint? = null
     private var outEndpoint: UsbEndpoint? = null
-    @Volatile
-    private var frameListener: ((ByteArray) -> Unit)? = null
+    private val frameListeners = CopyOnWriteArraySet<(ByteArray) -> Unit>()
     private val rxBuffer = ByteArray(EDGEZ_MAX_FRAME * 4)
     private var rxLen = 0
+    @Volatile
     private var rxTaskRunning = false
     private var rxTask: Thread? = null
     private var seq = 0
@@ -242,8 +250,16 @@ class EdgezUsbClient(private val context: Context) {
         outEndpoint = null
     }
 
+    fun addFrameListener(listener: (ByteArray) -> Unit): () -> Unit {
+        frameListeners.add(listener)
+        return { frameListeners.remove(listener) }
+    }
+
     fun setFrameListener(listener: ((ByteArray) -> Unit)?) {
-        frameListener = listener
+        frameListeners.clear()
+        if (listener != null) {
+            frameListeners.add(listener)
+        }
     }
 
     fun sendControl(
@@ -253,6 +269,7 @@ class EdgezUsbClient(private val context: Context) {
         wifiSsid: String = "",
         wifiPassphrase: String = "",
         connectAfterSet: Boolean = false,
+        echoPayload: String = "",
         timeoutMs: Int = 1500,
     ): Result<String> {
         val payload = EdgezUsbControlProto.encodeRequest(
@@ -262,14 +279,17 @@ class EdgezUsbClient(private val context: Context) {
             wifiSsid = wifiSsid,
             wifiPassphrase = wifiPassphrase,
             connectAfterSet = connectAfterSet,
+            echoPayload = echoPayload,
         )
         return sendFrame(EDGEZ_TYPE_CONTROL_REQ, payload, timeoutMs)
     }
 
     fun sendEcho(message: String, timeoutMs: Int = 1500): Result<String> {
-        val bytes = message.toByteArray(StandardCharsets.UTF_8)
-        val payload = bytes.copyOfRange(0, bytes.size.coerceAtMost(EDGEZ_MAX_PAYLOAD))
-        return sendFrame(EDGEZ_TYPE_ECHO_REQ, payload, timeoutMs)
+        return sendControl(
+            action = USB_CONTROL_ACTION_ECHO,
+            echoPayload = message.take(128),
+            timeoutMs = timeoutMs,
+        )
     }
 
     private fun startRxTask(conn: UsbDeviceConnection, inEndpoint: UsbEndpoint) {
@@ -319,7 +339,7 @@ class EdgezUsbClient(private val context: Context) {
                     }
 
                     val frame = Arrays.copyOf(rxBuffer, frameLen)
-                    frameListener?.invoke(frame)
+                    dispatchFrame(frame)
                     if (rxLen == frameLen) {
                         rxLen = 0
                     } else {
@@ -367,6 +387,12 @@ class EdgezUsbClient(private val context: Context) {
             return Result.failure(IllegalStateException("USB write failed on ${outEp.describe()}: $written/${txBytes.size}"))
         }
         return Result.success("Sent seq=$currentSeq")
+    }
+
+    private fun dispatchFrame(frame: ByteArray) {
+        frameListeners.forEach { listener ->
+            listener(frame)
+        }
     }
 
     private fun findVendorInterface(device: UsbDevice): Triple<UsbInterface, UsbEndpoint, UsbEndpoint>? {

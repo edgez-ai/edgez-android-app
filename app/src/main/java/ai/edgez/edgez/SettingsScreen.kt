@@ -146,7 +146,7 @@ fun SettingsScreen(client: EdgezUsbClient) {
     }
 
     DisposableEffect(Unit) {
-        client.setFrameListener(::handleFrame)
+        val removeFrameListener = client.addFrameListener(::handleFrame)
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context, intent: Intent) {
                 if (intent.action != ACTION_USB_PERMISSION) return
@@ -161,7 +161,7 @@ fun SettingsScreen(client: EdgezUsbClient) {
         context.registerReceiver(receiver, IntentFilter(ACTION_USB_PERMISSION), flags)
         onDispose {
             context.unregisterReceiver(receiver)
-            client.setFrameListener(null)
+            removeFrameListener()
             executor.shutdownNow()
         }
     }

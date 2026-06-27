@@ -30,7 +30,6 @@ fun EdgeZApp() {
 
     DisposableEffect(Unit) {
         onDispose {
-            usbClient.setFrameListener(null)
             usbClient.close()
         }
     }

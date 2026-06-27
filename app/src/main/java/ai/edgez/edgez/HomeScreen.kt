@@ -29,10 +29,13 @@ import ai.edgez.edgez.usb.EDGEZ_HEADER_LEN
 import ai.edgez.edgez.usb.EDGEZ_MAGIC_0
 import ai.edgez.edgez.usb.EDGEZ_MAGIC_1
 import ai.edgez.edgez.usb.EDGEZ_MAX_PAYLOAD
+import ai.edgez.edgez.usb.EDGEZ_TYPE_CONTROL_RESP
 import ai.edgez.edgez.usb.EDGEZ_TYPE_ECHO_RESP
 import ai.edgez.edgez.usb.EDGEZ_TYPE_ERROR
 import ai.edgez.edgez.usb.EDGEZ_VERSION
 import ai.edgez.edgez.usb.EdgezUsbClient
+import ai.edgez.edgez.usb.EdgezUsbControlProto
+import ai.edgez.edgez.usb.USB_CONTROL_ACTION_ECHO
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
@@ -67,9 +70,19 @@ fun HomeScreen(client: EdgezUsbClient) {
             return
         }
 
-        val text = String(frame, EDGEZ_HEADER_LEN, responseLen, StandardCharsets.UTF_8)
+        val payload = frame.copyOfRange(EDGEZ_HEADER_LEN, EDGEZ_HEADER_LEN + responseLen)
+        val text = String(payload, StandardCharsets.UTF_8)
         activity?.runOnUiThread {
             when (responseType) {
+                EDGEZ_TYPE_CONTROL_RESP -> {
+                    val control = EdgezUsbControlProto.decodeResponse(payload)
+                    if (control?.action == USB_CONTROL_ACTION_ECHO) {
+                        response = control.echoPayload
+                        status = "RX seq=$responseSeq: ${control.echoPayload}"
+                    } else {
+                        status = "Control packet on seq=$responseSeq: ${control?.message ?: "malformed"}"
+                    }
+                }
                 EDGEZ_TYPE_ECHO_RESP -> {
                     response = text
                     status = "RX seq=$responseSeq: $text"
@@ -86,9 +99,9 @@ fun HomeScreen(client: EdgezUsbClient) {
     }
 
     DisposableEffect(Unit) {
-        client.setFrameListener(::handleFrame)
+        val removeFrameListener = client.addFrameListener(::handleFrame)
         onDispose {
-            client.setFrameListener(null)
+            removeFrameListener()
             executor.shutdownNow()
         }
     }
@@ -106,7 +119,7 @@ fun HomeScreen(client: EdgezUsbClient) {
 
             OutlinedTextField(
                 value = echoPayload,
-                onValueChange = { echoPayload = it.take(EDGEZ_MAX_PAYLOAD) },
+                onValueChange = { echoPayload = it.take(128) },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Echo payload") },
                 singleLine = true,
