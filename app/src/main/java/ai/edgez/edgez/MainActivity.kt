@@ -29,21 +29,26 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewScreenSizes
 import androidx.compose.ui.unit.dp
 import ai.edgez.edgez.ui.theme.EdgeZTheme
 import java.nio.ByteBuffer
@@ -73,10 +78,64 @@ class MainActivity : ComponentActivity() {
         setContent {
             EdgeZTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    UsbEchoApp()
+                    EdgeZApp()
                 }
             }
         }
+    }
+}
+
+@PreviewScreenSizes
+@Composable
+private fun EdgeZApp() {
+    var currentDestination by rememberSaveable { mutableStateOf(AppDestination.USB) }
+
+    NavigationSuiteScaffold(
+        navigationSuiteItems = {
+            AppDestination.entries.forEach { destination ->
+                item(
+                    icon = {
+                        Icon(
+                            painter = painterResource(destination.icon),
+                            contentDescription = destination.label,
+                        )
+                    },
+                    label = { Text(destination.label) },
+                    selected = destination == currentDestination,
+                    onClick = { currentDestination = destination },
+                )
+            }
+        },
+    ) {
+        when (currentDestination) {
+            AppDestination.USB -> UsbEchoApp()
+            AppDestination.HOME -> PlaceholderScreen("Home")
+            AppDestination.FAVORITES -> PlaceholderScreen("Favorites")
+            AppDestination.PROFILE -> PlaceholderScreen("Profile")
+        }
+    }
+}
+
+private enum class AppDestination(
+    val label: String,
+    val icon: Int,
+) {
+    USB("USB", R.drawable.ic_usb),
+    HOME("Home", R.drawable.ic_home),
+    FAVORITES("Favorites", R.drawable.ic_favorite),
+    PROFILE("Profile", R.drawable.ic_account_box),
+}
+
+@Composable
+private fun PlaceholderScreen(title: String) {
+    Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
+        Text(
+            text = title,
+            modifier = Modifier
+                .padding(padding)
+                .padding(16.dp),
+            style = MaterialTheme.typography.headlineMedium,
+        )
     }
 }
 
