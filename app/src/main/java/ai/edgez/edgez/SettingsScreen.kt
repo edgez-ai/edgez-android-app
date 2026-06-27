@@ -40,7 +40,6 @@ import ai.edgez.edgez.usb.EDGEZ_MAGIC_0
 import ai.edgez.edgez.usb.EDGEZ_MAGIC_1
 import ai.edgez.edgez.usb.EDGEZ_MAX_PAYLOAD
 import ai.edgez.edgez.usb.EDGEZ_TYPE_CONTROL_RESP
-import ai.edgez.edgez.usb.EDGEZ_TYPE_ECHO_RESP
 import ai.edgez.edgez.usb.EDGEZ_TYPE_ERROR
 import ai.edgez.edgez.usb.EDGEZ_VERSION
 import ai.edgez.edgez.usb.EdgezUsbClient
@@ -56,9 +55,8 @@ import java.nio.charset.StandardCharsets
 import java.util.concurrent.Executors
 
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(client: EdgezUsbClient) {
     val context = LocalContext.current
-    val client = remember { EdgezUsbClient(context.applicationContext) }
     val executor = remember { Executors.newSingleThreadExecutor() }
     var candidates by remember { mutableStateOf(client.scan()) }
     var selected by remember { mutableStateOf<UsbCandidate?>(candidates.firstOrNull()) }
@@ -67,7 +65,6 @@ fun SettingsScreen() {
     var bleEnabled by rememberSaveable { mutableStateOf(false) }
     var pairingEnabled by rememberSaveable { mutableStateOf(false) }
     var status by remember { mutableStateOf("Connect the ESP32-S3 USB port, then scan.") }
-    var response by remember { mutableStateOf("") }
     var log by remember { mutableStateOf(listOf<String>()) }
     val activity = context as? ComponentActivity
 
@@ -132,13 +129,9 @@ fun SettingsScreen() {
                     } else {
                         bleEnabled = control.bleEnabled
                         pairingEnabled = control.pairingEnabled
-                        response = control.message.ifBlank { if (control.ok) "OK" else "Error" }
-                        status = "RX seq=$responseSeq ${response} err=${control.espErr}"
+                        val message = control.message.ifBlank { if (control.ok) "OK" else "Error" }
+                        status = "RX seq=$responseSeq $message err=${control.espErr}"
                     }
-                }
-                EDGEZ_TYPE_ECHO_RESP -> {
-                    response = String(payload, StandardCharsets.UTF_8)
-                    status = "RX echo seq=$responseSeq: $response"
                 }
                 EDGEZ_TYPE_ERROR -> {
                     val text = String(payload, StandardCharsets.UTF_8)
@@ -169,7 +162,6 @@ fun SettingsScreen() {
         onDispose {
             context.unregisterReceiver(receiver)
             client.setFrameListener(null)
-            client.close()
             executor.shutdownNow()
         }
     }
@@ -281,7 +273,6 @@ fun SettingsScreen() {
                 }
             }
 
-            item { ResponseCard(response) }
             item { LogCard(log) }
         }
     }
@@ -307,6 +298,6 @@ private fun SettingSwitchRow(
 @Composable
 private fun SettingsPreview() {
     EdgeZTheme {
-        SettingsScreen()
+        SettingsScreen(EdgezUsbClient(LocalContext.current.applicationContext))
     }
 }

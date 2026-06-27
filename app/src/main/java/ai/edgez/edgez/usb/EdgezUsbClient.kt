@@ -32,6 +32,7 @@ const val USB_CONTROL_ACTION_SET_WIFI_CREDENTIALS = 3
 const val USB_CONTROL_ACTION_GET_STATUS = 4
 
 private const val ESPRESSIF_VID = 0x303A
+private const val EDGEZ_TYPE_ECHO_REQ = 1.toByte()
 private const val EDGEZ_TYPE_CONTROL_REQ = 3.toByte()
 private const val EDGEZ_MAX_FRAME = EDGEZ_HEADER_LEN + EDGEZ_MAX_PAYLOAD
 private const val USB_CONTROL_STATUS_OK = 1
@@ -263,6 +264,12 @@ class EdgezUsbClient(private val context: Context) {
             connectAfterSet = connectAfterSet,
         )
         return sendFrame(EDGEZ_TYPE_CONTROL_REQ, payload, timeoutMs)
+    }
+
+    fun sendEcho(message: String, timeoutMs: Int = 1500): Result<String> {
+        val bytes = message.toByteArray(StandardCharsets.UTF_8)
+        val payload = bytes.copyOfRange(0, bytes.size.coerceAtMost(EDGEZ_MAX_PAYLOAD))
+        return sendFrame(EDGEZ_TYPE_ECHO_REQ, payload, timeoutMs)
     }
 
     private fun startRxTask(conn: UsbDeviceConnection, inEndpoint: UsbEndpoint) {
