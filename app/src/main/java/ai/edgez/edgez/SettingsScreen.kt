@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -34,6 +35,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import ai.edgez.edgez.ble.BleCandidate
@@ -64,6 +66,9 @@ fun SettingsScreen(
     var meshCountry by rememberSaveable { mutableStateOf(connectionPreferences.getMeshCountry()) }
     var meshId by rememberSaveable { mutableStateOf(connectionPreferences.getMeshId()) }
     var passphrase by rememberSaveable { mutableStateOf(connectionPreferences.getMeshPassphrase()) }
+    var maxHop by rememberSaveable { mutableStateOf(connectionPreferences.getMeshMaxHop().toString()) }
+    var userIdentity by remember { mutableStateOf(connectionPreferences.getOrCreateUserIdentity()) }
+    var userName by rememberSaveable { mutableStateOf(userIdentity.name) }
     var showDebugPopup by rememberSaveable { mutableStateOf(false) }
     var status by remember { mutableStateOf("Connect the ESP32-S3 USB port, then scan.") }
     val activity = context as? ComponentActivity
@@ -92,9 +97,13 @@ fun SettingsScreen(
         country: String = meshCountry,
         id: String = meshId,
         password: String = passphrase,
+        hopLimit: Int = maxHop.toIntOrNull() ?: 2,
     ) {
-        connectionPreferences.setMeshCredentials(country, id, password)
-        status = "Mesh settings saved"
+        connectionPreferences.setMeshCredentials(country, id, password, hopLimit)
+        maxHop = connectionPreferences.getMeshMaxHop().toString()
+        connectionPreferences.setUserName(userName)
+        userIdentity = connectionPreferences.getOrCreateUserIdentity()
+        status = "Settings saved"
     }
 
     fun sendControl(
@@ -272,6 +281,33 @@ fun SettingsScreen(
             }
 
             item {
+                SettingsCard(title = "User") {
+                    Text("User ID", style = MaterialTheme.typography.titleSmall)
+                    Text(userIdentity.userId.toString(), style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = userName,
+                        onValueChange = { userName = it.take(64) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Name") },
+                        singleLine = true,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text("X25519 public key", style = MaterialTheme.typography.titleSmall)
+                    Text(formatHex(userIdentity.publicKey), style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(10.dp))
+                    Button(onClick = {
+                        connectionPreferences.setUserName(userName)
+                        userIdentity = connectionPreferences.regenerateUserKeyPair()
+                        userName = userIdentity.name
+                        status = "X25519 key pair regenerated"
+                    }) {
+                        Text("Generate key pair")
+                    }
+                }
+            }
+
+            item {
                 SettingsCard(title = "Mesh network") {
                     Box(modifier = Modifier.fillMaxWidth()) {
                         OutlinedButton(
@@ -311,6 +347,17 @@ fun SettingsScreen(
                         label = { Text("Passphrase") },
                         singleLine = true,
                     )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = maxHop,
+                        onValueChange = { value ->
+                            maxHop = value.filter { it.isDigit() }.take(3)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Max hop") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    )
                     Spacer(Modifier.height(10.dp))
                     Button(onClick = { saveMeshPreferences() }) {
                         Text("Save settings")
@@ -319,6 +366,10 @@ fun SettingsScreen(
             }
         }
     }
+}
+
+private fun formatHex(bytes: ByteArray): String {
+    return bytes.joinToString(separator = "") { "%02x".format(it.toInt() and 0xff) }
 }
 
 @Preview(showBackground = true)

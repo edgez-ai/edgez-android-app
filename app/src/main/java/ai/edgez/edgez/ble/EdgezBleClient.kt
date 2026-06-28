@@ -188,10 +188,18 @@ class EdgezBleClient(private val context: Context) {
         )
     }
 
-    fun sendHaLowInit(countryCode: String, meshId: String, passphrase: String): Result<String> {
+    fun sendHaLowInit(
+        countryCode: String,
+        meshId: String,
+        passphrase: String,
+        userId: Long,
+        userName: String,
+        userPublicKey: ByteArray,
+        maxHop: Int,
+    ): Result<String> {
         return sendFrame(
             EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
-            EdgezUsbControlProto.encodeHaLowInit(countryCode, meshId, passphrase),
+            EdgezUsbControlProto.encodeHaLowInit(countryCode, meshId, passphrase, userId, userName, userPublicKey, maxHop),
         )
     }
 

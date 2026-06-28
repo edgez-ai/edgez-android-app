@@ -153,7 +153,9 @@ fun EdgeZApp() {
 
             val country = lastConnectionPreferences.getMeshCountry()
             val passphrase = lastConnectionPreferences.getMeshPassphrase()
-            val initKey = "${source.name}|$country|$meshId|$passphrase"
+            val maxHop = lastConnectionPreferences.getMeshMaxHop()
+            val userIdentity = lastConnectionPreferences.getOrCreateUserIdentity()
+            val initKey = "${source.name}|$country|$meshId|$passphrase|$maxHop|${userIdentity.userId}|${userIdentity.name}|${userIdentity.publicKey.contentHashCode()}"
             while (true) {
                 val previousKey = pendingHaLowInitKey.get()
                 if (previousKey == initKey) return
@@ -162,8 +164,24 @@ fun EdgeZApp() {
 
             haLowInitExecutor.execute {
                 val result = when (source) {
-                    ActiveConnection.USB -> usbClient.sendHaLowInit(country, meshId, passphrase)
-                    ActiveConnection.BLE -> bleClient.sendHaLowInit(country, meshId, passphrase)
+                    ActiveConnection.USB -> usbClient.sendHaLowInit(
+                        country,
+                        meshId,
+                        passphrase,
+                        userIdentity.userId,
+                        userIdentity.name,
+                        userIdentity.publicKey,
+                        maxHop,
+                    )
+                    ActiveConnection.BLE -> bleClient.sendHaLowInit(
+                        country,
+                        meshId,
+                        passphrase,
+                        userIdentity.userId,
+                        userIdentity.name,
+                        userIdentity.publicKey,
+                        maxHop,
+                    )
                     ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
                 }
                 if (result.isFailure) {

@@ -190,11 +190,23 @@ object EdgezUsbControlProto {
         )
     }
 
-    fun encodeHaLowInit(countryCode: String, meshId: String, passphrase: String): ByteArray {
+    fun encodeHaLowInit(
+        countryCode: String,
+        meshId: String,
+        passphrase: String,
+        userId: Long,
+        userName: String,
+        userPublicKey: ByteArray,
+        maxHop: Int,
+    ): ByteArray {
         val init = ByteArrayOutputStream()
         writeStringField(init, 1, countryCode.take(2).uppercase())
         writeStringField(init, 2, meshId.take(32))
         writeStringField(init, 3, passphrase.take(64))
+        writeVarintField(init, 4, userId)
+        writeStringField(init, 5, userName.take(64))
+        writeBytesField(init, 6, userPublicKey.copyOf(minOf(userPublicKey.size, 32)))
+        writeVarintField(init, 7, maxHop.coerceIn(0, 255).toLong())
 
         val out = ByteArrayOutputStream()
         writeVarintField(out, 1, MOBILE_RADIO_VARIANT_INIT_HALOW.toLong())
@@ -480,10 +492,19 @@ class EdgezUsbClient(private val context: Context) {
         )
     }
 
-    fun sendHaLowInit(countryCode: String, meshId: String, passphrase: String, timeoutMs: Int = 1500): Result<String> {
+    fun sendHaLowInit(
+        countryCode: String,
+        meshId: String,
+        passphrase: String,
+        userId: Long,
+        userName: String,
+        userPublicKey: ByteArray,
+        maxHop: Int,
+        timeoutMs: Int = 1500,
+    ): Result<String> {
         return sendFrame(
             EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
-            EdgezUsbControlProto.encodeHaLowInit(countryCode, meshId, passphrase),
+            EdgezUsbControlProto.encodeHaLowInit(countryCode, meshId, passphrase, userId, userName, userPublicKey, maxHop),
             timeoutMs,
         )
     }
