@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import ai.edgez.edgez.ble.BleCandidate
 import ai.edgez.edgez.ble.EdgezBleClient
 import ai.edgez.edgez.ui.theme.EdgeZTheme
 import ai.edgez.edgez.usb.ACTION_USB_PERMISSION
@@ -67,6 +68,9 @@ fun SettingsScreen(
     val connectionPreferences = remember { LastConnectionPreferences(context.applicationContext) }
     var candidates by remember { mutableStateOf(client.scan()) }
     var selected by remember { mutableStateOf<UsbCandidate?>(candidates.firstOrNull()) }
+    var bleCandidates by remember { mutableStateOf(listOf<BleCandidate>()) }
+    var selectedBle by remember { mutableStateOf<BleCandidate?>(null) }
+    var bleReady by remember { mutableStateOf(false) }
     val countryOptions = remember { listOf("US", "JP", "EU") }
     var countryDropdownExpanded by remember { mutableStateOf(false) }
     var meshCountry by rememberSaveable { mutableStateOf(connectionPreferences.getMeshCountry()) }
@@ -95,12 +99,21 @@ fun SettingsScreen(
 
     val executor = remember { Executors.newSingleThreadExecutor() }
 
+    fun requestBlePermissions() {
+        val required = bleClient.requiredPermissions()
+        activity?.requestPermissions(required, 2001)
+        status = "Requesting BLE permission"
+        appendLog(status)
+    }
+
     fun saveMeshPreferences(
         country: String = meshCountry,
         id: String = meshId,
         password: String = passphrase,
     ) {
         connectionPreferences.setMeshCredentials(country, id, password)
+        status = "Mesh settings saved"
+        appendLog(status)
     }
 
     fun sendControl(
@@ -226,9 +239,11 @@ fun SettingsScreen(
             activity?.runOnUiThread {
                 appendLog("BLE $line")
                 if (line == "SERVICE ready") {
+                    bleReady = true
                     currentOnTransportConnectionChange(ActiveConnection.BLE, true)
                     status = "BLE connected"
                 } else if (line.startsWith("CONN") && line.contains("state=0") || line == "CLOSE") {
+                    bleReady = false
                     currentOnTransportConnectionChange(ActiveConnection.BLE, false)
                 }
             }
@@ -293,6 +308,7 @@ fun SettingsScreen(
                             } else {
                                 status = client.connect(candidate)
                                 onTransportConnectionChange(ActiveConnection.USB, true)
+                                bleReady = false
                                 appendLog(status)
                                 sendControl("status", USB_CONTROL_ACTION_GET_STATUS, connection = ActiveConnection.USB)
                             }
@@ -300,6 +316,76 @@ fun SettingsScreen(
                     }
                     Spacer(Modifier.height(10.dp))
                     DeviceList(candidates, selected) { selected = it }
+                }
+            }
+
+            item {
+                SettingsCard(title = "BLE connection") {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = {
+                            if (!bleClient.hasPermissions()) {
+                                requestBlePermissions()
+                            } else {
+                                bleCandidates = emptyList()
+                                selectedBle = null
+                                bleReady = false
+                                val result = bleClient.startScan { candidate ->
+                                    activity?.runOnUiThread {
+                                        if (bleCandidates.none { it.device.address == candidate.device.address }) {
+                                            bleCandidates = (bleCandidates + candidate).sortedBy { it.label }
+                                        }
+                                        selectedBle = selectedBle ?: candidate
+                                    }
+                                }
+                                result.fold(
+                                    onSuccess = {
+                                        status = it
+                                        appendLog(status)
+                                    },
+                                    onFailure = {
+                                        status = it.message ?: "BLE scan failed"
+                                        appendLog(status)
+                                    },
+                                )
+                            }
+                        }) { Text("Scan BLE") }
+                        Button(onClick = {
+                            bleClient.stopScan()
+                            status = "BLE scan stopped"
+                            appendLog(status)
+                        }) { Text("Stop") }
+                        Button(enabled = selectedBle != null, onClick = {
+                            val candidate = selectedBle ?: return@Button
+                            bleClient.stopScan()
+                            val result = bleClient.connect(candidate)
+                            result.fold(
+                                onSuccess = {
+                                    status = it
+                                    onTransportConnectionChange(ActiveConnection.USB, false)
+                                    appendLog(status)
+                                },
+                                onFailure = {
+                                    status = it.message ?: "BLE connect failed"
+                                    appendLog(status)
+                                },
+                            )
+                        }) { Text("Connect") }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Text(if (bleReady) "BLE ready" else "BLE not connected", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(8.dp))
+                    if (bleCandidates.isEmpty()) {
+                        Text("No EdgeZ BLE devices found.")
+                    } else {
+                        bleCandidates.forEach { candidate ->
+                            Button(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = { selectedBle = candidate },
+                            ) {
+                                Text(if (candidate == selectedBle) "Selected: ${candidate.label}" else candidate.label)
+                            }
+                        }
+                    }
                 }
             }
 
@@ -321,7 +407,6 @@ fun SettingsScreen(
                                     text = { Text(country) },
                                     onClick = {
                                         meshCountry = country
-                                        saveMeshPreferences(country = country)
                                         countryDropdownExpanded = false
                                     },
                                 )
@@ -331,10 +416,7 @@ fun SettingsScreen(
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = meshId,
-                        onValueChange = {
-                            meshId = it.take(32)
-                            saveMeshPreferences(id = meshId)
-                        },
+                        onValueChange = { meshId = it.take(32) },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Mesh ID / SSID") },
                         singleLine = true,
@@ -342,19 +424,19 @@ fun SettingsScreen(
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = passphrase,
-                        onValueChange = {
-                            passphrase = it.take(64)
-                            saveMeshPreferences(password = passphrase)
-                        },
+                        onValueChange = { passphrase = it.take(64) },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Passphrase") },
                         singleLine = true,
                     )
                     Spacer(Modifier.height(10.dp))
+                    Button(onClick = { saveMeshPreferences() }) {
+                        Text("Save settings")
+                    }
+                    Spacer(Modifier.height(8.dp))
                     Button(
                         enabled = meshId.isNotBlank(),
                         onClick = {
-                            saveMeshPreferences()
                             sendMeshCredentials()
                         },
                     ) { Text("Send credentials") }
