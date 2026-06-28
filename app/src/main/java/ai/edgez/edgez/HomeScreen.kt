@@ -46,7 +46,8 @@ import java.util.concurrent.Executors
 fun HomeScreen(
     client: EdgezUsbClient,
     bleClient: EdgezBleClient,
-    activeConnection: ActiveConnection,
+    txConnection: ActiveConnection,
+    rxConnection: ActiveConnection,
 ) {
     val context = LocalContext.current
     val executor = remember { Executors.newSingleThreadExecutor() }
@@ -134,7 +135,7 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("Home", style = MaterialTheme.typography.headlineMedium)
-            Text("Active: ${activeConnection.name}", style = MaterialTheme.typography.bodyMedium)
+            Text("TX: ${txConnection.name}  RX: ${rxConnection.name}", style = MaterialTheme.typography.bodyMedium)
             Text(status, style = MaterialTheme.typography.bodyMedium)
 
             OutlinedTextField(
@@ -149,15 +150,15 @@ fun HomeScreen(
                 status = "Sending echo..."
                 appendLog(status)
                 executor.execute {
-                    val result = when (activeConnection) {
+                    val result = when (txConnection) {
                         ActiveConnection.BLE -> bleClient.sendEcho(echoPayload)
                         ActiveConnection.USB -> client.sendEcho(echoPayload)
-                        ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+                        ActiveConnection.NONE -> Result.failure(IllegalStateException("No TX connection"))
                     }
                     activity?.runOnUiThread {
                         result.fold(
                             onSuccess = {
-                                status = "$it via ${activeConnection.name}"
+                                status = "$it via ${txConnection.name}"
                                 appendLog(status)
                             },
                             onFailure = {
@@ -183,6 +184,6 @@ fun HomeScreen(
 private fun HomePreview() {
     EdgeZTheme {
         val context = LocalContext.current.applicationContext
-        HomeScreen(EdgezUsbClient(context), EdgezBleClient(context), ActiveConnection.NONE)
+        HomeScreen(EdgezUsbClient(context), EdgezBleClient(context), ActiveConnection.NONE, ActiveConnection.NONE)
     }
 }

@@ -74,6 +74,8 @@ class EdgezBleClient(private val context: Context) {
         }
     }
 
+    fun isReady(): Boolean = gatt != null && rxCharacteristic != null
+
     fun addFrameListener(listener: (ByteArray) -> Unit): () -> Unit {
         frameListeners.add(listener)
         return { frameListeners.remove(listener) }

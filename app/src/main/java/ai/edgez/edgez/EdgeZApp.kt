@@ -29,7 +29,8 @@ fun EdgeZApp() {
     val usbClient = remember { EdgezUsbClient(context.applicationContext) }
     val bleClient = remember { EdgezBleClient(context.applicationContext) }
     var currentDestination by rememberSaveable { mutableStateOf(AppDestination.HOME) }
-    var activeConnection by rememberSaveable { mutableStateOf(ActiveConnection.NONE) }
+    var txConnection by rememberSaveable { mutableStateOf(ActiveConnection.NONE) }
+    var rxConnection by rememberSaveable { mutableStateOf(ActiveConnection.NONE) }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -56,14 +57,21 @@ fun EdgeZApp() {
         },
     ) {
         when (currentDestination) {
-            AppDestination.HOME -> HomeScreen(usbClient, bleClient, activeConnection)
+            AppDestination.HOME -> HomeScreen(
+                client = usbClient,
+                bleClient = bleClient,
+                txConnection = txConnection,
+                rxConnection = rxConnection,
+            )
             AppDestination.FAVORITES -> PlaceholderScreen("Favorites")
             AppDestination.PROFILE -> PlaceholderScreen("Profile")
             AppDestination.SETTINGS -> SettingsScreen(
                 client = usbClient,
                 bleClient = bleClient,
-                activeConnection = activeConnection,
-                onActiveConnectionChange = { activeConnection = it },
+                txConnection = txConnection,
+                rxConnection = rxConnection,
+                onTxConnectionChange = { txConnection = it },
+                onRxConnectionChange = { rxConnection = it },
             )
         }
     }

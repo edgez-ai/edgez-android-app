@@ -42,6 +42,7 @@ import ai.edgez.edgez.usb.EDGEZ_MAGIC_0
 import ai.edgez.edgez.usb.EDGEZ_MAGIC_1
 import ai.edgez.edgez.usb.EDGEZ_MAX_PAYLOAD
 import ai.edgez.edgez.usb.EDGEZ_TYPE_CONTROL_RESP
+import ai.edgez.edgez.usb.EDGEZ_TYPE_ECHO_RESP
 import ai.edgez.edgez.usb.EDGEZ_TYPE_ERROR
 import ai.edgez.edgez.usb.EDGEZ_VERSION
 import ai.edgez.edgez.usb.EdgezUsbClient
@@ -60,8 +61,10 @@ import java.util.concurrent.Executors
 fun SettingsScreen(
     client: EdgezUsbClient,
     bleClient: EdgezBleClient,
-    activeConnection: ActiveConnection,
-    onActiveConnectionChange: (ActiveConnection) -> Unit,
+    txConnection: ActiveConnection,
+    rxConnection: ActiveConnection,
+    onTxConnectionChange: (ActiveConnection) -> Unit,
+    onRxConnectionChange: (ActiveConnection) -> Unit,
 ) {
     val context = LocalContext.current
     val executor = remember { Executors.newSingleThreadExecutor() }
@@ -97,7 +100,7 @@ fun SettingsScreen(
         nextMeshId: String = meshId,
         nextPassphrase: String = passphrase,
         connectAfterSet: Boolean = false,
-        connection: ActiveConnection = activeConnection,
+        connection: ActiveConnection = txConnection,
     ) {
         status = "Sending $label..."
         appendLog(status)
@@ -123,7 +126,7 @@ fun SettingsScreen(
                         connectAfterSet = connectAfterSet,
                     )
                 }
-                ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+                ActiveConnection.NONE -> Result.failure(IllegalStateException("No TX connection"))
             }
             activity?.runOnUiThread {
                 result.fold(
@@ -170,6 +173,10 @@ fun SettingsScreen(
                     val text = String(payload, StandardCharsets.UTF_8)
                     status = "Device error on seq=$responseSeq: $text"
                 }
+                EDGEZ_TYPE_ECHO_RESP -> {
+                    val text = String(payload, StandardCharsets.UTF_8)
+                    status = "Debug echo seq=$responseSeq: $text"
+                }
                 else -> {
                     status = "Unknown packet on seq=$responseSeq: type=$responseType"
                 }
@@ -191,12 +198,12 @@ fun SettingsScreen(
                 appendLog("BLE $line")
                 if (line == "SERVICE ready") {
                     bleReady = true
-                    onActiveConnectionChange(ActiveConnection.BLE)
-                    status = "BLE connected"
+                    onRxConnectionChange(ActiveConnection.BLE)
+                    status = "BLE connected for RX"
                 } else if (line.startsWith("CONN") && line.contains("state=0") || line == "CLOSE") {
                     bleReady = false
-                    if (activeConnection == ActiveConnection.BLE) {
-                        onActiveConnectionChange(ActiveConnection.NONE)
+                    if (rxConnection == ActiveConnection.BLE) {
+                        onRxConnectionChange(ActiveConnection.NONE)
                     }
                 }
             }
@@ -234,7 +241,7 @@ fun SettingsScreen(
             item {
                 Text("Settings", style = MaterialTheme.typography.headlineMedium)
                 Spacer(Modifier.height(6.dp))
-                Text("Active connection: ${activeConnection.name}", style = MaterialTheme.typography.bodyMedium)
+                Text("TX: ${txConnection.name}  RX: ${rxConnection.name}", style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(6.dp))
                 Text(status, style = MaterialTheme.typography.bodyMedium)
             }
@@ -256,7 +263,7 @@ fun SettingsScreen(
                                 appendLog(status)
                             } else {
                                 status = client.connect(candidate)
-                                onActiveConnectionChange(ActiveConnection.USB)
+                                onTxConnectionChange(ActiveConnection.USB)
                                 appendLog(status)
                                 sendControl("status", USB_CONTROL_ACTION_GET_STATUS, connection = ActiveConnection.USB)
                             }
@@ -431,8 +438,10 @@ private fun SettingsPreview() {
         SettingsScreen(
             client = EdgezUsbClient(context),
             bleClient = EdgezBleClient(context),
-            activeConnection = ActiveConnection.NONE,
-            onActiveConnectionChange = {},
+            txConnection = ActiveConnection.NONE,
+            rxConnection = ActiveConnection.NONE,
+            onTxConnectionChange = {},
+            onRxConnectionChange = {},
         )
     }
 }

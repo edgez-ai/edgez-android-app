@@ -228,6 +228,8 @@ class EdgezUsbClient(private val context: Context) {
 
     fun hasPermission(device: UsbDevice): Boolean = usbManager.hasPermission(device)
 
+    fun isConnected(): Boolean = serialPort?.isOpen == true
+
     fun requestPermission(device: UsbDevice) {
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0
         val intent = PendingIntent.getBroadcast(context, 0, Intent(ACTION_USB_PERMISSION), flags)
