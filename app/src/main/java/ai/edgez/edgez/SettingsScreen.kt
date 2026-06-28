@@ -245,7 +245,7 @@ fun SettingsScreen(
                         Button(onClick = {
                             candidates = client.scan()
                             selected = candidates.firstOrNull()
-                            status = "Found ${candidates.size} USB vendor device(s)"
+                            status = "Found ${candidates.size} USB device interface(s)"
                             appendLog(status)
                         }) { Text("Scan") }
                         Button(enabled = selected != null, onClick = {

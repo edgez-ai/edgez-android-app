@@ -45,9 +45,10 @@ data class UsbCandidate(
     val intf: UsbInterface,
     val inEndpoint: UsbEndpoint,
     val outEndpoint: UsbEndpoint,
+    val transport: String,
 ) {
     val label: String
-        get() = "VID=%04x PID=%04x ${device.productName ?: "USB device"} if=${intf.id} ${outEndpoint.describe()} ${inEndpoint.describe()}"
+        get() = "$transport VID=%04x PID=%04x ${device.productName ?: "USB device"} if=${intf.id} ${outEndpoint.describe()} ${inEndpoint.describe()}"
             .format(device.vendorId, device.productId)
 }
 
@@ -204,11 +205,9 @@ class EdgezUsbClient(private val context: Context) {
     private var seq = 0
 
     fun scan(): List<UsbCandidate> {
-        return usbManager.deviceList.values.mapNotNull { device ->
-            findVendorInterface(device)?.let { (intf, inEp, outEp) ->
-                UsbCandidate(device, intf, inEp, outEp)
-            }
-        }.sortedWith(compareBy({ if (it.device.vendorId == ESPRESSIF_VID) 0 else 1 }, { it.label }))
+        return usbManager.deviceList.values.flatMap { device ->
+            findUsbInterfaces(device)
+        }.sortedWith(compareBy({ if (it.device.vendorId == ESPRESSIF_VID) 0 else 1 }, { it.transport }, { it.label }))
     }
 
     fun hasPermission(device: UsbDevice): Boolean = usbManager.hasPermission(device)
@@ -435,12 +434,20 @@ class EdgezUsbClient(private val context: Context) {
         }
     }
 
-    private fun findVendorInterface(device: UsbDevice): Triple<UsbInterface, UsbEndpoint, UsbEndpoint>? {
+    private fun findUsbInterfaces(device: UsbDevice): List<UsbCandidate> {
+        val candidates = mutableListOf<UsbCandidate>()
         for (i in 0 until device.interfaceCount) {
             val intf = device.getInterface(i)
-            if (intf.interfaceClass != UsbConstants.USB_CLASS_VENDOR_SPEC) {
+            val transport = when {
+                intf.interfaceClass == UsbConstants.USB_CLASS_VENDOR_SPEC -> "Vendor"
+                intf.interfaceClass == UsbConstants.USB_CLASS_CDC_DATA -> "CDC"
+                else -> null
+            } ?: continue
+
+            if (transport == "CDC" && intf.interfaceSubclass != 0) {
                 continue
             }
+
             var inEp: UsbEndpoint? = null
             var outEp: UsbEndpoint? = null
             for (e in 0 until intf.endpointCount) {
@@ -455,10 +462,16 @@ class EdgezUsbClient(private val context: Context) {
                 }
             }
             if (inEp != null && outEp != null) {
-                return Triple(intf, inEp, outEp)
+                candidates += UsbCandidate(
+                    device = device,
+                    intf = intf,
+                    inEndpoint = inEp,
+                    outEndpoint = outEp,
+                    transport = transport,
+                )
             }
         }
-        return null
+        return candidates
     }
 
     private fun findMagicOffset(data: ByteArray, length: Int): Int {

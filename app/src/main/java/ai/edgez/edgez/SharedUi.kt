@@ -45,7 +45,7 @@ fun DeviceList(
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("USB devices", style = MaterialTheme.typography.titleSmall)
         if (candidates.isEmpty()) {
-            Text("No vendor USB interfaces found.")
+            Text("No compatible USB interfaces found.")
         } else {
             candidates.forEach { candidate ->
                 Button(
