@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import ai.edgez.edgez.ble.EdgezBleClient
 import ai.edgez.edgez.ui.theme.EdgeZTheme
 import ai.edgez.edgez.usb.EDGEZ_HEADER_LEN
 import ai.edgez.edgez.usb.EDGEZ_MAGIC_0
@@ -42,11 +43,15 @@ import java.nio.charset.StandardCharsets
 import java.util.concurrent.Executors
 
 @Composable
-fun HomeScreen(client: EdgezUsbClient) {
+fun HomeScreen(
+    client: EdgezUsbClient,
+    bleClient: EdgezBleClient,
+    activeConnection: ActiveConnection,
+) {
     val context = LocalContext.current
     val executor = remember { Executors.newSingleThreadExecutor() }
     var echoPayload by rememberSaveable { mutableStateOf("hello esp32s3") }
-    var status by remember { mutableStateOf("Connect USB in Settings, then send an echo.") }
+    var status by remember { mutableStateOf("Connect USB or BLE in Settings, then send an echo.") }
     var response by remember { mutableStateOf("") }
     var log by remember { mutableStateOf(listOf<String>()) }
     val activity = context as? ComponentActivity
@@ -100,14 +105,22 @@ fun HomeScreen(client: EdgezUsbClient) {
 
     DisposableEffect(Unit) {
         val removeFrameListener = client.addFrameListener(::handleFrame)
+        val removeBleFrameListener = bleClient.addFrameListener(::handleFrame)
         val removeDebugListener = client.addDebugListener { line ->
             activity?.runOnUiThread {
                 appendLog("USB $line")
             }
         }
+        val removeBleDebugListener = bleClient.addDebugListener { line ->
+            activity?.runOnUiThread {
+                appendLog("BLE $line")
+            }
+        }
         onDispose {
             removeFrameListener()
+            removeBleFrameListener()
             removeDebugListener()
+            removeBleDebugListener()
             executor.shutdownNow()
         }
     }
@@ -121,6 +134,7 @@ fun HomeScreen(client: EdgezUsbClient) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("Home", style = MaterialTheme.typography.headlineMedium)
+            Text("Active: ${activeConnection.name}", style = MaterialTheme.typography.bodyMedium)
             Text(status, style = MaterialTheme.typography.bodyMedium)
 
             OutlinedTextField(
@@ -135,11 +149,15 @@ fun HomeScreen(client: EdgezUsbClient) {
                 status = "Sending echo..."
                 appendLog(status)
                 executor.execute {
-                    val result = client.sendEcho(echoPayload)
+                    val result = when (activeConnection) {
+                        ActiveConnection.BLE -> bleClient.sendEcho(echoPayload)
+                        ActiveConnection.USB -> client.sendEcho(echoPayload)
+                        ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+                    }
                     activity?.runOnUiThread {
                         result.fold(
                             onSuccess = {
-                                status = it
+                                status = "$it via ${activeConnection.name}"
                                 appendLog(status)
                             },
                             onFailure = {
@@ -164,6 +182,7 @@ fun HomeScreen(client: EdgezUsbClient) {
 @Composable
 private fun HomePreview() {
     EdgeZTheme {
-        HomeScreen(EdgezUsbClient(LocalContext.current.applicationContext))
+        val context = LocalContext.current.applicationContext
+        HomeScreen(EdgezUsbClient(context), EdgezBleClient(context), ActiveConnection.NONE)
     }
 }

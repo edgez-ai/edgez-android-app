@@ -57,7 +57,12 @@ import java.nio.charset.StandardCharsets
 import java.util.concurrent.Executors
 
 @Composable
-fun SettingsScreen(client: EdgezUsbClient, bleClient: EdgezBleClient) {
+fun SettingsScreen(
+    client: EdgezUsbClient,
+    bleClient: EdgezBleClient,
+    activeConnection: ActiveConnection,
+    onActiveConnectionChange: (ActiveConnection) -> Unit,
+) {
     val context = LocalContext.current
     val executor = remember { Executors.newSingleThreadExecutor() }
     var candidates by remember { mutableStateOf(client.scan()) }
@@ -92,33 +97,38 @@ fun SettingsScreen(client: EdgezUsbClient, bleClient: EdgezBleClient) {
         nextMeshId: String = meshId,
         nextPassphrase: String = passphrase,
         connectAfterSet: Boolean = false,
+        connection: ActiveConnection = activeConnection,
     ) {
         status = "Sending $label..."
         appendLog(status)
         executor.execute {
-            val result = if (bleReady) {
-                bleClient.sendControl(
-                    action = action,
-                    bleEnabled = nextBleEnabled,
-                    pairingEnabled = nextPairingEnabled,
-                    wifiSsid = nextMeshId,
-                    wifiPassphrase = nextPassphrase,
-                    connectAfterSet = connectAfterSet,
-                )
-            } else {
-                client.sendControl(
-                    action = action,
-                    bleEnabled = nextBleEnabled,
-                    pairingEnabled = nextPairingEnabled,
-                    wifiSsid = nextMeshId,
-                    wifiPassphrase = nextPassphrase,
-                    connectAfterSet = connectAfterSet,
-                )
+            val result = when (connection) {
+                ActiveConnection.BLE -> {
+                    bleClient.sendControl(
+                        action = action,
+                        bleEnabled = nextBleEnabled,
+                        pairingEnabled = nextPairingEnabled,
+                        wifiSsid = nextMeshId,
+                        wifiPassphrase = nextPassphrase,
+                        connectAfterSet = connectAfterSet,
+                    )
+                }
+                ActiveConnection.USB -> {
+                    client.sendControl(
+                        action = action,
+                        bleEnabled = nextBleEnabled,
+                        pairingEnabled = nextPairingEnabled,
+                        wifiSsid = nextMeshId,
+                        wifiPassphrase = nextPassphrase,
+                        connectAfterSet = connectAfterSet,
+                    )
+                }
+                ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
             }
             activity?.runOnUiThread {
                 result.fold(
                     onSuccess = {
-                        status = "$label command sent via ${if (bleReady) "BLE" else "USB"}"
+                        status = "$label command sent via ${connection.name}"
                         appendLog(status)
                     },
                     onFailure = {
@@ -181,9 +191,13 @@ fun SettingsScreen(client: EdgezUsbClient, bleClient: EdgezBleClient) {
                 appendLog("BLE $line")
                 if (line == "SERVICE ready") {
                     bleReady = true
+                    onActiveConnectionChange(ActiveConnection.BLE)
                     status = "BLE connected"
                 } else if (line.startsWith("CONN") && line.contains("state=0") || line == "CLOSE") {
                     bleReady = false
+                    if (activeConnection == ActiveConnection.BLE) {
+                        onActiveConnectionChange(ActiveConnection.NONE)
+                    }
                 }
             }
         }
@@ -220,6 +234,8 @@ fun SettingsScreen(client: EdgezUsbClient, bleClient: EdgezBleClient) {
             item {
                 Text("Settings", style = MaterialTheme.typography.headlineMedium)
                 Spacer(Modifier.height(6.dp))
+                Text("Active connection: ${activeConnection.name}", style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(6.dp))
                 Text(status, style = MaterialTheme.typography.bodyMedium)
             }
 
@@ -240,8 +256,9 @@ fun SettingsScreen(client: EdgezUsbClient, bleClient: EdgezBleClient) {
                                 appendLog(status)
                             } else {
                                 status = client.connect(candidate)
+                                onActiveConnectionChange(ActiveConnection.USB)
                                 appendLog(status)
-                                sendControl("status", USB_CONTROL_ACTION_GET_STATUS)
+                                sendControl("status", USB_CONTROL_ACTION_GET_STATUS, connection = ActiveConnection.USB)
                             }
                         }) { Text("Connect") }
                     }
@@ -411,6 +428,11 @@ private fun SettingSwitchRow(
 private fun SettingsPreview() {
     EdgeZTheme {
         val context = LocalContext.current.applicationContext
-        SettingsScreen(EdgezUsbClient(context), EdgezBleClient(context))
+        SettingsScreen(
+            client = EdgezUsbClient(context),
+            bleClient = EdgezBleClient(context),
+            activeConnection = ActiveConnection.NONE,
+            onActiveConnectionChange = {},
+        )
     }
 }
