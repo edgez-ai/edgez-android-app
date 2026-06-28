@@ -60,7 +60,7 @@ fun HomeScreen(
     val currentRxConnection by rememberUpdatedState(rxConnection)
 
     fun appendLog(line: String) {
-        log = (listOf(line) + log).take(16)
+        log = (listOf(line) + log).take(200)
     }
 
     fun handleFrame(source: ActiveConnection, frame: ByteArray) {

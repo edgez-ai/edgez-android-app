@@ -84,7 +84,7 @@ fun SettingsScreen(
     val currentOnTransportConnectionChange by rememberUpdatedState(onTransportConnectionChange)
 
     fun appendLog(line: String) {
-        log = (listOf(line) + log).take(16)
+        log = (listOf(line) + log).take(200)
     }
 
     fun requestBlePermissions() {
