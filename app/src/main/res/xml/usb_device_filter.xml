@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Espressif VID 0x303A. Keep matching at vendor level only so custom
+         vendor-specific USB transport still gets permission for all product IDs. -->
+    <usb-device vendor-id="12346" />
+</resources>
