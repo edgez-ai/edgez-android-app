@@ -40,23 +40,9 @@ import ai.edgez.edgez.ble.BleCandidate
 import ai.edgez.edgez.ble.EdgezBleClient
 import ai.edgez.edgez.ui.theme.EdgeZTheme
 import ai.edgez.edgez.usb.ACTION_USB_PERMISSION
-import ai.edgez.edgez.usb.EDGEZ_HEADER_LEN
-import ai.edgez.edgez.usb.EDGEZ_MAGIC_0
-import ai.edgez.edgez.usb.EDGEZ_MAGIC_1
-import ai.edgez.edgez.usb.EDGEZ_MAX_PAYLOAD
-import ai.edgez.edgez.usb.EDGEZ_TYPE_CONTROL_RESP
-import ai.edgez.edgez.usb.EDGEZ_TYPE_ECHO_RESP
-import ai.edgez.edgez.usb.EDGEZ_TYPE_ERROR
-import ai.edgez.edgez.usb.EDGEZ_TYPE_HALOW_SYNC_FROM_RADIO
-import ai.edgez.edgez.usb.EDGEZ_TYPE_HALOW_SYNC_STATUS_RESP
-import ai.edgez.edgez.usb.EDGEZ_VERSION
 import ai.edgez.edgez.usb.EdgezUsbClient
-import ai.edgez.edgez.usb.EdgezUsbControlProto
 import ai.edgez.edgez.usb.USB_CONTROL_ACTION_GET_STATUS
 import ai.edgez.edgez.usb.UsbCandidate
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import java.nio.charset.StandardCharsets
 import java.util.concurrent.Executors
 
 @Composable
@@ -84,8 +70,6 @@ fun SettingsScreen(
     val currentActiveConnection by rememberUpdatedState(activeConnection)
     val currentOnTransportConnectionChange by rememberUpdatedState(onTransportConnectionChange)
 
-    fun appendLog(@Suppress("UNUSED_PARAMETER") line: String) = Unit
-
     if (showDebugPopup) {
         DebugScreen(
             client = client,
@@ -102,7 +86,6 @@ fun SettingsScreen(
         val required = bleClient.requiredPermissions()
         activity?.requestPermissions(required, 2001)
         status = "Requesting BLE permission"
-        appendLog(status)
     }
 
     fun saveMeshPreferences(
@@ -112,7 +95,6 @@ fun SettingsScreen(
     ) {
         connectionPreferences.setMeshCredentials(country, id, password)
         status = "Mesh settings saved"
-        appendLog(status)
     }
 
     fun sendControl(
@@ -121,7 +103,6 @@ fun SettingsScreen(
         connection: ActiveConnection = activeConnection,
     ) {
         status = "Sending $label..."
-        appendLog(status)
         executor.execute {
             val result = when (connection) {
                 ActiveConnection.BLE -> {
@@ -140,98 +121,21 @@ fun SettingsScreen(
                 result.fold(
                     onSuccess = {
                         status = "$label command sent via ${connection.name}"
-                        appendLog(status)
                     },
                     onFailure = {
                         status = it.message ?: "$label failed"
-                        appendLog(status)
                     },
                 )
             }
         }
     }
 
-    fun handleFrame(source: ActiveConnection, frame: ByteArray) {
-        val selectedConnection = currentActiveConnection
-        if (selectedConnection == ActiveConnection.NONE) {
-            appendLog("${source.name} RX ignored; no interface selected")
-            return
-        }
-        if (source != selectedConnection) {
-            appendLog("${source.name} RX ignored; interface is ${selectedConnection.name}")
-            return
-        }
-
-        if (frame.size < EDGEZ_HEADER_LEN || frame[0] != EDGEZ_MAGIC_0 || frame[1] != EDGEZ_MAGIC_1 || frame[2] != EDGEZ_VERSION) {
-            return
-        }
-
-        val responseType = frame[3].toInt() and 0xff
-        val responseSeq = ByteBuffer.wrap(frame, 4, 2).order(ByteOrder.LITTLE_ENDIAN).short.toInt() and 0xffff
-        val responseLen = ByteBuffer.wrap(frame, 6, 2).order(ByteOrder.LITTLE_ENDIAN).short.toInt() and 0xffff
-        if (responseLen > EDGEZ_MAX_PAYLOAD || EDGEZ_HEADER_LEN + responseLen > frame.size) {
-            return
-        }
-
-        val payload = frame.copyOfRange(EDGEZ_HEADER_LEN, EDGEZ_HEADER_LEN + responseLen)
-        activity?.runOnUiThread {
-            when (responseType) {
-                EDGEZ_TYPE_CONTROL_RESP -> {
-                    val control = EdgezUsbControlProto.decodeResponse(payload)
-                    if (control == null) {
-                        status = "Malformed control response seq=$responseSeq"
-                    } else {
-                        status = if (control.halowStatus != null) {
-                            "${source.name} RX seq=$responseSeq ${control.halowStatus.summary()}"
-                        } else {
-                            val message = control.message.ifBlank { if (control.ok) "OK" else "Error" }
-                            "${source.name} RX seq=$responseSeq $message err=${control.espErr}"
-                        }
-                    }
-                }
-                EDGEZ_TYPE_HALOW_SYNC_FROM_RADIO, EDGEZ_TYPE_HALOW_SYNC_STATUS_RESP -> {
-                    val halowStatus = decodeHaLowStatusFrame(frame)
-                    status = if (halowStatus != null) {
-                        "${source.name} RX seq=$responseSeq ${halowStatus.summary()}"
-                    } else {
-                        "${source.name} malformed HaLow sync packet seq=$responseSeq type=$responseType"
-                    }
-                }
-                EDGEZ_TYPE_ERROR -> {
-                    val text = String(payload, StandardCharsets.UTF_8)
-                    status = "${source.name} device error on seq=$responseSeq: $text"
-                }
-                EDGEZ_TYPE_ECHO_RESP -> {
-                    val text = String(payload, StandardCharsets.UTF_8)
-                    status = "${source.name} debug echo seq=$responseSeq: $text"
-                }
-                else -> {
-                    status = "${source.name} unknown packet on seq=$responseSeq: type=$responseType"
-                }
-            }
-            appendLog(status)
-        }
-    }
-
     DisposableEffect(Unit) {
-        val removeFrameListener = client.addFrameListener { frame ->
-            handleFrame(ActiveConnection.USB, frame)
-        }
-        val removeDebugListener = client.addDebugListener { line ->
-            activity?.runOnUiThread {
-                appendLog("USB $line")
-            }
-        }
-        val removeBleFrameListener = bleClient.addFrameListener { frame ->
-            handleFrame(ActiveConnection.BLE, frame)
-        }
         val removeBleDebugListener = bleClient.addDebugListener { line ->
             activity?.runOnUiThread {
-                appendLog("BLE $line")
                 if (line == "SERVICE ready") {
                     bleReady = true
                     currentOnTransportConnectionChange(ActiveConnection.BLE, true)
-                    status = "BLE connected"
                 } else if (line.startsWith("CONN") && line.contains("state=0") || line == "CLOSE") {
                     bleReady = false
                     currentOnTransportConnectionChange(ActiveConnection.BLE, false)
@@ -245,16 +149,12 @@ fun SettingsScreen(
                 candidates = client.scan()
                 selected = candidates.firstOrNull { client.hasPermission(it.device) } ?: candidates.firstOrNull()
                 status = if (granted) "USB permission granted" else "USB permission denied"
-                appendLog(status)
             }
         }
         val flags = if (Build.VERSION.SDK_INT >= 33) Context.RECEIVER_NOT_EXPORTED else 0
         context.registerReceiver(receiver, IntentFilter(ACTION_USB_PERMISSION), flags)
         onDispose {
             context.unregisterReceiver(receiver)
-            removeFrameListener()
-            removeDebugListener()
-            removeBleFrameListener()
             removeBleDebugListener()
             executor.shutdownNow()
         }
@@ -287,19 +187,16 @@ fun SettingsScreen(
                             candidates = client.scan()
                             selected = candidates.firstOrNull()
                             status = "Found ${candidates.size} USB device interface(s)"
-                            appendLog(status)
                         }) { Text("Scan") }
                         Button(enabled = selected != null, onClick = {
                             val candidate = selected ?: return@Button
                             if (!client.hasPermission(candidate.device)) {
                                 client.requestPermission(candidate.device)
                                 status = "Requesting USB permission"
-                                appendLog(status)
                             } else {
                                 status = client.connect(candidate)
                                 onTransportConnectionChange(ActiveConnection.USB, true)
                                 bleReady = false
-                                appendLog(status)
                                 sendControl("status", USB_CONTROL_ACTION_GET_STATUS, connection = ActiveConnection.USB)
                             }
                         }) { Text("Connect") }
@@ -330,11 +227,9 @@ fun SettingsScreen(
                                 result.fold(
                                     onSuccess = {
                                         status = it
-                                        appendLog(status)
                                     },
                                     onFailure = {
                                         status = it.message ?: "BLE scan failed"
-                                        appendLog(status)
                                     },
                                 )
                             }
@@ -342,7 +237,6 @@ fun SettingsScreen(
                         Button(onClick = {
                             bleClient.stopScan()
                             status = "BLE scan stopped"
-                            appendLog(status)
                         }) { Text("Stop") }
                         Button(enabled = selectedBle != null, onClick = {
                             val candidate = selectedBle ?: return@Button
@@ -352,11 +246,9 @@ fun SettingsScreen(
                                 onSuccess = {
                                     status = it
                                     onTransportConnectionChange(ActiveConnection.USB, false)
-                                    appendLog(status)
                                 },
                                 onFailure = {
                                     status = it.message ?: "BLE connect failed"
-                                    appendLog(status)
                                 },
                             )
                         }) { Text("Connect") }
