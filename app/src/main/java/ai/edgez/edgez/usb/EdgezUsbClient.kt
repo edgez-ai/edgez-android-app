@@ -26,6 +26,7 @@ const val EDGEZ_TYPE_ECHO_RESP = 2
 const val EDGEZ_TYPE_CONTROL_RESP = 4
 const val EDGEZ_TYPE_HALOW_SYNC_TO_RADIO = 16
 const val EDGEZ_TYPE_HALOW_SYNC_FROM_RADIO = 17
+const val EDGEZ_TYPE_HALOW_SYNC_STATUS_REQ = 18
 const val EDGEZ_TYPE_HALOW_SYNC_STATUS_RESP = 19
 const val EDGEZ_TYPE_ERROR = 0x7f
 const val EDGEZ_HEADER_LEN = 8
@@ -36,7 +37,16 @@ const val USB_CONTROL_ACTION_SET_PAIRING_ENABLED = 2
 const val USB_CONTROL_ACTION_SET_WIFI_CREDENTIALS = 3
 const val USB_CONTROL_ACTION_GET_STATUS = 4
 const val USB_CONTROL_ACTION_ECHO = 5
+const val USB_CONTROL_ACTION_GET_HALOW_SYNC_STATUS = 6
+const val MOBILE_RADIO_VARIANT_RAW_RADIO_BUFFER = 1
+const val MOBILE_RADIO_VARIANT_WANT_CONFIG = 2
+const val MOBILE_RADIO_VARIANT_DISCONNECT = 3
+const val MOBILE_RADIO_VARIANT_HEARTBEAT = 4
+const val MOBILE_RADIO_VARIANT_CONFIG_COMPLETE = 5
+const val MOBILE_RADIO_VARIANT_QUEUE_STATUS = 6
+const val MOBILE_RADIO_VARIANT_REBOOTED = 7
 const val MOBILE_RADIO_VARIANT_HALOW_STATUS = 8
+const val MOBILE_RADIO_VARIANT_NODE_INFO = 9
 const val MOBILE_RADIO_VARIANT_INIT_HALOW = 10
 
 private const val ESPRESSIF_VID = 0x303A
@@ -66,6 +76,7 @@ data class UsbControlResponse(
     val bleEnabled: Boolean = false,
     val pairingEnabled: Boolean = false,
     val echoPayload: String = "",
+    val halowStatus: HaLowInterfaceStatus? = null,
 ) {
     val ok: Boolean get() = status == USB_CONTROL_STATUS_OK && espErr == 0
 }
@@ -128,6 +139,7 @@ object EdgezUsbControlProto {
         var bleEnabled = false
         var pairingEnabled = false
         var echoPayload = ""
+        var halowStatus: HaLowInterfaceStatus? = null
 
         while (offset < payload.size) {
             val tagRead = readVarint(payload, offset) ?: return null
@@ -157,6 +169,9 @@ object EdgezUsbControlProto {
                         4 -> message = text
                         7 -> echoPayload = text
                     }
+                    if (field == 8) {
+                        halowStatus = decodeHaLowInterfaceStatus(payload.copyOfRange(offset, offset + len))
+                    }
                     offset += len
                 }
                 else -> return null
@@ -171,6 +186,7 @@ object EdgezUsbControlProto {
             bleEnabled = bleEnabled,
             pairingEnabled = pairingEnabled,
             echoPayload = echoPayload,
+            halowStatus = halowStatus,
         )
     }
 

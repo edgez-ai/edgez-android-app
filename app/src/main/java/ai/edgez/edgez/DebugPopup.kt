@@ -31,6 +31,8 @@ import ai.edgez.edgez.usb.EDGEZ_MAX_PAYLOAD
 import ai.edgez.edgez.usb.EDGEZ_TYPE_CONTROL_RESP
 import ai.edgez.edgez.usb.EDGEZ_TYPE_ECHO_RESP
 import ai.edgez.edgez.usb.EDGEZ_TYPE_ERROR
+import ai.edgez.edgez.usb.EDGEZ_TYPE_HALOW_SYNC_FROM_RADIO
+import ai.edgez.edgez.usb.EDGEZ_TYPE_HALOW_SYNC_STATUS_RESP
 import ai.edgez.edgez.usb.EDGEZ_VERSION
 import ai.edgez.edgez.usb.EdgezUsbClient
 import ai.edgez.edgez.usb.EdgezUsbControlProto
@@ -91,11 +93,22 @@ fun DebugScreen(
             when (responseType) {
                 EDGEZ_TYPE_CONTROL_RESP -> {
                     val control = EdgezUsbControlProto.decodeResponse(payload)
+                    val controlHaLowStatus = control?.halowStatus
                     if (control?.action == USB_CONTROL_ACTION_ECHO) {
                         response = control.echoPayload
                         status = "${source.name} protobuf echo RX seq=$responseSeq: ${control.echoPayload}"
+                    } else if (controlHaLowStatus != null) {
+                        status = "${source.name} control seq=$responseSeq: ${controlHaLowStatus.summary()}"
                     } else {
                         status = "${source.name} control seq=$responseSeq: ${control?.message ?: "malformed"}"
+                    }
+                }
+                EDGEZ_TYPE_HALOW_SYNC_FROM_RADIO, EDGEZ_TYPE_HALOW_SYNC_STATUS_RESP -> {
+                    val halowStatus = decodeHaLowStatusFrame(frame)
+                    status = if (halowStatus != null) {
+                        "${source.name} HaLow sync RX seq=$responseSeq: ${halowStatus.summary()}"
+                    } else {
+                        "${source.name} malformed HaLow sync RX seq=$responseSeq type=$responseType"
                     }
                 }
                 EDGEZ_TYPE_ECHO_RESP -> {

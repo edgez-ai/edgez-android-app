@@ -47,6 +47,8 @@ import ai.edgez.edgez.usb.EDGEZ_MAX_PAYLOAD
 import ai.edgez.edgez.usb.EDGEZ_TYPE_CONTROL_RESP
 import ai.edgez.edgez.usb.EDGEZ_TYPE_ECHO_RESP
 import ai.edgez.edgez.usb.EDGEZ_TYPE_ERROR
+import ai.edgez.edgez.usb.EDGEZ_TYPE_HALOW_SYNC_FROM_RADIO
+import ai.edgez.edgez.usb.EDGEZ_TYPE_HALOW_SYNC_STATUS_RESP
 import ai.edgez.edgez.usb.EDGEZ_VERSION
 import ai.edgez.edgez.usb.EdgezUsbClient
 import ai.edgez.edgez.usb.EdgezUsbControlProto
@@ -179,8 +181,20 @@ fun SettingsScreen(
                     if (control == null) {
                         status = "Malformed control response seq=$responseSeq"
                     } else {
-                        val message = control.message.ifBlank { if (control.ok) "OK" else "Error" }
-                        status = "${source.name} RX seq=$responseSeq $message err=${control.espErr}"
+                        status = if (control.halowStatus != null) {
+                            "${source.name} RX seq=$responseSeq ${control.halowStatus.summary()}"
+                        } else {
+                            val message = control.message.ifBlank { if (control.ok) "OK" else "Error" }
+                            "${source.name} RX seq=$responseSeq $message err=${control.espErr}"
+                        }
+                    }
+                }
+                EDGEZ_TYPE_HALOW_SYNC_FROM_RADIO, EDGEZ_TYPE_HALOW_SYNC_STATUS_RESP -> {
+                    val halowStatus = decodeHaLowStatusFrame(frame)
+                    status = if (halowStatus != null) {
+                        "${source.name} RX seq=$responseSeq ${halowStatus.summary()}"
+                    } else {
+                        "${source.name} malformed HaLow sync packet seq=$responseSeq type=$responseType"
                     }
                 }
                 EDGEZ_TYPE_ERROR -> {
