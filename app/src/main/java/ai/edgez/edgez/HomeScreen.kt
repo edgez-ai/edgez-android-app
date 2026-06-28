@@ -57,6 +57,7 @@ fun HomeScreen(
     var response by remember { mutableStateOf("") }
     var log by remember { mutableStateOf(listOf<String>()) }
     val activity = context as? ComponentActivity
+    val currentTxConnection by rememberUpdatedState(txConnection)
     val currentRxConnection by rememberUpdatedState(rxConnection)
 
     fun appendLog(line: String) {
@@ -64,12 +65,6 @@ fun HomeScreen(
     }
 
     fun handleFrame(source: ActiveConnection, frame: ByteArray) {
-        val activeRxConnection = currentRxConnection
-        if (activeRxConnection != ActiveConnection.NONE && source != activeRxConnection) {
-            appendLog("${source.name} RX ignored; RX role is ${activeRxConnection.name}")
-            return
-        }
-
         if (frame.size < EDGEZ_HEADER_LEN ||
             frame[0] != EDGEZ_MAGIC_0 ||
             frame[1] != EDGEZ_MAGIC_1 ||
@@ -84,6 +79,15 @@ fun HomeScreen(
             return
         }
 
+        val activeRxConnection = currentRxConnection
+        val activeTxConnection = currentTxConnection
+        val isExpectedEchoSource = source == activeTxConnection &&
+            (responseType == EDGEZ_TYPE_ECHO_RESP || responseType == EDGEZ_TYPE_CONTROL_RESP)
+        if (activeRxConnection != ActiveConnection.NONE && source != activeRxConnection && !isExpectedEchoSource) {
+            appendLog("${source.name} RX ignored; RX role is ${activeRxConnection.name}")
+            return
+        }
+
         val payload = frame.copyOfRange(EDGEZ_HEADER_LEN, EDGEZ_HEADER_LEN + responseLen)
         val text = String(payload, StandardCharsets.UTF_8)
         activity?.runOnUiThread {
@@ -92,14 +96,14 @@ fun HomeScreen(
                     val control = EdgezUsbControlProto.decodeResponse(payload)
                     if (control?.action == USB_CONTROL_ACTION_ECHO) {
                         response = control.echoPayload
-                        status = "${source.name} RX seq=$responseSeq: ${control.echoPayload}"
+                        status = "${source.name} protobuf echo RX seq=$responseSeq: ${control.echoPayload}"
                     } else {
                         status = "${source.name} control seq=$responseSeq: ${control?.message ?: "malformed"}"
                     }
                 }
                 EDGEZ_TYPE_ECHO_RESP -> {
                     response = text
-                    status = "${source.name} debug echo seq=$responseSeq: $text"
+                    status = "${source.name} echo RX seq=$responseSeq: $text"
                 }
                 EDGEZ_TYPE_ERROR -> {
                     status = "${source.name} device error on seq=$responseSeq: $text"
@@ -159,18 +163,20 @@ fun HomeScreen(
             )
 
             Button(onClick = {
+                val sentText = echoPayload
                 status = "Sending echo..."
                 appendLog(status)
                 executor.execute {
                     val result = when (txConnection) {
-                        ActiveConnection.BLE -> bleClient.sendEcho(echoPayload)
-                        ActiveConnection.USB -> client.sendEcho(echoPayload)
+                        ActiveConnection.BLE -> bleClient.sendEcho(sentText)
+                        ActiveConnection.USB -> client.sendEcho(sentText)
                         ActiveConnection.NONE -> Result.failure(IllegalStateException("No TX connection"))
                     }
                     activity?.runOnUiThread {
                         result.fold(
                             onSuccess = {
-                                status = "$it via ${txConnection.name}"
+                                response = sentText
+                                status = "Protobuf echo sent (${sentText.length} chars): $sentText via ${txConnection.name}"
                                 appendLog(status)
                             },
                             onFailure = {
