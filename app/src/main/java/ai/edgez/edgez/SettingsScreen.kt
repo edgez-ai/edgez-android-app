@@ -62,26 +62,25 @@ import java.util.concurrent.Executors
 fun SettingsScreen(
     client: EdgezUsbClient,
     bleClient: EdgezBleClient,
-    txConnection: ActiveConnection,
-    rxConnection: ActiveConnection,
+    activeConnection: ActiveConnection,
     onTransportConnectionChange: (ActiveConnection, Boolean) -> Unit,
 ) {
     val context = LocalContext.current
-    val executor = remember { Executors.newSingleThreadExecutor() }
+    val connectionPreferences = remember { LastConnectionPreferences(context.applicationContext) }
     var candidates by remember { mutableStateOf(client.scan()) }
     var selected by remember { mutableStateOf<UsbCandidate?>(candidates.firstOrNull()) }
     var bleCandidates by remember { mutableStateOf(listOf<BleCandidate>()) }
     var selectedBle by remember { mutableStateOf<BleCandidate?>(null) }
     var bleReady by remember { mutableStateOf(false) }
-    var meshId by rememberSaveable { mutableStateOf("") }
-    var passphrase by rememberSaveable { mutableStateOf("") }
+    var meshId by rememberSaveable { mutableStateOf(connectionPreferences.getMeshId()) }
+    var passphrase by rememberSaveable { mutableStateOf(connectionPreferences.getMeshPassphrase()) }
     var bleEnabled by rememberSaveable { mutableStateOf(false) }
     var pairingEnabled by rememberSaveable { mutableStateOf(false) }
     var showDebugPopup by rememberSaveable { mutableStateOf(false) }
     var status by remember { mutableStateOf("Connect the ESP32-S3 USB port, then scan.") }
     var log by remember { mutableStateOf(listOf<String>()) }
     val activity = context as? ComponentActivity
-    val currentRxConnection by rememberUpdatedState(rxConnection)
+    val currentActiveConnection by rememberUpdatedState(activeConnection)
     val currentOnTransportConnectionChange by rememberUpdatedState(onTransportConnectionChange)
 
     fun appendLog(line: String) {
@@ -92,12 +91,13 @@ fun SettingsScreen(
         DebugScreen(
             client = client,
             bleClient = bleClient,
-            txConnection = txConnection,
-            rxConnection = rxConnection,
+            activeConnection = activeConnection,
             onClose = { showDebugPopup = false },
         )
         return
     }
+
+    val executor = remember { Executors.newSingleThreadExecutor() }
 
     fun requestBlePermissions() {
         val required = bleClient.requiredPermissions()
@@ -114,7 +114,7 @@ fun SettingsScreen(
         nextMeshId: String = meshId,
         nextPassphrase: String = passphrase,
         connectAfterSet: Boolean = false,
-        connection: ActiveConnection = txConnection,
+        connection: ActiveConnection = activeConnection,
     ) {
         status = "Sending $label..."
         appendLog(status)
@@ -158,9 +158,13 @@ fun SettingsScreen(
     }
 
     fun handleFrame(source: ActiveConnection, frame: ByteArray) {
-        val activeRxConnection = currentRxConnection
-        if (activeRxConnection != ActiveConnection.NONE && source != activeRxConnection) {
-            appendLog("${source.name} RX ignored; RX role is ${activeRxConnection.name}")
+        val selectedConnection = currentActiveConnection
+        if (selectedConnection == ActiveConnection.NONE) {
+            appendLog("${source.name} RX ignored; no interface selected")
+            return
+        }
+        if (source != selectedConnection) {
+            appendLog("${source.name} RX ignored; interface is ${selectedConnection.name}")
             return
         }
 
@@ -263,7 +267,7 @@ fun SettingsScreen(
             item {
                 Text("Settings", style = MaterialTheme.typography.headlineMedium)
                 Spacer(Modifier.height(6.dp))
-                Text("TX: ${txConnection.name}  RX: ${rxConnection.name}", style = MaterialTheme.typography.bodyMedium)
+                Text("Interface: ${activeConnection.name}", style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(6.dp))
                 Text(status, style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(10.dp))
@@ -290,6 +294,7 @@ fun SettingsScreen(
                             } else {
                                 status = client.connect(candidate)
                                 onTransportConnectionChange(ActiveConnection.USB, true)
+                                bleReady = false
                                 appendLog(status)
                                 sendControl("status", USB_CONTROL_ACTION_GET_STATUS, connection = ActiveConnection.USB)
                             }
@@ -342,6 +347,7 @@ fun SettingsScreen(
                             result.fold(
                                 onSuccess = {
                                     status = it
+                                    onTransportConnectionChange(ActiveConnection.USB, false)
                                     appendLog(status)
                                 },
                                 onFailure = {
@@ -390,6 +396,7 @@ fun SettingsScreen(
                     Button(
                         enabled = meshId.isNotBlank(),
                         onClick = {
+                            connectionPreferences.setMeshCredentials(meshId, passphrase)
                             sendControl(
                                 label = "credentials",
                                 action = USB_CONTROL_ACTION_SET_WIFI_CREDENTIALS,
@@ -464,8 +471,7 @@ private fun SettingsPreview() {
         SettingsScreen(
             client = EdgezUsbClient(context),
             bleClient = EdgezBleClient(context),
-            txConnection = ActiveConnection.NONE,
-            rxConnection = ActiveConnection.NONE,
+            activeConnection = ActiveConnection.NONE,
             onTransportConnectionChange = { _, _ -> },
         )
     }

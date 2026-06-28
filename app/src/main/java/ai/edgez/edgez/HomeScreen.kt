@@ -38,8 +38,7 @@ private val previewNodes = listOf(
 
 @Composable
 fun HomeScreen(
-    txConnection: ActiveConnection,
-    rxConnection: ActiveConnection,
+    activeConnection: ActiveConnection,
 ) {
     Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
         LazyColumn(
@@ -52,7 +51,7 @@ fun HomeScreen(
             item {
                 Text("Home", style = MaterialTheme.typography.headlineMedium)
                 Spacer(Modifier.height(6.dp))
-                Text("TX: ${txConnection.name}  RX: ${rxConnection.name}", style = MaterialTheme.typography.bodyMedium)
+                Text("Interface: ${activeConnection.name}", style = MaterialTheme.typography.bodyMedium)
             }
 
             item {
@@ -98,6 +97,6 @@ private fun NodeCard(node: NodeListItem) {
 @Composable
 private fun HomePreview() {
     EdgeZTheme {
-        HomeScreen(ActiveConnection.NONE, ActiveConnection.NONE)
+        HomeScreen(ActiveConnection.NONE)
     }
 }

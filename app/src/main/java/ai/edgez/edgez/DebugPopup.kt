@@ -44,8 +44,7 @@ import java.util.concurrent.Executors
 fun DebugScreen(
     client: EdgezUsbClient,
     bleClient: EdgezBleClient,
-    txConnection: ActiveConnection,
-    rxConnection: ActiveConnection,
+    activeConnection: ActiveConnection,
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -55,8 +54,7 @@ fun DebugScreen(
     var response by remember { mutableStateOf("") }
     var log by remember { mutableStateOf(listOf<String>()) }
     val activity = context as? ComponentActivity
-    val currentTxConnection by rememberUpdatedState(txConnection)
-    val currentRxConnection by rememberUpdatedState(rxConnection)
+    val currentActiveConnection by rememberUpdatedState(activeConnection)
 
     fun appendLog(line: String) {
         log = (listOf(line) + log).take(200)
@@ -77,12 +75,13 @@ fun DebugScreen(
             return
         }
 
-        val activeRxConnection = currentRxConnection
-        val activeTxConnection = currentTxConnection
-        val isExpectedEchoSource = source == activeTxConnection &&
-            (responseType == EDGEZ_TYPE_ECHO_RESP || responseType == EDGEZ_TYPE_CONTROL_RESP)
-        if (activeRxConnection != ActiveConnection.NONE && source != activeRxConnection && !isExpectedEchoSource) {
-            appendLog("${source.name} RX ignored; RX role is ${activeRxConnection.name}")
+        val selectedConnection = currentActiveConnection
+        if (selectedConnection == ActiveConnection.NONE) {
+            appendLog("${source.name} RX ignored; no interface selected")
+            return
+        }
+        if (source != selectedConnection) {
+            appendLog("${source.name} RX ignored; interface is ${selectedConnection.name}")
             return
         }
 
@@ -147,7 +146,7 @@ fun DebugScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text("Debug", style = MaterialTheme.typography.headlineMedium)
-        Text("TX: ${txConnection.name}  RX: ${rxConnection.name}", style = MaterialTheme.typography.bodyMedium)
+        Text("Interface: ${activeConnection.name}", style = MaterialTheme.typography.bodyMedium)
         Text(status, style = MaterialTheme.typography.bodyMedium)
 
         OutlinedTextField(
@@ -163,8 +162,8 @@ fun DebugScreen(
             status = "Sending echo..."
             appendLog(status)
             executor.execute {
-                val activeTxConnection = currentTxConnection
-                val result = when (activeTxConnection) {
+                val selectedConnection = currentActiveConnection
+                val result = when (selectedConnection) {
                     ActiveConnection.BLE -> bleClient.sendEcho(sentText)
                     ActiveConnection.USB -> client.sendEcho(sentText)
                     ActiveConnection.NONE -> Result.failure(IllegalStateException("No TX connection"))
@@ -173,7 +172,7 @@ fun DebugScreen(
                     result.fold(
                         onSuccess = {
                             response = sentText
-                            status = "Protobuf echo sent (${sentText.length} chars): $sentText via ${activeTxConnection.name}"
+                            status = "Protobuf echo sent (${sentText.length} chars): $sentText via ${selectedConnection.name}"
                             appendLog(status)
                         },
                         onFailure = {
