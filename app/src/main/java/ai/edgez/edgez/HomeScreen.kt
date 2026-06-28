@@ -96,7 +96,7 @@ fun HomeScreen(
                     val control = EdgezUsbControlProto.decodeResponse(payload)
                     if (control?.action == USB_CONTROL_ACTION_ECHO) {
                         response = control.echoPayload
-                        status = "${source.name} echo RX seq=$responseSeq: ${control.echoPayload}"
+                        status = "${source.name} protobuf echo RX seq=$responseSeq: ${control.echoPayload}"
                     } else {
                         status = "${source.name} control seq=$responseSeq: ${control?.message ?: "malformed"}"
                     }
@@ -176,7 +176,7 @@ fun HomeScreen(
                         result.fold(
                             onSuccess = {
                                 response = sentText
-                                status = "Echo OK (${sentText.length} chars): $sentText via ${txConnection.name}"
+                                status = "Protobuf echo sent (${sentText.length} chars): $sentText via ${txConnection.name}"
                                 appendLog(status)
                             },
                             onFailure = {
