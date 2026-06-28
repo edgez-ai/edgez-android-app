@@ -33,34 +33,39 @@ fun EdgeZApp() {
     var rxConnection by rememberSaveable { mutableStateOf(ActiveConnection.NONE) }
     var usbConnected by rememberSaveable { mutableStateOf(false) }
     var bleConnected by rememberSaveable { mutableStateOf(false) }
+    var firstConnectedTransport by rememberSaveable { mutableStateOf(ActiveConnection.NONE) }
+    var secondConnectedTransport by rememberSaveable { mutableStateOf(ActiveConnection.NONE) }
 
-    fun applyConnectionRoles(nextUsbConnected: Boolean, nextBleConnected: Boolean) {
-        when {
-            nextUsbConnected && nextBleConnected -> {
-                txConnection = ActiveConnection.USB
-                rxConnection = ActiveConnection.BLE
-            }
-            nextUsbConnected -> {
-                txConnection = ActiveConnection.USB
-                rxConnection = ActiveConnection.USB
-            }
-            nextBleConnected -> {
-                txConnection = ActiveConnection.BLE
-                rxConnection = ActiveConnection.BLE
-            }
-            else -> {
-                txConnection = ActiveConnection.NONE
-                rxConnection = ActiveConnection.NONE
-            }
+    fun isTransportConnected(connection: ActiveConnection, nextUsbConnected: Boolean, nextBleConnected: Boolean): Boolean {
+        return when (connection) {
+            ActiveConnection.USB -> nextUsbConnected
+            ActiveConnection.BLE -> nextBleConnected
+            ActiveConnection.NONE -> false
         }
     }
 
     fun setTransportConnected(connection: ActiveConnection, connected: Boolean) {
         val nextUsbConnected = if (connection == ActiveConnection.USB) connected else usbConnected
         val nextBleConnected = if (connection == ActiveConnection.BLE) connected else bleConnected
+        val orderedConnections = listOf(firstConnectedTransport, secondConnectedTransport)
+            .filter { it != ActiveConnection.NONE && isTransportConnected(it, nextUsbConnected, nextBleConnected) }
+            .toMutableList()
+
+        if (connected && connection != ActiveConnection.NONE && !orderedConnections.contains(connection)) {
+            orderedConnections += connection
+        }
+
         usbConnected = nextUsbConnected
         bleConnected = nextBleConnected
-        applyConnectionRoles(nextUsbConnected, nextBleConnected)
+        firstConnectedTransport = orderedConnections.getOrElse(0) { ActiveConnection.NONE }
+        secondConnectedTransport = orderedConnections.getOrElse(1) { ActiveConnection.NONE }
+
+        txConnection = firstConnectedTransport
+        rxConnection = if (secondConnectedTransport != ActiveConnection.NONE) {
+            secondConnectedTransport
+        } else {
+            firstConnectedTransport
+        }
     }
 
     DisposableEffect(Unit) {
