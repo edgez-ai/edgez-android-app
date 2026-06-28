@@ -474,6 +474,11 @@ class EdgezUsbClient(private val context: Context) {
     }
 
     private fun findSerialCandidates(device: UsbDevice): List<UsbCandidate> {
+        if (!hasCdcAcmInterface(device)) {
+            emitDebug("SCAN skip non-CDC control device VID=%04x PID=%04x".format(device.vendorId, device.productId))
+            return emptyList()
+        }
+
         val drivers = findSerialDrivers(device)
         return drivers.flatMap { driver ->
             driver.ports.mapIndexed { index, port ->
@@ -489,6 +494,18 @@ class EdgezUsbClient(private val context: Context) {
             drivers += CdcAcmSerialDriver(device)
         }
         return drivers
+    }
+
+    private fun hasCdcAcmInterface(device: UsbDevice): Boolean {
+        for (i in 0 until device.interfaceCount) {
+            val intf = device.getInterface(i)
+            if (intf.interfaceClass == UsbConstants.USB_CLASS_COMM &&
+                intf.interfaceSubclass == 2 &&
+                intf.interfaceProtocol == 1) {
+                return true
+            }
+        }
+        return false
     }
 
     private fun logInterfaces(device: UsbDevice) {
