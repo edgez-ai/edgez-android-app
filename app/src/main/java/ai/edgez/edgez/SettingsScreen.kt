@@ -78,14 +78,11 @@ fun SettingsScreen(
     var passphrase by rememberSaveable { mutableStateOf(connectionPreferences.getMeshPassphrase()) }
     var showDebugPopup by rememberSaveable { mutableStateOf(false) }
     var status by remember { mutableStateOf("Connect the ESP32-S3 USB port, then scan.") }
-    var log by remember { mutableStateOf(listOf<String>()) }
     val activity = context as? ComponentActivity
     val currentActiveConnection by rememberUpdatedState(activeConnection)
     val currentOnTransportConnectionChange by rememberUpdatedState(onTransportConnectionChange)
 
-    fun appendLog(line: String) {
-        log = (listOf(line) + log).take(200)
-    }
+    fun appendLog(@Suppress("UNUSED_PARAMETER") line: String) = Unit
 
     if (showDebugPopup) {
         DebugScreen(
@@ -145,27 +142,6 @@ fun SettingsScreen(
                     },
                     onFailure = {
                         status = it.message ?: "$label failed"
-                        appendLog(status)
-                    },
-                )
-            }
-        }
-    }
-
-    fun sendMeshCredentials() {
-        val country = meshCountry.take(2).uppercase()
-        status = "Sending mesh credentials..."
-        appendLog(status)
-        executor.execute {
-            val result = client.sendHaLowInit(country, meshId, passphrase)
-            activity?.runOnUiThread {
-                result.fold(
-                    onSuccess = {
-                        status = "mesh credentials sent via USB"
-                        appendLog(status)
-                    },
-                    onFailure = {
-                        status = it.message ?: "mesh credentials failed"
                         appendLog(status)
                     },
                 )
@@ -433,17 +409,8 @@ fun SettingsScreen(
                     Button(onClick = { saveMeshPreferences() }) {
                         Text("Save settings")
                     }
-                    Spacer(Modifier.height(8.dp))
-                    Button(
-                        enabled = meshId.isNotBlank(),
-                        onClick = {
-                            sendMeshCredentials()
-                        },
-                    ) { Text("Send credentials") }
                 }
             }
-
-            item { LogCard(log) }
         }
     }
 }

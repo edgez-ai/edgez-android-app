@@ -223,7 +223,7 @@ object EdgezUsbControlProto {
         return if (variant == MOBILE_RADIO_VARIANT_HALOW_STATUS) halowStatus else null
     }
 
-    private fun decodeHaLowInterfaceStatus(payload: ByteArray): HaLowInterfaceStatus? {
+    fun decodeHaLowInterfaceStatus(payload: ByteArray): HaLowInterfaceStatus? {
         var offset = 0
         var supported = false
         var stackInitialized = false

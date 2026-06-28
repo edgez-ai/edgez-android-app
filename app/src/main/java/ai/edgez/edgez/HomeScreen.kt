@@ -12,15 +12,18 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import ai.edgez.edgez.ui.theme.EdgeZTheme
+import ai.edgez.edgez.usb.HaLowInterfaceStatus
 
 private data class NodeListItem(
     val name: String,
@@ -39,6 +42,7 @@ private val previewNodes = listOf(
 @Composable
 fun HomeScreen(
     activeConnection: ActiveConnection,
+    haLowStatus: HaLowInterfaceStatus?,
 ) {
     Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
         LazyColumn(
@@ -49,7 +53,14 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                Text("Home", style = MaterialTheme.typography.headlineMedium)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Home", style = MaterialTheme.typography.headlineMedium)
+                    HaLowMeshStatusIcon(haLowStatus)
+                }
                 Spacer(Modifier.height(6.dp))
                 Text("Interface: ${activeConnection.name}", style = MaterialTheme.typography.bodyMedium)
             }
@@ -63,6 +74,30 @@ fun HomeScreen(
             }
         }
     }
+}
+
+@Composable
+private fun HaLowMeshStatusIcon(status: HaLowInterfaceStatus?) {
+    val color = when {
+        status == null -> MaterialTheme.colorScheme.outline
+        !status.supported -> MaterialTheme.colorScheme.error
+        status.isUsable -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.tertiary
+    }
+    val description = when {
+        status == null -> "HaLow mesh status unknown"
+        !status.supported -> "HaLow mesh unsupported"
+        status.isUsable -> "HaLow mesh ready"
+        status.linkUp -> "HaLow mesh link up"
+        status.stackInitialized -> "HaLow mesh initializing"
+        else -> "HaLow mesh not ready"
+    }
+
+    Icon(
+        painter = painterResource(R.drawable.ic_halow_mesh),
+        contentDescription = description,
+        tint = color,
+    )
 }
 
 @Composable
@@ -97,6 +132,6 @@ private fun NodeCard(node: NodeListItem) {
 @Composable
 private fun HomePreview() {
     EdgeZTheme {
-        HomeScreen(ActiveConnection.NONE)
+        HomeScreen(ActiveConnection.NONE, null)
     }
 }
