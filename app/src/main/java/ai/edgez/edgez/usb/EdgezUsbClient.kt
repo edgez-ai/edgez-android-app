@@ -11,7 +11,12 @@ import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
 import android.os.Build
 import android.util.Log
+import com.hoho.android.usbserial.driver.CdcAcmSerialDriver
+import com.hoho.android.usbserial.driver.UsbSerialDriver
+import com.hoho.android.usbserial.driver.UsbSerialPort
+import com.hoho.android.usbserial.driver.UsbSerialProber
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
@@ -38,29 +43,19 @@ private const val ESPRESSIF_VID = 0x303A
 private const val EDGEZ_TYPE_CONTROL_REQ = 3.toByte()
 private const val EDGEZ_MAX_FRAME = EDGEZ_HEADER_LEN + EDGEZ_MAX_PAYLOAD
 private const val USB_CONTROL_STATUS_OK = 1
-private const val USB_CLASS_COMM = 0x02
-private const val USB_RECIP_INTERFACE = 0x01
-private const val CDC_REQ_SET_LINE_CODING = 0x20
-private const val CDC_REQ_SET_CONTROL_LINE_STATE = 0x22
-private const val CDC_CONTROL_DTR_RTS = 0x03
 private const val TAG = "EdgezUsbClient"
 
 data class UsbCandidate(
-    val device: UsbDevice,
-    val controlInterface: UsbInterface?,
-    val intf: UsbInterface,
-    val inEndpoint: UsbEndpoint,
-    val outEndpoint: UsbEndpoint,
+    val driver: UsbSerialDriver,
+    val port: UsbSerialPort,
+    val portIndex: Int,
 ) {
+    val device: UsbDevice get() = driver.device
+
     val label: String
-        get() = "USB serial VID=%04x PID=%04x ${device.productName ?: "USB device"} ctrl=${controlInterface?.id ?: "-"} data=${intf.id} ${intf.describeClass()} ${outEndpoint.describe()} ${inEndpoint.describe()}"
+        get() = "USB serial VID=%04x PID=%04x ${device.productName ?: "USB device"} ${driver.javaClass.simpleName} port=$portIndex"
             .format(device.vendorId, device.productId)
 }
-
-private data class BulkEndpoints(
-    val outEndpoint: UsbEndpoint,
-    val inEndpoint: UsbEndpoint,
-)
 
 data class UsbControlResponse(
     val action: Int = 0,
@@ -206,10 +201,7 @@ object EdgezUsbControlProto {
 class EdgezUsbClient(private val context: Context) {
     private val usbManager = context.getSystemService(UsbManager::class.java)
     private var connection: UsbDeviceConnection? = null
-    private var claimedControlInterface: UsbInterface? = null
-    private var claimedInterface: UsbInterface? = null
-    private var inEndpoint: UsbEndpoint? = null
-    private var outEndpoint: UsbEndpoint? = null
+    private var serialPort: UsbSerialPort? = null
     private val frameListeners = CopyOnWriteArraySet<(ByteArray) -> Unit>()
     private val debugListeners = CopyOnWriteArraySet<(String) -> Unit>()
     private val rxBuffer = ByteArray(EDGEZ_MAX_FRAME * 4)
@@ -225,7 +217,10 @@ class EdgezUsbClient(private val context: Context) {
         return devices.flatMap { device ->
             emitDebug("SCAN device VID=%04x PID=%04x name=${device.productName ?: "USB device"} ifaces=${device.interfaceCount}".format(device.vendorId, device.productId))
             logInterfaces(device)
-            findCdcInterfaces(device).also { candidates ->
+            findSerialCandidates(device).also { candidates ->
+                if (candidates.isEmpty()) {
+                    emitDebug("SCAN unsupported serial device VID=%04x PID=%04x".format(device.vendorId, device.productId))
+                }
                 candidates.forEach { emitDebug("SCAN candidate ${it.label}") }
             }
         }.sortedWith(compareBy({ if (it.device.vendorId == ESPRESSIF_VID) 0 else 1 }, { it.label }))
@@ -246,47 +241,42 @@ class EdgezUsbClient(private val context: Context) {
         }
 
         val opened = usbManager.openDevice(candidate.device) ?: return "Open failed"
-        val controlIntf = candidate.controlInterface?.takeIf { it.id != candidate.intf.id }
-        if (controlIntf != null && !opened.claimInterface(controlIntf, true)) {
-            opened.close()
-            return "Claim CDC control interface failed"
-        }
-        if (!opened.claimInterface(candidate.intf, true)) {
-            if (controlIntf != null) {
-                opened.releaseInterface(controlIntf)
+        try {
+            candidate.port.open(opened)
+            candidate.port.setParameters(
+                115200,
+                UsbSerialPort.DATABITS_8,
+                UsbSerialPort.STOPBITS_1,
+                UsbSerialPort.PARITY_NONE,
+            )
+            candidate.port.setDTR(true)
+            candidate.port.setRTS(true)
+            candidate.port.purgeHwBuffers(true, true)
+        } catch (e: IOException) {
+            try {
+                candidate.port.close()
+            } catch (_: IOException) {
             }
             opened.close()
-            return "Claim interface failed"
+            return "Serial open failed: ${e.message}"
         }
 
         connection = opened
-        claimedControlInterface = controlIntf
-        claimedInterface = candidate.intf
-        inEndpoint = candidate.inEndpoint
-        outEndpoint = candidate.outEndpoint
+        serialPort = candidate.port
         emitDebug("CONNECT ${candidate.label}")
-        configureCdcSerial(opened, candidate.controlInterface ?: candidate.intf)
-        startRxTask(opened, candidate.inEndpoint)
+        startRxTask(candidate.port)
         return "Connected to ${candidate.label}"
     }
 
     fun close() {
         stopRxTask()
-        val conn = connection
-        val intf = claimedInterface
-        val controlIntf = claimedControlInterface
-        if (conn != null && intf != null) {
-            conn.releaseInterface(intf)
-        }
-        if (conn != null && controlIntf != null) {
-            conn.releaseInterface(controlIntf)
+        try {
+            serialPort?.close()
+        } catch (_: IOException) {
         }
         connection?.close()
         connection = null
-        claimedControlInterface = null
-        claimedInterface = null
-        inEndpoint = null
-        outEndpoint = null
+        serialPort = null
         emitDebug("CLOSE")
     }
 
@@ -337,16 +327,21 @@ class EdgezUsbClient(private val context: Context) {
         )
     }
 
-    private fun startRxTask(conn: UsbDeviceConnection, inEndpoint: UsbEndpoint) {
+    private fun startRxTask(port: UsbSerialPort) {
         stopRxTask()
         rxLen = 0
         rxTaskRunning = true
-        emitDebug("RX task start ${inEndpoint.describe()}")
+        emitDebug("RX task start ${port.getReadEndpoint().describe()}")
         rxTask = Thread {
             val scratch = ByteArray(EDGEZ_MAX_FRAME)
             var idleReads = 0
             while (rxTaskRunning) {
-                val read = conn.bulkTransfer(inEndpoint, scratch, scratch.size, 100)
+                val read = try {
+                    port.read(scratch, 100)
+                } catch (e: IOException) {
+                    emitDebug("RX read failed: ${e.message}")
+                    break
+                }
                 if (!rxTaskRunning) {
                     break
                 }
@@ -430,8 +425,7 @@ class EdgezUsbClient(private val context: Context) {
     }
 
     private fun sendFrame(type: Byte, payload: ByteArray, timeoutMs: Int): Result<String> {
-        val conn = connection ?: return Result.failure(IllegalStateException("USB is not connected"))
-        val outEp = outEndpoint ?: return Result.failure(IllegalStateException("Missing OUT endpoint"))
+        val port = serialPort ?: return Result.failure(IllegalStateException("USB is not connected"))
         if (payload.size > EDGEZ_MAX_PAYLOAD) {
             return Result.failure(IllegalArgumentException("Payload too large: ${payload.size}/$EDGEZ_MAX_PAYLOAD"))
         }
@@ -447,12 +441,14 @@ class EdgezUsbClient(private val context: Context) {
         tx.put(payload)
 
         val txBytes = tx.array()
-        emitDebug("TX frame type=${type.toInt() and 0xff} seq=$currentSeq len=${payload.size} ep=${outEp.describe()}")
-        val written = conn.bulkTransfer(outEp, txBytes, txBytes.size, timeoutMs)
-        emitDebug("TX result seq=$currentSeq written=$written/${txBytes.size}")
-        if (written != txBytes.size) {
-            return Result.failure(IllegalStateException("USB write failed on ${outEp.describe()}: $written/${txBytes.size}"))
+        emitDebug("TX frame type=${type.toInt() and 0xff} seq=$currentSeq len=${payload.size} ep=${port.getWriteEndpoint().describe()}")
+        try {
+            port.write(txBytes, timeoutMs)
+        } catch (e: IOException) {
+            emitDebug("TX failed seq=$currentSeq: ${e.message}")
+            return Result.failure(IllegalStateException("USB write failed on ${port.getWriteEndpoint().describe()}: ${e.message}", e))
         }
+        emitDebug("TX result seq=$currentSeq written=${txBytes.size}/${txBytes.size}")
         return Result.success("Sent seq=$currentSeq")
     }
 
@@ -470,92 +466,22 @@ class EdgezUsbClient(private val context: Context) {
         }
     }
 
-    private fun configureCdcSerial(conn: UsbDeviceConnection, controlIntf: UsbInterface) {
-        val requestType = UsbConstants.USB_DIR_OUT or UsbConstants.USB_TYPE_CLASS or USB_RECIP_INTERFACE
-        val lineCoding = byteArrayOf(
-            0x00, 0xC2.toByte(), 0x01, 0x00,
-            0x00,
-            0x00,
-            0x08,
-        )
-        val lineCodingResult = conn.controlTransfer(
-            requestType,
-            CDC_REQ_SET_LINE_CODING,
-            0,
-            controlIntf.id,
-            lineCoding,
-            lineCoding.size,
-            1000,
-        )
-        emitDebug("CDC set line coding if=${controlIntf.id} result=$lineCodingResult/${lineCoding.size}")
-
-        val dtrResult = conn.controlTransfer(
-            requestType,
-            CDC_REQ_SET_CONTROL_LINE_STATE,
-            CDC_CONTROL_DTR_RTS,
-            controlIntf.id,
-            ByteArray(0),
-            0,
-            1000,
-        )
-        emitDebug("CDC set DTR/RTS if=${controlIntf.id} result=$dtrResult")
+    private fun findSerialCandidates(device: UsbDevice): List<UsbCandidate> {
+        val drivers = findSerialDrivers(device)
+        return drivers.flatMap { driver ->
+            driver.ports.mapIndexed { index, port ->
+                UsbCandidate(driver = driver, port = port, portIndex = index)
+            }
+        }
     }
 
-    private fun findCdcInterfaces(device: UsbDevice): List<UsbCandidate> {
-        val candidates = mutableListOf<UsbCandidate>()
-        val cdcControls = mutableListOf<UsbInterface>()
-
-        for (i in 0 until device.interfaceCount) {
-            val intf = device.getInterface(i)
-            if (intf.interfaceClass == USB_CLASS_COMM) {
-                cdcControls += intf
-            }
-
-            val bulk = intf.bulkEndpoints() ?: continue
-            if (intf.interfaceClass == UsbConstants.USB_CLASS_CDC_DATA) {
-                candidates += UsbCandidate(
-                    device = device,
-                    controlInterface = cdcControls.lastOrNull(),
-                    intf = intf,
-                    inEndpoint = bulk.inEndpoint,
-                    outEndpoint = bulk.outEndpoint,
-                )
-            }
+    private fun findSerialDrivers(device: UsbDevice): List<UsbSerialDriver> {
+        val drivers = mutableListOf<UsbSerialDriver>()
+        UsbSerialProber.getDefaultProber().probeDevice(device)?.let { drivers += it }
+        if (drivers.isEmpty() && CdcAcmSerialDriver.probe(device)) {
+            drivers += CdcAcmSerialDriver(device)
         }
-
-        for (controlIntf in cdcControls) {
-            val startIndex = (0 until device.interfaceCount).firstOrNull { device.getInterface(it).id == controlIntf.id } ?: continue
-            for (i in startIndex + 1 until device.interfaceCount) {
-                val intf = device.getInterface(i)
-                val bulk = intf.bulkEndpoints() ?: continue
-                if (candidates.none { it.intf.id == intf.id }) {
-                    candidates += UsbCandidate(
-                        device = device,
-                        controlInterface = controlIntf,
-                        intf = intf,
-                        inEndpoint = bulk.inEndpoint,
-                        outEndpoint = bulk.outEndpoint,
-                    )
-                }
-                break
-            }
-        }
-
-        if (candidates.isEmpty()) {
-            for (i in 0 until device.interfaceCount) {
-                val intf = device.getInterface(i)
-                val bulk = intf.bulkEndpoints() ?: continue
-                emitDebug("SCAN fallback bulk serial if=${intf.id} ${intf.describeClass()}")
-                candidates += UsbCandidate(
-                    device = device,
-                    controlInterface = cdcControls.lastOrNull(),
-                    intf = intf,
-                    inEndpoint = bulk.inEndpoint,
-                    outEndpoint = bulk.outEndpoint,
-                )
-            }
-        }
-        return candidates
+        return drivers
     }
 
     private fun logInterfaces(device: UsbDevice) {
@@ -565,27 +491,6 @@ class EdgezUsbClient(private val context: Context) {
                 intf.getEndpoint(e).describe()
             }
             emitDebug("SCAN if=${intf.id} ${intf.describeClass()} eps=${intf.endpointCount} $endpoints")
-        }
-    }
-
-    private fun UsbInterface.bulkEndpoints(): BulkEndpoints? {
-        var inEp: UsbEndpoint? = null
-        var outEp: UsbEndpoint? = null
-        for (e in 0 until endpointCount) {
-            val ep = getEndpoint(e)
-            if (ep.type != UsbConstants.USB_ENDPOINT_XFER_BULK) {
-                continue
-            }
-            if (ep.direction == UsbConstants.USB_DIR_IN) {
-                inEp = ep
-            } else if (ep.direction == UsbConstants.USB_DIR_OUT) {
-                outEp = ep
-            }
-        }
-        return if (inEp != null && outEp != null) {
-            BulkEndpoints(outEndpoint = outEp, inEndpoint = inEp)
-        } else {
-            null
         }
     }
 
