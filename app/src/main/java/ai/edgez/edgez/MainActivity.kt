@@ -332,7 +332,7 @@ private class EdgezUsbClient(private val context: Context) {
         if (written != txBytes.size) {
             return Result.failure(IllegalStateException("USB write failed on ${outEp.describe()}: $written/${txBytes.size}"))
         }
-        return Result.success("Sent")
+        return Result.success(String(payload, StandardCharsets.UTF_8))
     }
 
     private fun findVendorInterface(device: UsbDevice): Triple<UsbInterface, UsbEndpoint, UsbEndpoint>? {
@@ -479,9 +479,9 @@ private fun UsbEchoApp() {
                     val result = client.echo(message)
                     (context as? ComponentActivity)?.runOnUiThread {
                         result.fold(
-                            onSuccess = {
-                                response = it
-                                status = "Echo OK (${it.length} chars)"
+                            onSuccess = { echoedText ->
+                                response = echoedText
+                                status = "Echo OK (${echoedText.length} chars): $echoedText"
                                 appendLog(status)
                             },
                             onFailure = {
