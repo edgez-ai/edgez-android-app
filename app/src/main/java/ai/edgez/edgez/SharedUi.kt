@@ -76,7 +76,7 @@ fun LogCard(log: List<String>) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text("Log", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(6.dp))
-            LazyColumn(modifier = Modifier.height(140.dp)) {
+            LazyColumn(modifier = Modifier.height(800.dp)) {
                 items(log) { line -> Text(line, fontFamily = FontFamily.Monospace) }
             }
         }

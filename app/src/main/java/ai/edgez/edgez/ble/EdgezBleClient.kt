@@ -24,6 +24,9 @@ import ai.edgez.edgez.usb.EDGEZ_HEADER_LEN
 import ai.edgez.edgez.usb.EDGEZ_MAGIC_0
 import ai.edgez.edgez.usb.EDGEZ_MAGIC_1
 import ai.edgez.edgez.usb.EDGEZ_MAX_PAYLOAD
+import ai.edgez.edgez.usb.EDGEZ_TYPE_CONTROL_RESP
+import ai.edgez.edgez.usb.EDGEZ_TYPE_ECHO_RESP
+import ai.edgez.edgez.usb.EDGEZ_TYPE_ERROR
 import ai.edgez.edgez.usb.EDGEZ_VERSION
 import ai.edgez.edgez.usb.EdgezUsbControlProto
 import ai.edgez.edgez.usb.USB_CONTROL_ACTION_ECHO
@@ -303,15 +306,30 @@ class EdgezBleClient(private val context: Context) {
                 rxLen -= magicOffset
             }
 
-            if (rxLen < EDGEZ_HEADER_LEN || rxBuffer[2] != EDGEZ_VERSION) {
+            if (rxLen < EDGEZ_HEADER_LEN) {
                 break
+            }
+            if (rxBuffer[2] != EDGEZ_VERSION) {
+                emitDebug("RX bad version=${rxBuffer[2].toInt() and 0xff}; resync")
+                System.arraycopy(rxBuffer, 1, rxBuffer, 0, rxLen - 1)
+                rxLen -= 1
+                continue
+            }
+
+            val type = rxBuffer[3].toInt() and 0xff
+            if (!isKnownRxFrameType(type)) {
+                emitDebug("RX bad type=$type; resync")
+                System.arraycopy(rxBuffer, 1, rxBuffer, 0, rxLen - 1)
+                rxLen -= 1
+                continue
             }
 
             val payloadLen = readLe16(rxBuffer, 6)
             if (payloadLen > EDGEZ_MAX_PAYLOAD) {
-                emitDebug("RX bad len=$payloadLen; reset")
-                rxLen = 0
-                break
+                emitDebug("RX bad len=$payloadLen; resync")
+                System.arraycopy(rxBuffer, 1, rxBuffer, 0, rxLen - 1)
+                rxLen -= 1
+                continue
             }
             val frameLen = EDGEZ_HEADER_LEN + payloadLen
             if (rxLen < frameLen) {
@@ -347,5 +365,9 @@ class EdgezBleClient(private val context: Context) {
 
     private fun readLe16(data: ByteArray, start: Int): Int {
         return (data[start].toInt() and 0xff) or ((data[start + 1].toInt() and 0xff) shl 8)
+    }
+
+    private fun isKnownRxFrameType(type: Int): Boolean {
+        return type == EDGEZ_TYPE_ECHO_RESP || type == EDGEZ_TYPE_CONTROL_RESP || type == EDGEZ_TYPE_ERROR
     }
 }
