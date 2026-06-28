@@ -38,19 +38,29 @@ private const val ESPRESSIF_VID = 0x303A
 private const val EDGEZ_TYPE_CONTROL_REQ = 3.toByte()
 private const val EDGEZ_MAX_FRAME = EDGEZ_HEADER_LEN + EDGEZ_MAX_PAYLOAD
 private const val USB_CONTROL_STATUS_OK = 1
+private const val USB_CLASS_COMM = 0x02
+private const val USB_RECIP_INTERFACE = 0x01
+private const val CDC_REQ_SET_LINE_CODING = 0x20
+private const val CDC_REQ_SET_CONTROL_LINE_STATE = 0x22
+private const val CDC_CONTROL_DTR_RTS = 0x03
 private const val TAG = "EdgezUsbClient"
 
 data class UsbCandidate(
     val device: UsbDevice,
+    val controlInterface: UsbInterface?,
     val intf: UsbInterface,
     val inEndpoint: UsbEndpoint,
     val outEndpoint: UsbEndpoint,
-    val transport: String,
 ) {
     val label: String
-        get() = "$transport VID=%04x PID=%04x ${device.productName ?: "USB device"} if=${intf.id} ${outEndpoint.describe()} ${inEndpoint.describe()}"
+        get() = "CDC VID=%04x PID=%04x ${device.productName ?: "USB device"} ctrl=${controlInterface?.id ?: "-"} data=${intf.id} ${intf.describeClass()} ${outEndpoint.describe()} ${inEndpoint.describe()}"
             .format(device.vendorId, device.productId)
 }
+
+private data class BulkEndpoints(
+    val outEndpoint: UsbEndpoint,
+    val inEndpoint: UsbEndpoint,
+)
 
 data class UsbControlResponse(
     val action: Int = 0,
@@ -67,6 +77,10 @@ data class UsbControlResponse(
 fun UsbEndpoint.describe(): String {
     val directionName = if (direction == UsbConstants.USB_DIR_IN) "IN" else "OUT"
     return "%s ep=0x%02x max=%d".format(directionName, address, maxPacketSize)
+}
+
+private fun UsbInterface.describeClass(): String {
+    return "cls=$interfaceClass sub=$interfaceSubclass proto=$interfaceProtocol"
 }
 
 object EdgezUsbControlProto {
@@ -192,6 +206,7 @@ object EdgezUsbControlProto {
 class EdgezUsbClient(private val context: Context) {
     private val usbManager = context.getSystemService(UsbManager::class.java)
     private var connection: UsbDeviceConnection? = null
+    private var claimedControlInterface: UsbInterface? = null
     private var claimedInterface: UsbInterface? = null
     private var inEndpoint: UsbEndpoint? = null
     private var outEndpoint: UsbEndpoint? = null
@@ -205,9 +220,15 @@ class EdgezUsbClient(private val context: Context) {
     private var seq = 0
 
     fun scan(): List<UsbCandidate> {
-        return usbManager.deviceList.values.flatMap { device ->
-            findUsbInterfaces(device)
-        }.sortedWith(compareBy({ if (it.device.vendorId == ESPRESSIF_VID) 0 else 1 }, { it.transport }, { it.label }))
+        val devices = usbManager.deviceList.values.toList()
+        emitDebug("SCAN devices=${devices.size}")
+        return devices.flatMap { device ->
+            emitDebug("SCAN device VID=%04x PID=%04x name=${device.productName ?: "USB device"} ifaces=${device.interfaceCount}".format(device.vendorId, device.productId))
+            logInterfaces(device)
+            findCdcInterfaces(device).also { candidates ->
+                candidates.forEach { emitDebug("SCAN candidate ${it.label}") }
+            }
+        }.sortedWith(compareBy({ if (it.device.vendorId == ESPRESSIF_VID) 0 else 1 }, { it.label }))
     }
 
     fun hasPermission(device: UsbDevice): Boolean = usbManager.hasPermission(device)
@@ -225,16 +246,26 @@ class EdgezUsbClient(private val context: Context) {
         }
 
         val opened = usbManager.openDevice(candidate.device) ?: return "Open failed"
+        val controlIntf = candidate.controlInterface?.takeIf { it.id != candidate.intf.id }
+        if (controlIntf != null && !opened.claimInterface(controlIntf, true)) {
+            opened.close()
+            return "Claim CDC control interface failed"
+        }
         if (!opened.claimInterface(candidate.intf, true)) {
+            if (controlIntf != null) {
+                opened.releaseInterface(controlIntf)
+            }
             opened.close()
             return "Claim interface failed"
         }
 
         connection = opened
+        claimedControlInterface = controlIntf
         claimedInterface = candidate.intf
         inEndpoint = candidate.inEndpoint
         outEndpoint = candidate.outEndpoint
         emitDebug("CONNECT ${candidate.label}")
+        configureCdcSerial(opened, candidate.controlInterface ?: candidate.intf)
         startRxTask(opened, candidate.inEndpoint)
         return "Connected to ${candidate.label}"
     }
@@ -243,11 +274,16 @@ class EdgezUsbClient(private val context: Context) {
         stopRxTask()
         val conn = connection
         val intf = claimedInterface
+        val controlIntf = claimedControlInterface
         if (conn != null && intf != null) {
             conn.releaseInterface(intf)
         }
+        if (conn != null && controlIntf != null) {
+            conn.releaseInterface(controlIntf)
+        }
         connection?.close()
         connection = null
+        claimedControlInterface = null
         claimedInterface = null
         inEndpoint = null
         outEndpoint = null
@@ -434,44 +470,122 @@ class EdgezUsbClient(private val context: Context) {
         }
     }
 
-    private fun findUsbInterfaces(device: UsbDevice): List<UsbCandidate> {
+    private fun configureCdcSerial(conn: UsbDeviceConnection, controlIntf: UsbInterface) {
+        val requestType = UsbConstants.USB_DIR_OUT or UsbConstants.USB_TYPE_CLASS or USB_RECIP_INTERFACE
+        val lineCoding = byteArrayOf(
+            0x00, 0xC2.toByte(), 0x01, 0x00,
+            0x00,
+            0x00,
+            0x08,
+        )
+        val lineCodingResult = conn.controlTransfer(
+            requestType,
+            CDC_REQ_SET_LINE_CODING,
+            0,
+            controlIntf.id,
+            lineCoding,
+            lineCoding.size,
+            1000,
+        )
+        emitDebug("CDC set line coding if=${controlIntf.id} result=$lineCodingResult/${lineCoding.size}")
+
+        val dtrResult = conn.controlTransfer(
+            requestType,
+            CDC_REQ_SET_CONTROL_LINE_STATE,
+            CDC_CONTROL_DTR_RTS,
+            controlIntf.id,
+            ByteArray(0),
+            0,
+            1000,
+        )
+        emitDebug("CDC set DTR/RTS if=${controlIntf.id} result=$dtrResult")
+    }
+
+    private fun findCdcInterfaces(device: UsbDevice): List<UsbCandidate> {
         val candidates = mutableListOf<UsbCandidate>()
+        val cdcControls = mutableListOf<UsbInterface>()
+
         for (i in 0 until device.interfaceCount) {
             val intf = device.getInterface(i)
-            val transport = when {
-                intf.interfaceClass == UsbConstants.USB_CLASS_VENDOR_SPEC -> "Vendor"
-                intf.interfaceClass == UsbConstants.USB_CLASS_CDC_DATA -> "CDC"
-                else -> null
-            } ?: continue
-
-            if (transport == "CDC" && intf.interfaceSubclass != 0) {
-                continue
+            if (intf.interfaceClass == USB_CLASS_COMM) {
+                cdcControls += intf
             }
 
-            var inEp: UsbEndpoint? = null
-            var outEp: UsbEndpoint? = null
-            for (e in 0 until intf.endpointCount) {
-                val ep = intf.getEndpoint(e)
-                if (ep.type != UsbConstants.USB_ENDPOINT_XFER_BULK) {
-                    continue
-                }
-                if (ep.direction == UsbConstants.USB_DIR_IN) {
-                    inEp = ep
-                } else if (ep.direction == UsbConstants.USB_DIR_OUT) {
-                    outEp = ep
-                }
-            }
-            if (inEp != null && outEp != null) {
+            val bulk = intf.bulkEndpoints() ?: continue
+            if (intf.interfaceClass == UsbConstants.USB_CLASS_CDC_DATA) {
                 candidates += UsbCandidate(
                     device = device,
+                    controlInterface = cdcControls.lastOrNull(),
                     intf = intf,
-                    inEndpoint = inEp,
-                    outEndpoint = outEp,
-                    transport = transport,
+                    inEndpoint = bulk.inEndpoint,
+                    outEndpoint = bulk.outEndpoint,
+                )
+            }
+        }
+
+        for (controlIntf in cdcControls) {
+            val startIndex = (0 until device.interfaceCount).firstOrNull { device.getInterface(it).id == controlIntf.id } ?: continue
+            for (i in startIndex + 1 until device.interfaceCount) {
+                val intf = device.getInterface(i)
+                val bulk = intf.bulkEndpoints() ?: continue
+                if (candidates.none { it.intf.id == intf.id }) {
+                    candidates += UsbCandidate(
+                        device = device,
+                        controlInterface = controlIntf,
+                        intf = intf,
+                        inEndpoint = bulk.inEndpoint,
+                        outEndpoint = bulk.outEndpoint,
+                    )
+                }
+                break
+            }
+        }
+
+        if (candidates.isEmpty() && device.vendorId == ESPRESSIF_VID) {
+            for (i in 0 until device.interfaceCount) {
+                val intf = device.getInterface(i)
+                val bulk = intf.bulkEndpoints() ?: continue
+                candidates += UsbCandidate(
+                    device = device,
+                    controlInterface = cdcControls.lastOrNull(),
+                    intf = intf,
+                    inEndpoint = bulk.inEndpoint,
+                    outEndpoint = bulk.outEndpoint,
                 )
             }
         }
         return candidates
+    }
+
+    private fun logInterfaces(device: UsbDevice) {
+        for (i in 0 until device.interfaceCount) {
+            val intf = device.getInterface(i)
+            val endpoints = (0 until intf.endpointCount).joinToString(" ") { e ->
+                intf.getEndpoint(e).describe()
+            }
+            emitDebug("SCAN if=${intf.id} ${intf.describeClass()} eps=${intf.endpointCount} $endpoints")
+        }
+    }
+
+    private fun UsbInterface.bulkEndpoints(): BulkEndpoints? {
+        var inEp: UsbEndpoint? = null
+        var outEp: UsbEndpoint? = null
+        for (e in 0 until endpointCount) {
+            val ep = getEndpoint(e)
+            if (ep.type != UsbConstants.USB_ENDPOINT_XFER_BULK) {
+                continue
+            }
+            if (ep.direction == UsbConstants.USB_DIR_IN) {
+                inEp = ep
+            } else if (ep.direction == UsbConstants.USB_DIR_OUT) {
+                outEp = ep
+            }
+        }
+        return if (inEp != null && outEp != null) {
+            BulkEndpoints(outEndpoint = outEp, inEndpoint = inEp)
+        } else {
+            null
+        }
     }
 
     private fun findMagicOffset(data: ByteArray, length: Int): Int {
