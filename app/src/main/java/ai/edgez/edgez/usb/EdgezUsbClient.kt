@@ -53,7 +53,7 @@ data class UsbCandidate(
     val outEndpoint: UsbEndpoint,
 ) {
     val label: String
-        get() = "CDC VID=%04x PID=%04x ${device.productName ?: "USB device"} ctrl=${controlInterface?.id ?: "-"} data=${intf.id} ${intf.describeClass()} ${outEndpoint.describe()} ${inEndpoint.describe()}"
+        get() = "USB serial VID=%04x PID=%04x ${device.productName ?: "USB device"} ctrl=${controlInterface?.id ?: "-"} data=${intf.id} ${intf.describeClass()} ${outEndpoint.describe()} ${inEndpoint.describe()}"
             .format(device.vendorId, device.productId)
 }
 
@@ -541,10 +541,11 @@ class EdgezUsbClient(private val context: Context) {
             }
         }
 
-        if (candidates.isEmpty() && device.vendorId == ESPRESSIF_VID) {
+        if (candidates.isEmpty()) {
             for (i in 0 until device.interfaceCount) {
                 val intf = device.getInterface(i)
                 val bulk = intf.bulkEndpoints() ?: continue
+                emitDebug("SCAN fallback bulk serial if=${intf.id} ${intf.describeClass()}")
                 candidates += UsbCandidate(
                     device = device,
                     controlInterface = cdcControls.lastOrNull(),
