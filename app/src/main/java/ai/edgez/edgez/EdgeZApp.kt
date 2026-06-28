@@ -146,8 +146,6 @@ fun EdgeZApp() {
     ) {
         when (currentDestination) {
             AppDestination.HOME -> HomeScreen(
-                client = usbClient,
-                bleClient = bleClient,
                 txConnection = txConnection,
                 rxConnection = rxConnection,
             )

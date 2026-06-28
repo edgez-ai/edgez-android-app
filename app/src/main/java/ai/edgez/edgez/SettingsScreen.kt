@@ -77,6 +77,7 @@ fun SettingsScreen(
     var passphrase by rememberSaveable { mutableStateOf("") }
     var bleEnabled by rememberSaveable { mutableStateOf(false) }
     var pairingEnabled by rememberSaveable { mutableStateOf(false) }
+    var showDebugPopup by rememberSaveable { mutableStateOf(false) }
     var status by remember { mutableStateOf("Connect the ESP32-S3 USB port, then scan.") }
     var log by remember { mutableStateOf(listOf<String>()) }
     val activity = context as? ComponentActivity
@@ -85,6 +86,17 @@ fun SettingsScreen(
 
     fun appendLog(line: String) {
         log = (listOf(line) + log).take(200)
+    }
+
+    if (showDebugPopup) {
+        DebugScreen(
+            client = client,
+            bleClient = bleClient,
+            txConnection = txConnection,
+            rxConnection = rxConnection,
+            onClose = { showDebugPopup = false },
+        )
+        return
     }
 
     fun requestBlePermissions() {
@@ -254,6 +266,10 @@ fun SettingsScreen(
                 Text("TX: ${txConnection.name}  RX: ${rxConnection.name}", style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(6.dp))
                 Text(status, style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(10.dp))
+                Button(onClick = { showDebugPopup = true }) {
+                    Text("Debug")
+                }
             }
 
             item {
