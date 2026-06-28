@@ -200,10 +200,6 @@ fun SettingsScreen(
         val removeDebugListener = client.addDebugListener { line ->
             activity?.runOnUiThread {
                 appendLog("USB $line")
-                if (line == "CLOSE") {
-                    currentOnTransportConnectionChange(ActiveConnection.USB, false)
-                    status = "USB disconnected"
-                }
             }
         }
         val removeBleFrameListener = bleClient.addFrameListener { frame ->
