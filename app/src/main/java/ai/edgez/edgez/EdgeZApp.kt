@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.PreviewScreenSizes
 import androidx.compose.ui.unit.dp
+import ai.edgez.edgez.ble.EdgezBleClient
 import ai.edgez.edgez.usb.EdgezUsbClient
 
 @PreviewScreenSizes
@@ -26,11 +27,13 @@ import ai.edgez.edgez.usb.EdgezUsbClient
 fun EdgeZApp() {
     val context = LocalContext.current
     val usbClient = remember { EdgezUsbClient(context.applicationContext) }
+    val bleClient = remember { EdgezBleClient(context.applicationContext) }
     var currentDestination by rememberSaveable { mutableStateOf(AppDestination.HOME) }
 
     DisposableEffect(Unit) {
         onDispose {
             usbClient.close()
+            bleClient.close()
         }
     }
 
@@ -55,7 +58,7 @@ fun EdgeZApp() {
             AppDestination.HOME -> HomeScreen(usbClient)
             AppDestination.FAVORITES -> PlaceholderScreen("Favorites")
             AppDestination.PROFILE -> PlaceholderScreen("Profile")
-            AppDestination.SETTINGS -> SettingsScreen(usbClient)
+            AppDestination.SETTINGS -> SettingsScreen(usbClient, bleClient)
         }
     }
 }

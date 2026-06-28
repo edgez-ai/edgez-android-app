@@ -33,6 +33,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import ai.edgez.edgez.ble.BleCandidate
+import ai.edgez.edgez.ble.EdgezBleClient
 import ai.edgez.edgez.ui.theme.EdgeZTheme
 import ai.edgez.edgez.usb.ACTION_USB_PERMISSION
 import ai.edgez.edgez.usb.EDGEZ_HEADER_LEN
@@ -55,11 +57,14 @@ import java.nio.charset.StandardCharsets
 import java.util.concurrent.Executors
 
 @Composable
-fun SettingsScreen(client: EdgezUsbClient) {
+fun SettingsScreen(client: EdgezUsbClient, bleClient: EdgezBleClient) {
     val context = LocalContext.current
     val executor = remember { Executors.newSingleThreadExecutor() }
     var candidates by remember { mutableStateOf(client.scan()) }
     var selected by remember { mutableStateOf<UsbCandidate?>(candidates.firstOrNull()) }
+    var bleCandidates by remember { mutableStateOf(listOf<BleCandidate>()) }
+    var selectedBle by remember { mutableStateOf<BleCandidate?>(null) }
+    var bleReady by remember { mutableStateOf(false) }
     var meshId by rememberSaveable { mutableStateOf("") }
     var passphrase by rememberSaveable { mutableStateOf("") }
     var bleEnabled by rememberSaveable { mutableStateOf(false) }
@@ -70,6 +75,13 @@ fun SettingsScreen(client: EdgezUsbClient) {
 
     fun appendLog(line: String) {
         log = (listOf(line) + log).take(16)
+    }
+
+    fun requestBlePermissions() {
+        val required = bleClient.requiredPermissions()
+        activity?.requestPermissions(required, 2001)
+        status = "Requesting BLE permission"
+        appendLog(status)
     }
 
     fun sendControl(
@@ -84,18 +96,29 @@ fun SettingsScreen(client: EdgezUsbClient) {
         status = "Sending $label..."
         appendLog(status)
         executor.execute {
-            val result = client.sendControl(
-                action = action,
-                bleEnabled = nextBleEnabled,
-                pairingEnabled = nextPairingEnabled,
-                wifiSsid = nextMeshId,
-                wifiPassphrase = nextPassphrase,
-                connectAfterSet = connectAfterSet,
-            )
+            val result = if (bleReady) {
+                bleClient.sendControl(
+                    action = action,
+                    bleEnabled = nextBleEnabled,
+                    pairingEnabled = nextPairingEnabled,
+                    wifiSsid = nextMeshId,
+                    wifiPassphrase = nextPassphrase,
+                    connectAfterSet = connectAfterSet,
+                )
+            } else {
+                client.sendControl(
+                    action = action,
+                    bleEnabled = nextBleEnabled,
+                    pairingEnabled = nextPairingEnabled,
+                    wifiSsid = nextMeshId,
+                    wifiPassphrase = nextPassphrase,
+                    connectAfterSet = connectAfterSet,
+                )
+            }
             activity?.runOnUiThread {
                 result.fold(
                     onSuccess = {
-                        status = "$label command sent"
+                        status = "$label command sent via ${if (bleReady) "BLE" else "USB"}"
                         appendLog(status)
                     },
                     onFailure = {
@@ -147,6 +170,23 @@ fun SettingsScreen(client: EdgezUsbClient) {
 
     DisposableEffect(Unit) {
         val removeFrameListener = client.addFrameListener(::handleFrame)
+        val removeDebugListener = client.addDebugListener { line ->
+            activity?.runOnUiThread {
+                appendLog("USB $line")
+            }
+        }
+        val removeBleFrameListener = bleClient.addFrameListener(::handleFrame)
+        val removeBleDebugListener = bleClient.addDebugListener { line ->
+            activity?.runOnUiThread {
+                appendLog("BLE $line")
+                if (line == "SERVICE ready") {
+                    bleReady = true
+                    status = "BLE connected"
+                } else if (line.startsWith("CONN") && line.contains("state=0") || line == "CLOSE") {
+                    bleReady = false
+                }
+            }
+        }
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context, intent: Intent) {
                 if (intent.action != ACTION_USB_PERMISSION) return
@@ -162,6 +202,9 @@ fun SettingsScreen(client: EdgezUsbClient) {
         onDispose {
             context.unregisterReceiver(receiver)
             removeFrameListener()
+            removeDebugListener()
+            removeBleFrameListener()
+            removeBleDebugListener()
             executor.shutdownNow()
         }
     }
@@ -204,6 +247,75 @@ fun SettingsScreen(client: EdgezUsbClient) {
                     }
                     Spacer(Modifier.height(10.dp))
                     DeviceList(candidates, selected) { selected = it }
+                }
+            }
+
+            item {
+                SettingsCard(title = "BLE connection") {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = {
+                            if (!bleClient.hasPermissions()) {
+                                requestBlePermissions()
+                            } else {
+                                bleCandidates = emptyList()
+                                selectedBle = null
+                                bleReady = false
+                                val result = bleClient.startScan { candidate ->
+                                    activity?.runOnUiThread {
+                                        if (bleCandidates.none { it.device.address == candidate.device.address }) {
+                                            bleCandidates = (bleCandidates + candidate).sortedBy { it.label }
+                                        }
+                                        selectedBle = selectedBle ?: candidate
+                                    }
+                                }
+                                result.fold(
+                                    onSuccess = {
+                                        status = it
+                                        appendLog(status)
+                                    },
+                                    onFailure = {
+                                        status = it.message ?: "BLE scan failed"
+                                        appendLog(status)
+                                    },
+                                )
+                            }
+                        }) { Text("Scan BLE") }
+                        Button(onClick = {
+                            bleClient.stopScan()
+                            status = "BLE scan stopped"
+                            appendLog(status)
+                        }) { Text("Stop") }
+                        Button(enabled = selectedBle != null, onClick = {
+                            val candidate = selectedBle ?: return@Button
+                            bleClient.stopScan()
+                            val result = bleClient.connect(candidate)
+                            result.fold(
+                                onSuccess = {
+                                    status = it
+                                    appendLog(status)
+                                },
+                                onFailure = {
+                                    status = it.message ?: "BLE connect failed"
+                                    appendLog(status)
+                                },
+                            )
+                        }) { Text("Connect") }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Text(if (bleReady) "BLE ready" else "BLE not connected", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(8.dp))
+                    if (bleCandidates.isEmpty()) {
+                        Text("No EdgeZ BLE devices found.")
+                    } else {
+                        bleCandidates.forEach { candidate ->
+                            Button(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = { selectedBle = candidate },
+                            ) {
+                                Text(if (candidate == selectedBle) "Selected: ${candidate.label}" else candidate.label)
+                            }
+                        }
+                    }
                 }
             }
 
@@ -298,6 +410,7 @@ private fun SettingSwitchRow(
 @Composable
 private fun SettingsPreview() {
     EdgeZTheme {
-        SettingsScreen(EdgezUsbClient(LocalContext.current.applicationContext))
+        val context = LocalContext.current.applicationContext
+        SettingsScreen(EdgezUsbClient(context), EdgezBleClient(context))
     }
 }

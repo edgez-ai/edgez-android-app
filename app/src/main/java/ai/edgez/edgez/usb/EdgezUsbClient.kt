@@ -10,6 +10,7 @@ import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
 import android.os.Build
+import android.util.Log
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -37,6 +38,7 @@ private const val ESPRESSIF_VID = 0x303A
 private const val EDGEZ_TYPE_CONTROL_REQ = 3.toByte()
 private const val EDGEZ_MAX_FRAME = EDGEZ_HEADER_LEN + EDGEZ_MAX_PAYLOAD
 private const val USB_CONTROL_STATUS_OK = 1
+private const val TAG = "EdgezUsbClient"
 
 data class UsbCandidate(
     val device: UsbDevice,
@@ -193,6 +195,7 @@ class EdgezUsbClient(private val context: Context) {
     private var inEndpoint: UsbEndpoint? = null
     private var outEndpoint: UsbEndpoint? = null
     private val frameListeners = CopyOnWriteArraySet<(ByteArray) -> Unit>()
+    private val debugListeners = CopyOnWriteArraySet<(String) -> Unit>()
     private val rxBuffer = ByteArray(EDGEZ_MAX_FRAME * 4)
     private var rxLen = 0
     @Volatile
@@ -232,6 +235,7 @@ class EdgezUsbClient(private val context: Context) {
         claimedInterface = candidate.intf
         inEndpoint = candidate.inEndpoint
         outEndpoint = candidate.outEndpoint
+        emitDebug("CONNECT ${candidate.label}")
         startRxTask(opened, candidate.inEndpoint)
         return "Connected to ${candidate.label}"
     }
@@ -248,11 +252,17 @@ class EdgezUsbClient(private val context: Context) {
         claimedInterface = null
         inEndpoint = null
         outEndpoint = null
+        emitDebug("CLOSE")
     }
 
     fun addFrameListener(listener: (ByteArray) -> Unit): () -> Unit {
         frameListeners.add(listener)
         return { frameListeners.remove(listener) }
+    }
+
+    fun addDebugListener(listener: (String) -> Unit): () -> Unit {
+        debugListeners.add(listener)
+        return { debugListeners.remove(listener) }
     }
 
     fun setFrameListener(listener: ((ByteArray) -> Unit)?) {
@@ -296,49 +306,68 @@ class EdgezUsbClient(private val context: Context) {
         stopRxTask()
         rxLen = 0
         rxTaskRunning = true
+        emitDebug("RX task start ${inEndpoint.describe()}")
         rxTask = Thread {
             val scratch = ByteArray(EDGEZ_MAX_FRAME)
+            var idleReads = 0
             while (rxTaskRunning) {
                 val read = conn.bulkTransfer(inEndpoint, scratch, scratch.size, 100)
                 if (!rxTaskRunning) {
                     break
                 }
                 if (read <= 0) {
+                    idleReads++
+                    if (idleReads % 20 == 0) {
+                        emitDebug("RX idle read=$read")
+                    }
                     continue
                 }
+                idleReads = 0
 
                 if (rxLen + read > rxBuffer.size) {
+                    emitDebug("RX overflow buffered=$rxLen read=$read; reset")
                     rxLen = 0
                 }
                 System.arraycopy(scratch, 0, rxBuffer, rxLen, read)
                 rxLen += read
+                emitDebug("RX chunk read=$read buffered=$rxLen")
 
                 while (rxLen >= EDGEZ_HEADER_LEN) {
                     val magicOffset = findMagicOffset(rxBuffer, rxLen)
                     if (magicOffset < 0) {
+                        emitDebug("RX no magic buffered=$rxLen; drop")
                         rxLen = 0
                         break
                     }
                     if (magicOffset > 0) {
+                        emitDebug("RX resync skip=$magicOffset buffered=$rxLen")
                         System.arraycopy(rxBuffer, magicOffset, rxBuffer, 0, rxLen - magicOffset)
                         rxLen -= magicOffset
                     }
 
                     if (rxLen < EDGEZ_HEADER_LEN || rxBuffer[2] != EDGEZ_VERSION) {
+                        if (rxLen >= EDGEZ_HEADER_LEN) {
+                            emitDebug("RX bad version=${rxBuffer[2].toInt() and 0xff}")
+                        }
                         break
                     }
 
                     val payloadLen = readLe16(rxBuffer, 6)
                     if (payloadLen > EDGEZ_MAX_PAYLOAD) {
+                        emitDebug("RX bad len=$payloadLen; reset")
                         rxLen = 0
                         break
                     }
                     val frameLen = EDGEZ_HEADER_LEN + payloadLen
                     if (rxLen < frameLen) {
+                        emitDebug("RX partial frame need=$frameLen buffered=$rxLen")
                         break
                     }
 
                     val frame = Arrays.copyOf(rxBuffer, frameLen)
+                    val type = frame[3].toInt() and 0xff
+                    val seq = readLe16(frame, 4)
+                    emitDebug("RX frame type=$type seq=$seq len=$payloadLen")
                     dispatchFrame(frame)
                     if (rxLen == frameLen) {
                         rxLen = 0
@@ -348,6 +377,7 @@ class EdgezUsbClient(private val context: Context) {
                     }
                 }
             }
+            emitDebug("RX task stop")
         }.also { thread ->
             thread.name = "edgez-usb-rx"
             thread.isDaemon = true
@@ -382,7 +412,9 @@ class EdgezUsbClient(private val context: Context) {
         tx.put(payload)
 
         val txBytes = tx.array()
+        emitDebug("TX frame type=${type.toInt() and 0xff} seq=$currentSeq len=${payload.size} ep=${outEp.describe()}")
         val written = conn.bulkTransfer(outEp, txBytes, txBytes.size, timeoutMs)
+        emitDebug("TX result seq=$currentSeq written=$written/${txBytes.size}")
         if (written != txBytes.size) {
             return Result.failure(IllegalStateException("USB write failed on ${outEp.describe()}: $written/${txBytes.size}"))
         }
@@ -390,8 +422,16 @@ class EdgezUsbClient(private val context: Context) {
     }
 
     private fun dispatchFrame(frame: ByteArray) {
+        emitDebug("DISPATCH listeners=${frameListeners.size} bytes=${frame.size}")
         frameListeners.forEach { listener ->
             listener(frame)
+        }
+    }
+
+    private fun emitDebug(line: String) {
+        Log.d(TAG, line)
+        debugListeners.forEach { listener ->
+            listener(line)
         }
     }
 

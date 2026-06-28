@@ -100,8 +100,14 @@ fun HomeScreen(client: EdgezUsbClient) {
 
     DisposableEffect(Unit) {
         val removeFrameListener = client.addFrameListener(::handleFrame)
+        val removeDebugListener = client.addDebugListener { line ->
+            activity?.runOnUiThread {
+                appendLog("USB $line")
+            }
+        }
         onDispose {
             removeFrameListener()
+            removeDebugListener()
             executor.shutdownNow()
         }
     }
