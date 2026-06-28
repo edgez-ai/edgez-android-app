@@ -336,7 +336,6 @@ class EdgezUsbClient(private val context: Context) {
         emitDebug("RX task start ${port.getReadEndpoint().describe()}")
         rxTask = Thread {
             val scratch = ByteArray(EDGEZ_MAX_FRAME)
-            var idleReads = 0
             while (rxTaskRunning) {
                 val read = try {
                     port.read(scratch, 100)
@@ -348,13 +347,8 @@ class EdgezUsbClient(private val context: Context) {
                     break
                 }
                 if (read <= 0) {
-                    idleReads++
-                    if (idleReads % 20 == 0) {
-                        emitDebug("RX idle read=$read")
-                    }
                     continue
                 }
-                idleReads = 0
 
                 if (rxLen + read > rxBuffer.size) {
                     emitDebug("RX overflow buffered=$rxLen read=$read; reset")

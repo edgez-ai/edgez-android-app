@@ -26,6 +26,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -63,8 +64,7 @@ fun SettingsScreen(
     bleClient: EdgezBleClient,
     txConnection: ActiveConnection,
     rxConnection: ActiveConnection,
-    onTxConnectionChange: (ActiveConnection) -> Unit,
-    onRxConnectionChange: (ActiveConnection) -> Unit,
+    onTransportConnectionChange: (ActiveConnection, Boolean) -> Unit,
 ) {
     val context = LocalContext.current
     val executor = remember { Executors.newSingleThreadExecutor() }
@@ -80,6 +80,8 @@ fun SettingsScreen(
     var status by remember { mutableStateOf("Connect the ESP32-S3 USB port, then scan.") }
     var log by remember { mutableStateOf(listOf<String>()) }
     val activity = context as? ComponentActivity
+    val currentRxConnection by rememberUpdatedState(rxConnection)
+    val currentOnTransportConnectionChange by rememberUpdatedState(onTransportConnectionChange)
 
     fun appendLog(line: String) {
         log = (listOf(line) + log).take(16)
@@ -143,7 +145,13 @@ fun SettingsScreen(
         }
     }
 
-    fun handleFrame(frame: ByteArray) {
+    fun handleFrame(source: ActiveConnection, frame: ByteArray) {
+        val activeRxConnection = currentRxConnection
+        if (activeRxConnection != ActiveConnection.NONE && source != activeRxConnection) {
+            appendLog("${source.name} RX ignored; RX role is ${activeRxConnection.name}")
+            return
+        }
+
         if (frame.size < EDGEZ_HEADER_LEN || frame[0] != EDGEZ_MAGIC_0 || frame[1] != EDGEZ_MAGIC_1 || frame[2] != EDGEZ_VERSION) {
             return
         }
@@ -166,19 +174,19 @@ fun SettingsScreen(
                         bleEnabled = control.bleEnabled
                         pairingEnabled = control.pairingEnabled
                         val message = control.message.ifBlank { if (control.ok) "OK" else "Error" }
-                        status = "RX seq=$responseSeq $message err=${control.espErr}"
+                        status = "${source.name} RX seq=$responseSeq $message err=${control.espErr}"
                     }
                 }
                 EDGEZ_TYPE_ERROR -> {
                     val text = String(payload, StandardCharsets.UTF_8)
-                    status = "Device error on seq=$responseSeq: $text"
+                    status = "${source.name} device error on seq=$responseSeq: $text"
                 }
                 EDGEZ_TYPE_ECHO_RESP -> {
                     val text = String(payload, StandardCharsets.UTF_8)
-                    status = "Debug echo seq=$responseSeq: $text"
+                    status = "${source.name} debug echo seq=$responseSeq: $text"
                 }
                 else -> {
-                    status = "Unknown packet on seq=$responseSeq: type=$responseType"
+                    status = "${source.name} unknown packet on seq=$responseSeq: type=$responseType"
                 }
             }
             appendLog(status)
@@ -186,25 +194,31 @@ fun SettingsScreen(
     }
 
     DisposableEffect(Unit) {
-        val removeFrameListener = client.addFrameListener(::handleFrame)
+        val removeFrameListener = client.addFrameListener { frame ->
+            handleFrame(ActiveConnection.USB, frame)
+        }
         val removeDebugListener = client.addDebugListener { line ->
             activity?.runOnUiThread {
                 appendLog("USB $line")
+                if (line == "CLOSE") {
+                    currentOnTransportConnectionChange(ActiveConnection.USB, false)
+                    status = "USB disconnected"
+                }
             }
         }
-        val removeBleFrameListener = bleClient.addFrameListener(::handleFrame)
+        val removeBleFrameListener = bleClient.addFrameListener { frame ->
+            handleFrame(ActiveConnection.BLE, frame)
+        }
         val removeBleDebugListener = bleClient.addDebugListener { line ->
             activity?.runOnUiThread {
                 appendLog("BLE $line")
                 if (line == "SERVICE ready") {
                     bleReady = true
-                    onRxConnectionChange(ActiveConnection.BLE)
-                    status = "BLE connected for RX"
+                    currentOnTransportConnectionChange(ActiveConnection.BLE, true)
+                    status = "BLE connected"
                 } else if (line.startsWith("CONN") && line.contains("state=0") || line == "CLOSE") {
                     bleReady = false
-                    if (rxConnection == ActiveConnection.BLE) {
-                        onRxConnectionChange(ActiveConnection.NONE)
-                    }
+                    currentOnTransportConnectionChange(ActiveConnection.BLE, false)
                 }
             }
         }
@@ -263,7 +277,7 @@ fun SettingsScreen(
                                 appendLog(status)
                             } else {
                                 status = client.connect(candidate)
-                                onTxConnectionChange(ActiveConnection.USB)
+                                onTransportConnectionChange(ActiveConnection.USB, true)
                                 appendLog(status)
                                 sendControl("status", USB_CONTROL_ACTION_GET_STATUS, connection = ActiveConnection.USB)
                             }
@@ -440,8 +454,7 @@ private fun SettingsPreview() {
             bleClient = EdgezBleClient(context),
             txConnection = ActiveConnection.NONE,
             rxConnection = ActiveConnection.NONE,
-            onTxConnectionChange = {},
-            onRxConnectionChange = {},
+            onTransportConnectionChange = { _, _ -> },
         )
     }
 }

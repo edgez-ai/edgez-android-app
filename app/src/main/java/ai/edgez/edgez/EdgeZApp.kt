@@ -31,6 +31,37 @@ fun EdgeZApp() {
     var currentDestination by rememberSaveable { mutableStateOf(AppDestination.HOME) }
     var txConnection by rememberSaveable { mutableStateOf(ActiveConnection.NONE) }
     var rxConnection by rememberSaveable { mutableStateOf(ActiveConnection.NONE) }
+    var usbConnected by rememberSaveable { mutableStateOf(false) }
+    var bleConnected by rememberSaveable { mutableStateOf(false) }
+
+    fun applyConnectionRoles(nextUsbConnected: Boolean, nextBleConnected: Boolean) {
+        when {
+            nextUsbConnected && nextBleConnected -> {
+                txConnection = ActiveConnection.USB
+                rxConnection = ActiveConnection.BLE
+            }
+            nextUsbConnected -> {
+                txConnection = ActiveConnection.USB
+                rxConnection = ActiveConnection.USB
+            }
+            nextBleConnected -> {
+                txConnection = ActiveConnection.BLE
+                rxConnection = ActiveConnection.BLE
+            }
+            else -> {
+                txConnection = ActiveConnection.NONE
+                rxConnection = ActiveConnection.NONE
+            }
+        }
+    }
+
+    fun setTransportConnected(connection: ActiveConnection, connected: Boolean) {
+        val nextUsbConnected = if (connection == ActiveConnection.USB) connected else usbConnected
+        val nextBleConnected = if (connection == ActiveConnection.BLE) connected else bleConnected
+        usbConnected = nextUsbConnected
+        bleConnected = nextBleConnected
+        applyConnectionRoles(nextUsbConnected, nextBleConnected)
+    }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -70,8 +101,9 @@ fun EdgeZApp() {
                 bleClient = bleClient,
                 txConnection = txConnection,
                 rxConnection = rxConnection,
-                onTxConnectionChange = { txConnection = it },
-                onRxConnectionChange = { rxConnection = it },
+                onTransportConnectionChange = { connection, connected ->
+                    setTransportConnected(connection, connected)
+                },
             )
         }
     }

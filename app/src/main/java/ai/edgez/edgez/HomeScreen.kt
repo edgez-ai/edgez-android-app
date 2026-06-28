@@ -18,6 +18,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -56,12 +57,19 @@ fun HomeScreen(
     var response by remember { mutableStateOf("") }
     var log by remember { mutableStateOf(listOf<String>()) }
     val activity = context as? ComponentActivity
+    val currentRxConnection by rememberUpdatedState(rxConnection)
 
     fun appendLog(line: String) {
         log = (listOf(line) + log).take(16)
     }
 
-    fun handleFrame(frame: ByteArray) {
+    fun handleFrame(source: ActiveConnection, frame: ByteArray) {
+        val activeRxConnection = currentRxConnection
+        if (activeRxConnection != ActiveConnection.NONE && source != activeRxConnection) {
+            appendLog("${source.name} RX ignored; RX role is ${activeRxConnection.name}")
+            return
+        }
+
         if (frame.size < EDGEZ_HEADER_LEN ||
             frame[0] != EDGEZ_MAGIC_0 ||
             frame[1] != EDGEZ_MAGIC_1 ||
@@ -84,20 +92,20 @@ fun HomeScreen(
                     val control = EdgezUsbControlProto.decodeResponse(payload)
                     if (control?.action == USB_CONTROL_ACTION_ECHO) {
                         response = control.echoPayload
-                        status = "RX seq=$responseSeq: ${control.echoPayload}"
+                        status = "${source.name} RX seq=$responseSeq: ${control.echoPayload}"
                     } else {
-                        status = "Control packet on seq=$responseSeq: ${control?.message ?: "malformed"}"
+                        status = "${source.name} control seq=$responseSeq: ${control?.message ?: "malformed"}"
                     }
                 }
                 EDGEZ_TYPE_ECHO_RESP -> {
                     response = text
-                    status = "RX seq=$responseSeq: $text"
+                    status = "${source.name} debug echo seq=$responseSeq: $text"
                 }
                 EDGEZ_TYPE_ERROR -> {
-                    status = "Device error on seq=$responseSeq: $text"
+                    status = "${source.name} device error on seq=$responseSeq: $text"
                 }
                 else -> {
-                    status = "Packet on seq=$responseSeq: type=$responseType"
+                    status = "${source.name} packet on seq=$responseSeq: type=$responseType"
                 }
             }
             appendLog(status)
@@ -105,8 +113,12 @@ fun HomeScreen(
     }
 
     DisposableEffect(Unit) {
-        val removeFrameListener = client.addFrameListener(::handleFrame)
-        val removeBleFrameListener = bleClient.addFrameListener(::handleFrame)
+        val removeFrameListener = client.addFrameListener { frame ->
+            handleFrame(ActiveConnection.USB, frame)
+        }
+        val removeBleFrameListener = bleClient.addFrameListener { frame ->
+            handleFrame(ActiveConnection.BLE, frame)
+        }
         val removeDebugListener = client.addDebugListener { line ->
             activity?.runOnUiThread {
                 appendLog("USB $line")
