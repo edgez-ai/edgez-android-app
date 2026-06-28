@@ -29,6 +29,7 @@ import ai.edgez.edgez.usb.EDGEZ_TYPE_ECHO_RESP
 import ai.edgez.edgez.usb.EDGEZ_TYPE_ERROR
 import ai.edgez.edgez.usb.EDGEZ_TYPE_HALOW_SYNC_FROM_RADIO
 import ai.edgez.edgez.usb.EDGEZ_TYPE_HALOW_SYNC_STATUS_RESP
+import ai.edgez.edgez.usb.EDGEZ_TYPE_HALOW_SYNC_TO_RADIO
 import ai.edgez.edgez.usb.EDGEZ_VERSION
 import ai.edgez.edgez.usb.EdgezUsbControlProto
 import ai.edgez.edgez.usb.USB_CONTROL_ACTION_ECHO
@@ -184,6 +185,13 @@ class EdgezBleClient(private val context: Context) {
         return sendControl(
             action = USB_CONTROL_ACTION_ECHO,
             echoPayload = message.take(128),
+        )
+    }
+
+    fun sendHaLowInit(countryCode: String, meshId: String, passphrase: String): Result<String> {
+        return sendFrame(
+            EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
+            EdgezUsbControlProto.encodeHaLowInit(countryCode, meshId, passphrase),
         )
     }
 

@@ -27,6 +27,8 @@ import ai.edgez.edgez.ble.EdgezBleClient
 import ai.edgez.edgez.usb.EdgezUsbClient
 import ai.edgez.edgez.usb.HaLowInterfaceStatus
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.Executors
 
 @PreviewScreenSizes
 @Composable
@@ -36,14 +38,21 @@ fun EdgeZApp() {
     val bleClient = remember { EdgezBleClient(context.applicationContext) }
     val lastConnectionPreferences = remember { LastConnectionPreferences(context.applicationContext) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
+    val haLowInitExecutor = remember { Executors.newSingleThreadExecutor() }
+    val pendingHaLowInitKey = remember { AtomicReference<String?>(null) }
     var currentDestination by rememberSaveable { mutableStateOf(AppDestination.HOME) }
     var activeConnection by rememberSaveable { mutableStateOf(ActiveConnection.NONE) }
     var haLowStatus by remember { mutableStateOf<HaLowInterfaceStatus?>(null) }
+
+    fun resetHaLowInitTrigger() {
+        pendingHaLowInitKey.set(null)
+    }
 
     fun setTransportConnected(connection: ActiveConnection, connected: Boolean) {
         if (connected && connection != ActiveConnection.NONE) {
             activeConnection = connection
             haLowStatus = null
+            resetHaLowInitTrigger()
             lastConnectionPreferences.setLastSuccessfulConnection(connection)
             when (connection) {
                 ActiveConnection.USB -> bleClient.close()
@@ -53,6 +62,7 @@ fun EdgeZApp() {
         } else if (activeConnection == connection) {
             activeConnection = ActiveConnection.NONE
             haLowStatus = null
+            resetHaLowInitTrigger()
         }
     }
     val currentSetTransportConnected by rememberUpdatedState<(ActiveConnection, Boolean) -> Unit> { connection, connected ->
@@ -61,9 +71,40 @@ fun EdgeZApp() {
     val currentActiveConnection by rememberUpdatedState(activeConnection)
 
     DisposableEffect(Unit) {
+        fun triggerHaLowInitIfNeeded(source: ActiveConnection, status: HaLowInterfaceStatus) {
+            if (status.stackInitialized) {
+                resetHaLowInitTrigger()
+                return
+            }
+
+            val meshId = lastConnectionPreferences.getMeshId()
+            if (meshId.isBlank()) return
+
+            val country = lastConnectionPreferences.getMeshCountry()
+            val passphrase = lastConnectionPreferences.getMeshPassphrase()
+            val initKey = "${source.name}|$country|$meshId|$passphrase"
+            while (true) {
+                val previousKey = pendingHaLowInitKey.get()
+                if (previousKey == initKey) return
+                if (pendingHaLowInitKey.compareAndSet(previousKey, initKey)) break
+            }
+
+            haLowInitExecutor.execute {
+                val result = when (source) {
+                    ActiveConnection.USB -> usbClient.sendHaLowInit(country, meshId, passphrase)
+                    ActiveConnection.BLE -> bleClient.sendHaLowInit(country, meshId, passphrase)
+                    ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+                }
+                if (result.isFailure) {
+                    pendingHaLowInitKey.compareAndSet(initKey, null)
+                }
+            }
+        }
+
         fun handleTransportFrame(source: ActiveConnection, frame: ByteArray) {
             if (source != currentActiveConnection) return
             val status = decodeHaLowStatusFrame(frame) ?: return
+            triggerHaLowInitIfNeeded(source, status)
             mainHandler.post {
                 if (source == currentActiveConnection) {
                     haLowStatus = status
@@ -94,6 +135,7 @@ fun EdgeZApp() {
             removeBleDebugListener()
             usbClient.close()
             bleClient.close()
+            haLowInitExecutor.shutdownNow()
         }
     }
 

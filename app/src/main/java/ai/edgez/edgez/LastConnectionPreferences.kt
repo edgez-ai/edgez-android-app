@@ -7,6 +7,7 @@ private const val KEY_LAST_SUCCESSFUL_CONNECTION = "last_successful_connection"
 private const val KEY_MESH_COUNTRY = "mesh_country"
 private const val KEY_MESH_ID = "mesh_id"
 private const val KEY_MESH_PASSPHRASE = "mesh_passphrase"
+private const val DEFAULT_MESH_ID = "edgez"
 private val SUPPORTED_MESH_COUNTRIES = setOf("US", "JP", "EU")
 
 class LastConnectionPreferences(context: Context) {
@@ -28,7 +29,7 @@ class LastConnectionPreferences(context: Context) {
             .apply()
     }
 
-    fun getMeshId(): String = prefs.getString(KEY_MESH_ID, "") ?: ""
+    fun getMeshId(): String = prefs.getString(KEY_MESH_ID, DEFAULT_MESH_ID) ?: DEFAULT_MESH_ID
 
     fun getMeshPassphrase(): String = prefs.getString(KEY_MESH_PASSPHRASE, "") ?: ""
 
