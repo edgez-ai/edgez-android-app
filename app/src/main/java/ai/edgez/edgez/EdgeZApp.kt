@@ -28,7 +28,7 @@ fun EdgeZApp() {
     val context = LocalContext.current
     val usbClient = remember { EdgezUsbClient(context.applicationContext) }
     val bleClient = remember { EdgezBleClient(context.applicationContext) }
-    var currentDestination by rememberSaveable { mutableStateOf(AppDestination.USB) }
+    var currentDestination by rememberSaveable { mutableStateOf(AppDestination.HOME) }
     var txConnection by rememberSaveable { mutableStateOf(ActiveConnection.NONE) }
     var rxConnection by rememberSaveable { mutableStateOf(ActiveConnection.NONE) }
     var usbConnected by rememberSaveable { mutableStateOf(false) }
@@ -93,18 +93,6 @@ fun EdgeZApp() {
         },
     ) {
         when (currentDestination) {
-            AppDestination.USB -> UsbEchoScreen(
-                client = usbClient,
-                onConnectedChange = { connected ->
-                    setTransportConnected(ActiveConnection.USB, connected)
-                },
-            )
-            AppDestination.BLE -> BleEchoScreen(
-                client = bleClient,
-                onConnectedChange = { connected ->
-                    setTransportConnected(ActiveConnection.BLE, connected)
-                },
-            )
             AppDestination.HOME -> HomeScreen(
                 client = usbClient,
                 bleClient = bleClient,
@@ -130,8 +118,6 @@ private enum class AppDestination(
     val label: String,
     val icon: Int,
 ) {
-    USB("USB", R.drawable.ic_usb),
-    BLE("BLE", R.drawable.ic_bluetooth),
     HOME("Home", R.drawable.ic_home),
     FAVORITES("Favorites", R.drawable.ic_favorite),
     PROFILE("Profile", R.drawable.ic_account_box),
