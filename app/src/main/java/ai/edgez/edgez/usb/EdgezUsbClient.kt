@@ -35,6 +35,7 @@ const val USB_CONTROL_ACTION_GET_STATUS = 4
 const val USB_CONTROL_ACTION_ECHO = 5
 
 private const val ESPRESSIF_VID = 0x303A
+private const val EDGEZ_TYPE_ECHO_REQ = 1.toByte()
 private const val EDGEZ_TYPE_CONTROL_REQ = 3.toByte()
 private const val EDGEZ_MAX_FRAME = EDGEZ_HEADER_LEN + EDGEZ_MAX_PAYLOAD
 private const val USB_CONTROL_STATUS_OK = 1
@@ -320,11 +321,9 @@ class EdgezUsbClient(private val context: Context) {
     }
 
     fun sendEcho(message: String, timeoutMs: Int = 1500): Result<String> {
-        return sendControl(
-            action = USB_CONTROL_ACTION_ECHO,
-            echoPayload = message.take(128),
-            timeoutMs = timeoutMs,
-        )
+        val bytes = message.toByteArray(StandardCharsets.UTF_8)
+        val payload = bytes.copyOfRange(0, bytes.size.coerceAtMost(EDGEZ_MAX_PAYLOAD))
+        return sendFrame(EDGEZ_TYPE_ECHO_REQ, payload, timeoutMs)
     }
 
     private fun startRxTask(endpoint: UsbEndpoint) {
@@ -485,28 +484,47 @@ class EdgezUsbClient(private val context: Context) {
     }
 
     private fun findVendorCandidates(device: UsbDevice): List<UsbCandidate> {
+        if (device.vendorId != ESPRESSIF_VID) {
+            return emptyList()
+        }
+
         val candidates = mutableListOf<UsbCandidate>()
         for (i in 0 until device.interfaceCount) {
             val intf = device.getInterface(i)
-            var inEndpoint: UsbEndpoint? = null
-            var outEndpoint: UsbEndpoint? = null
+            if (intf.interfaceClass != UsbConstants.USB_CLASS_VENDOR_SPEC) {
+                continue
+            }
+            var readEndpoint: UsbEndpoint? = null
+            var writeEndpoint: UsbEndpoint? = null
+            var bulkEndpointCount = 0
             for (e in 0 until intf.endpointCount) {
                 val endpoint = intf.getEndpoint(e)
                 if (endpoint.type != UsbConstants.USB_ENDPOINT_XFER_BULK) {
                     continue
                 }
-                if (endpoint.direction == UsbConstants.USB_DIR_IN && inEndpoint == null) {
-                    inEndpoint = endpoint
-                } else if (endpoint.direction == UsbConstants.USB_DIR_OUT && outEndpoint == null) {
-                    outEndpoint = endpoint
+                bulkEndpointCount++
+                if (endpoint.direction == UsbConstants.USB_DIR_IN) {
+                    if (readEndpoint != null) {
+                        emitDebug("SCAN if[$i] invalid vendor interface: multiple bulk IN endpoints")
+                        readEndpoint = null
+                        break
+                    }
+                    readEndpoint = endpoint
+                } else if (endpoint.direction == UsbConstants.USB_DIR_OUT) {
+                    if (writeEndpoint != null) {
+                        emitDebug("SCAN if[$i] invalid vendor interface: multiple bulk OUT endpoints")
+                        writeEndpoint = null
+                        break
+                    }
+                    writeEndpoint = endpoint
                 }
             }
-            if (inEndpoint != null && outEndpoint != null) {
+            if (readEndpoint != null && writeEndpoint != null && bulkEndpointCount == 2) {
                 candidates += UsbCandidate(
                     device = device,
                     intf = intf,
-                    readEndpoint = inEndpoint,
-                    writeEndpoint = outEndpoint,
+                    readEndpoint = readEndpoint,
+                    writeEndpoint = writeEndpoint,
                     interfaceIndex = i,
                 )
             }

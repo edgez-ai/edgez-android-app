@@ -1,9 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Espressif VID 0x303A. TinyUSB default CDC PIDs are assigned in the 0x4000..0x4007 range. -->
+    <!-- Espressif VID 0x303A. Keep matching at vendor level only so custom
+         vendor-specific USB transport still gets permission for all product IDs. -->
     <usb-device vendor-id="12346" />
-
-    <!-- CDC ACM serial devices, matched by interface class on Android when available. -->
-    <usb-device class="2" subclass="2" protocol="1" />
-    <usb-device class="10" />
 </resources>
