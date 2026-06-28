@@ -36,46 +36,19 @@ fun EdgeZApp() {
     val lastConnectionPreferences = remember { LastConnectionPreferences(context.applicationContext) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     var currentDestination by rememberSaveable { mutableStateOf(AppDestination.HOME) }
-    var txConnection by rememberSaveable { mutableStateOf(ActiveConnection.NONE) }
-    var rxConnection by rememberSaveable { mutableStateOf(ActiveConnection.NONE) }
-    var usbConnected by rememberSaveable { mutableStateOf(false) }
-    var bleConnected by rememberSaveable { mutableStateOf(false) }
-    var firstConnectedTransport by rememberSaveable { mutableStateOf(ActiveConnection.NONE) }
-    var secondConnectedTransport by rememberSaveable { mutableStateOf(ActiveConnection.NONE) }
-
-    fun isTransportConnected(connection: ActiveConnection, nextUsbConnected: Boolean, nextBleConnected: Boolean): Boolean {
-        return when (connection) {
-            ActiveConnection.USB -> nextUsbConnected
-            ActiveConnection.BLE -> nextBleConnected
-            ActiveConnection.NONE -> false
-        }
-    }
+    var activeConnection by rememberSaveable { mutableStateOf(ActiveConnection.NONE) }
 
     fun setTransportConnected(connection: ActiveConnection, connected: Boolean) {
-        val nextUsbConnected = if (connection == ActiveConnection.USB) connected else usbConnected
-        val nextBleConnected = if (connection == ActiveConnection.BLE) connected else bleConnected
-        val orderedConnections = listOf(firstConnectedTransport, secondConnectedTransport)
-            .filter { it != ActiveConnection.NONE && isTransportConnected(it, nextUsbConnected, nextBleConnected) }
-            .toMutableList()
-
-        if (connected && connection != ActiveConnection.NONE && !orderedConnections.contains(connection)) {
-            orderedConnections += connection
-        }
-
-        usbConnected = nextUsbConnected
-        bleConnected = nextBleConnected
-        firstConnectedTransport = orderedConnections.getOrElse(0) { ActiveConnection.NONE }
-        secondConnectedTransport = orderedConnections.getOrElse(1) { ActiveConnection.NONE }
-
-        txConnection = firstConnectedTransport
-        rxConnection = if (secondConnectedTransport != ActiveConnection.NONE) {
-            secondConnectedTransport
-        } else {
-            firstConnectedTransport
-        }
-
-        if (connected) {
+        if (connected && connection != ActiveConnection.NONE) {
+            activeConnection = connection
             lastConnectionPreferences.setLastSuccessfulConnection(connection)
+            when (connection) {
+                ActiveConnection.USB -> bleClient.close()
+                ActiveConnection.BLE -> usbClient.close()
+                ActiveConnection.NONE -> Unit
+            }
+        } else if (activeConnection == connection) {
+            activeConnection = ActiveConnection.NONE
         }
     }
     val currentSetTransportConnected by rememberUpdatedState<(ActiveConnection, Boolean) -> Unit> { connection, connected ->
@@ -146,16 +119,14 @@ fun EdgeZApp() {
     ) {
         when (currentDestination) {
             AppDestination.HOME -> HomeScreen(
-                txConnection = txConnection,
-                rxConnection = rxConnection,
+                activeConnection = activeConnection,
             )
             AppDestination.FAVORITES -> PlaceholderScreen("Favorites")
             AppDestination.PROFILE -> PlaceholderScreen("Profile")
             AppDestination.SETTINGS -> SettingsScreen(
                 client = usbClient,
                 bleClient = bleClient,
-                txConnection = txConnection,
-                rxConnection = rxConnection,
+                activeConnection = activeConnection,
                 onTransportConnectionChange = { connection, connected ->
                     setTransportConnected(connection, connected)
                 },
