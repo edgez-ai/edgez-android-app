@@ -510,6 +510,9 @@ class EdgezUsbClient(private val context: Context) {
                     )
                     if (read > 0) {
                         handleRxBytes(scratch.copyOf(read))
+                    } else if (read < 0) {
+                        emitDebug("USB RX error: read=$read")
+                        break
                     }
                 } catch (e: RuntimeException) {
                     if (rxTaskRunning) {
