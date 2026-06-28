@@ -24,15 +24,20 @@ const val EDGEZ_MAGIC_1 = 'Z'.code.toByte()
 const val EDGEZ_VERSION = 1.toByte()
 const val EDGEZ_TYPE_ECHO_RESP = 2
 const val EDGEZ_TYPE_CONTROL_RESP = 4
+const val EDGEZ_TYPE_HALOW_SYNC_TO_RADIO = 16
+const val EDGEZ_TYPE_HALOW_SYNC_FROM_RADIO = 17
+const val EDGEZ_TYPE_HALOW_SYNC_STATUS_RESP = 19
 const val EDGEZ_TYPE_ERROR = 0x7f
 const val EDGEZ_HEADER_LEN = 8
-const val EDGEZ_MAX_PAYLOAD = 256
+const val EDGEZ_MAX_PAYLOAD = 512
 
 const val USB_CONTROL_ACTION_SET_BLE_ENABLED = 1
 const val USB_CONTROL_ACTION_SET_PAIRING_ENABLED = 2
 const val USB_CONTROL_ACTION_SET_WIFI_CREDENTIALS = 3
 const val USB_CONTROL_ACTION_GET_STATUS = 4
 const val USB_CONTROL_ACTION_ECHO = 5
+const val MOBILE_RADIO_VARIANT_HALOW_STATUS = 8
+const val MOBILE_RADIO_VARIANT_INIT_HALOW = 10
 
 private const val ESPRESSIF_VID = 0x303A
 private const val EDGEZ_TYPE_CONTROL_REQ = 3.toByte()
@@ -63,6 +68,21 @@ data class UsbControlResponse(
     val echoPayload: String = "",
 ) {
     val ok: Boolean get() = status == USB_CONTROL_STATUS_OK && espErr == 0
+}
+
+data class HaLowInterfaceStatus(
+    val supported: Boolean = false,
+    val stackInitialized: Boolean = false,
+    val meshMode: Boolean = false,
+    val linkUp: Boolean = false,
+    val routeReady: Boolean = false,
+    val readyForReport: Boolean = false,
+    val ethertype: Int = 0,
+    val meshId: String = "",
+    val ipAddr: String = "",
+    val gateway: String = "",
+) {
+    val isUsable: Boolean get() = supported && stackInitialized && linkUp && routeReady
 }
 
 fun UsbEndpoint.describe(): String {
@@ -154,6 +174,119 @@ object EdgezUsbControlProto {
         )
     }
 
+    fun encodeHaLowInit(countryCode: String, meshId: String, passphrase: String): ByteArray {
+        val init = ByteArrayOutputStream()
+        writeStringField(init, 1, countryCode.take(2).uppercase())
+        writeStringField(init, 2, meshId.take(32))
+        writeStringField(init, 3, passphrase.take(64))
+
+        val out = ByteArrayOutputStream()
+        writeVarintField(out, 1, MOBILE_RADIO_VARIANT_INIT_HALOW.toLong())
+        writeVarintField(out, 2, System.currentTimeMillis() and 0xffffffffL)
+        writeBytesField(out, 6, init.toByteArray())
+        return out.toByteArray()
+    }
+
+    fun decodeMobileFromRadio(payload: ByteArray): HaLowInterfaceStatus? {
+        var offset = 0
+        var variant = 0
+        var halowStatus: HaLowInterfaceStatus? = null
+
+        while (offset < payload.size) {
+            val tagRead = readVarint(payload, offset) ?: return null
+            offset = tagRead.nextOffset
+            val field = (tagRead.value ushr 3).toInt()
+            val wireType = (tagRead.value and 0x07).toInt()
+
+            when (wireType) {
+                0 -> {
+                    val valueRead = readVarint(payload, offset) ?: return null
+                    offset = valueRead.nextOffset
+                    if (field == 1) {
+                        variant = valueRead.value.toInt()
+                    }
+                }
+                2 -> {
+                    val lenRead = readVarint(payload, offset) ?: return null
+                    offset = lenRead.nextOffset
+                    val len = lenRead.value.toInt()
+                    if (len < 0 || offset + len > payload.size) return null
+                    if (field == 7) {
+                        halowStatus = decodeHaLowInterfaceStatus(payload.copyOfRange(offset, offset + len))
+                    }
+                    offset += len
+                }
+                else -> return null
+            }
+        }
+
+        return if (variant == MOBILE_RADIO_VARIANT_HALOW_STATUS) halowStatus else null
+    }
+
+    private fun decodeHaLowInterfaceStatus(payload: ByteArray): HaLowInterfaceStatus? {
+        var offset = 0
+        var supported = false
+        var stackInitialized = false
+        var meshMode = false
+        var linkUp = false
+        var routeReady = false
+        var readyForReport = false
+        var ethertype = 0
+        var meshId = ""
+        var ipAddr = ""
+        var gateway = ""
+
+        while (offset < payload.size) {
+            val tagRead = readVarint(payload, offset) ?: return null
+            offset = tagRead.nextOffset
+            val field = (tagRead.value ushr 3).toInt()
+            val wireType = (tagRead.value and 0x07).toInt()
+
+            when (wireType) {
+                0 -> {
+                    val valueRead = readVarint(payload, offset) ?: return null
+                    offset = valueRead.nextOffset
+                    when (field) {
+                        1 -> supported = valueRead.value != 0L
+                        2 -> stackInitialized = valueRead.value != 0L
+                        3 -> meshMode = valueRead.value != 0L
+                        4 -> linkUp = valueRead.value != 0L
+                        5 -> routeReady = valueRead.value != 0L
+                        6 -> readyForReport = valueRead.value != 0L
+                        7 -> ethertype = valueRead.value.toInt()
+                    }
+                }
+                2 -> {
+                    val lenRead = readVarint(payload, offset) ?: return null
+                    offset = lenRead.nextOffset
+                    val len = lenRead.value.toInt()
+                    if (len < 0 || offset + len > payload.size) return null
+                    val text = String(payload, offset, len, StandardCharsets.UTF_8)
+                    when (field) {
+                        8 -> meshId = text
+                        9 -> ipAddr = text
+                        10 -> gateway = text
+                    }
+                    offset += len
+                }
+                else -> return null
+            }
+        }
+
+        return HaLowInterfaceStatus(
+            supported = supported,
+            stackInitialized = stackInitialized,
+            meshMode = meshMode,
+            linkUp = linkUp,
+            routeReady = routeReady,
+            readyForReport = readyForReport,
+            ethertype = ethertype,
+            meshId = meshId,
+            ipAddr = ipAddr,
+            gateway = gateway,
+        )
+    }
+
     private fun writeVarintField(out: ByteArrayOutputStream, fieldNumber: Int, value: Long) {
         writeVarint(out, ((fieldNumber shl 3) or 0).toLong())
         writeVarint(out, value)
@@ -161,6 +294,10 @@ object EdgezUsbControlProto {
 
     private fun writeStringField(out: ByteArrayOutputStream, fieldNumber: Int, value: String) {
         val bytes = value.toByteArray(StandardCharsets.UTF_8)
+        writeBytesField(out, fieldNumber, bytes)
+    }
+
+    private fun writeBytesField(out: ByteArrayOutputStream, fieldNumber: Int, bytes: ByteArray) {
         writeVarint(out, ((fieldNumber shl 3) or 2).toLong())
         writeVarint(out, bytes.size.toLong())
         out.write(bytes)
@@ -324,6 +461,14 @@ class EdgezUsbClient(private val context: Context) {
             action = USB_CONTROL_ACTION_ECHO,
             echoPayload = message.take(128),
             timeoutMs = timeoutMs,
+        )
+    }
+
+    fun sendHaLowInit(countryCode: String, meshId: String, passphrase: String, timeoutMs: Int = 1500): Result<String> {
+        return sendFrame(
+            EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
+            EdgezUsbControlProto.encodeHaLowInit(countryCode, meshId, passphrase),
+            timeoutMs,
         )
     }
 
@@ -571,6 +716,10 @@ class EdgezUsbClient(private val context: Context) {
     }
 
     private fun isKnownRxFrameType(type: Int): Boolean {
-        return type == EDGEZ_TYPE_ECHO_RESP || type == EDGEZ_TYPE_CONTROL_RESP || type == EDGEZ_TYPE_ERROR
+        return type == EDGEZ_TYPE_ECHO_RESP ||
+            type == EDGEZ_TYPE_CONTROL_RESP ||
+            type == EDGEZ_TYPE_HALOW_SYNC_FROM_RADIO ||
+            type == EDGEZ_TYPE_HALOW_SYNC_STATUS_RESP ||
+            type == EDGEZ_TYPE_ERROR
     }
 }
