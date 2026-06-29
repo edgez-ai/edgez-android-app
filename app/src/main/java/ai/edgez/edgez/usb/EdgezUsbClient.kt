@@ -96,6 +96,96 @@ data class HaLowInterfaceStatus(
     val isUsable: Boolean get() = supported && stackInitialized && linkUp && routeReady
 }
 
+data class EdgeZAssocMetadata(
+    val userId: Long = 0,
+    val userName: String = "",
+    val userPublicKey: ByteArray = ByteArray(0),
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+
+        other as EdgeZAssocMetadata
+        return userId == other.userId &&
+            userName == other.userName &&
+            userPublicKey.contentEquals(other.userPublicKey)
+    }
+
+    override fun hashCode(): Int {
+        var result = userId.hashCode()
+        result = 31 * result + userName.hashCode()
+        result = 31 * result + userPublicKey.contentHashCode()
+        return result
+    }
+}
+
+data class DiscoveredNodeInfo(
+    val bssid: ByteArray = ByteArray(0),
+    val ssid: String = "",
+    val meshId: String = "",
+    val rssi: Int = 0,
+    val channelFreqHz: Int = 0,
+    val bandwidthMhz: Int = 0,
+    val informationElements: ByteArray = ByteArray(0),
+    val edgezMetadata: EdgeZAssocMetadata? = null,
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+
+        other as DiscoveredNodeInfo
+        return bssid.contentEquals(other.bssid) &&
+            ssid == other.ssid &&
+            meshId == other.meshId &&
+            rssi == other.rssi &&
+            channelFreqHz == other.channelFreqHz &&
+            bandwidthMhz == other.bandwidthMhz &&
+            informationElements.contentEquals(other.informationElements) &&
+            edgezMetadata == other.edgezMetadata
+    }
+
+    override fun hashCode(): Int {
+        var result = bssid.contentHashCode()
+        result = 31 * result + ssid.hashCode()
+        result = 31 * result + meshId.hashCode()
+        result = 31 * result + rssi
+        result = 31 * result + channelFreqHz
+        result = 31 * result + bandwidthMhz
+        result = 31 * result + informationElements.contentHashCode()
+        result = 31 * result + (edgezMetadata?.hashCode() ?: 0)
+        return result
+    }
+}
+
+data class MobileFromRadio(
+    val variant: Int = 0,
+    val id: Int = 0,
+    val rawRadioBuffer: ByteArray = ByteArray(0),
+    val halowStatus: HaLowInterfaceStatus? = null,
+    val discoveredNode: DiscoveredNodeInfo? = null,
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+
+        other as MobileFromRadio
+        return variant == other.variant &&
+            id == other.id &&
+            rawRadioBuffer.contentEquals(other.rawRadioBuffer) &&
+            halowStatus == other.halowStatus &&
+            discoveredNode == other.discoveredNode
+    }
+
+    override fun hashCode(): Int {
+        var result = variant
+        result = 31 * result + id
+        result = 31 * result + rawRadioBuffer.contentHashCode()
+        result = 31 * result + (halowStatus?.hashCode() ?: 0)
+        result = 31 * result + (discoveredNode?.hashCode() ?: 0)
+        return result
+    }
+}
+
 fun UsbEndpoint.describe(): String {
     val directionName = if (direction == UsbConstants.USB_DIR_IN) "IN" else "OUT"
     return "%s ep=0x%02x max=%d".format(directionName, address, maxPacketSize)
@@ -216,9 +306,16 @@ object EdgezUsbControlProto {
     }
 
     fun decodeMobileFromRadio(payload: ByteArray): HaLowInterfaceStatus? {
+        return decodeMobileFromRadioMessage(payload)?.halowStatus
+    }
+
+    fun decodeMobileFromRadioMessage(payload: ByteArray): MobileFromRadio? {
         var offset = 0
         var variant = 0
+        var id = 0
+        var rawRadioBuffer = ByteArray(0)
         var halowStatus: HaLowInterfaceStatus? = null
+        var discoveredNode: DiscoveredNodeInfo? = null
 
         while (offset < payload.size) {
             val tagRead = readVarint(payload, offset) ?: return null
@@ -230,8 +327,9 @@ object EdgezUsbControlProto {
                 0 -> {
                     val valueRead = readVarint(payload, offset) ?: return null
                     offset = valueRead.nextOffset
-                    if (field == 1) {
-                        variant = valueRead.value.toInt()
+                    when (field) {
+                        1 -> variant = valueRead.value.toInt()
+                        2 -> id = valueRead.value.toInt()
                     }
                 }
                 2 -> {
@@ -239,8 +337,10 @@ object EdgezUsbControlProto {
                     offset = lenRead.nextOffset
                     val len = lenRead.value.toInt()
                     if (len < 0 || offset + len > payload.size) return null
-                    if (field == 7) {
-                        halowStatus = decodeHaLowInterfaceStatus(payload.copyOfRange(offset, offset + len))
+                    when (field) {
+                        3 -> rawRadioBuffer = payload.copyOfRange(offset, offset + len)
+                        7 -> halowStatus = decodeHaLowInterfaceStatus(payload.copyOfRange(offset, offset + len))
+                        8 -> discoveredNode = decodeDiscoveredNodeInfo(payload.copyOfRange(offset, offset + len))
                     }
                     offset += len
                 }
@@ -248,7 +348,13 @@ object EdgezUsbControlProto {
             }
         }
 
-        return if (variant == MOBILE_RADIO_VARIANT_HALOW_STATUS) halowStatus else null
+        return MobileFromRadio(
+            variant = variant,
+            id = id,
+            rawRadioBuffer = if (variant == MOBILE_RADIO_VARIANT_RAW_RADIO_BUFFER) rawRadioBuffer else ByteArray(0),
+            halowStatus = if (variant == MOBILE_RADIO_VARIANT_HALOW_STATUS) halowStatus else null,
+            discoveredNode = if (variant == MOBILE_RADIO_VARIANT_NODE_INFO) discoveredNode else null,
+        )
     }
 
     fun decodeHaLowInterfaceStatus(payload: ByteArray): HaLowInterfaceStatus? {
@@ -313,6 +419,103 @@ object EdgezUsbControlProto {
             ipAddr = ipAddr,
             gateway = gateway,
         )
+    }
+
+    fun decodeDiscoveredNodeInfo(payload: ByteArray): DiscoveredNodeInfo? {
+        var offset = 0
+        var bssid = ByteArray(0)
+        var ssid = ""
+        var meshId = ""
+        var rssi = 0
+        var channelFreqHz = 0
+        var bandwidthMhz = 0
+        var informationElements = ByteArray(0)
+        var edgezMetadata: EdgeZAssocMetadata? = null
+
+        while (offset < payload.size) {
+            val tagRead = readVarint(payload, offset) ?: return null
+            offset = tagRead.nextOffset
+            val field = (tagRead.value ushr 3).toInt()
+            val wireType = (tagRead.value and 0x07).toInt()
+
+            when (wireType) {
+                0 -> {
+                    val valueRead = readVarint(payload, offset) ?: return null
+                    offset = valueRead.nextOffset
+                    when (field) {
+                        4 -> rssi = valueRead.value.toInt()
+                        5 -> channelFreqHz = valueRead.value.toInt()
+                        6 -> bandwidthMhz = valueRead.value.toInt()
+                    }
+                }
+                2 -> {
+                    val lenRead = readVarint(payload, offset) ?: return null
+                    offset = lenRead.nextOffset
+                    val len = lenRead.value.toInt()
+                    if (len < 0 || offset + len > payload.size) return null
+                    val bytes = payload.copyOfRange(offset, offset + len)
+                    when (field) {
+                        1 -> bssid = bytes
+                        2 -> ssid = String(bytes, StandardCharsets.UTF_8)
+                        3 -> meshId = String(bytes, StandardCharsets.UTF_8)
+                        7 -> informationElements = bytes
+                        8 -> edgezMetadata = decodeEdgeZAssocMetadata(bytes)
+                    }
+                    offset += len
+                }
+                else -> return null
+            }
+        }
+
+        return DiscoveredNodeInfo(
+            bssid = bssid,
+            ssid = ssid,
+            meshId = meshId,
+            rssi = rssi,
+            channelFreqHz = channelFreqHz,
+            bandwidthMhz = bandwidthMhz,
+            informationElements = informationElements,
+            edgezMetadata = edgezMetadata,
+        )
+    }
+
+    fun decodeEdgeZAssocMetadata(payload: ByteArray): EdgeZAssocMetadata? {
+        var offset = 0
+        var userId = 0L
+        var userName = ""
+        var userPublicKey = ByteArray(0)
+
+        while (offset < payload.size) {
+            val tagRead = readVarint(payload, offset) ?: return null
+            offset = tagRead.nextOffset
+            val field = (tagRead.value ushr 3).toInt()
+            val wireType = (tagRead.value and 0x07).toInt()
+
+            when (wireType) {
+                0 -> {
+                    val valueRead = readVarint(payload, offset) ?: return null
+                    offset = valueRead.nextOffset
+                    if (field == 1) {
+                        userId = valueRead.value
+                    }
+                }
+                2 -> {
+                    val lenRead = readVarint(payload, offset) ?: return null
+                    offset = lenRead.nextOffset
+                    val len = lenRead.value.toInt()
+                    if (len < 0 || offset + len > payload.size) return null
+                    val bytes = payload.copyOfRange(offset, offset + len)
+                    when (field) {
+                        2 -> userName = String(bytes, StandardCharsets.UTF_8)
+                        3 -> userPublicKey = bytes
+                    }
+                    offset += len
+                }
+                else -> return null
+            }
+        }
+
+        return EdgeZAssocMetadata(userId, userName, userPublicKey)
     }
 
     private fun writeVarintField(out: ByteArrayOutputStream, fieldNumber: Int, value: Long) {

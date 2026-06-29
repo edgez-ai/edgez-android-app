@@ -104,8 +104,11 @@ fun DebugScreen(
                     }
                 }
                 EDGEZ_TYPE_HALOW_SYNC_FROM_RADIO, EDGEZ_TYPE_HALOW_SYNC_STATUS_RESP -> {
-                    val halowStatus = decodeHaLowStatusFrame(frame)
-                    status = if (halowStatus != null) {
+                    val halowMessage = decodeHaLowSyncFrame(frame)
+                    val halowStatus = halowMessage?.halowStatus ?: decodeHaLowStatusFrame(frame)
+                    status = if (halowMessage != null) {
+                        "${source.name} HaLow sync RX seq=$responseSeq: ${halowMessage.summary()}"
+                    } else if (halowStatus != null) {
                         "${source.name} HaLow sync RX seq=$responseSeq: ${halowStatus.summary()}"
                     } else {
                         "${source.name} malformed HaLow sync RX seq=$responseSeq type=$responseType"

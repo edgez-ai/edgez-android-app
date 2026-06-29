@@ -49,6 +49,7 @@ fun EdgeZApp() {
     var currentDestination by rememberSaveable { mutableStateOf(AppDestination.HOME) }
     var activeConnection by rememberSaveable { mutableStateOf(ActiveConnection.NONE) }
     var haLowStatus by remember { mutableStateOf<HaLowInterfaceStatus?>(null) }
+    var haLowUsers by remember { mutableStateOf<Map<Long, HaLowUser>>(emptyMap()) }
 
     fun resetHaLowInitTrigger() {
         pendingHaLowInitKey.set(null)
@@ -63,6 +64,7 @@ fun EdgeZApp() {
         clearReconnect()
         activeConnection = connection
         haLowStatus = null
+        haLowUsers = emptyMap()
         resetHaLowInitTrigger()
         lastConnectionPreferences.setLastSuccessfulConnection(connection)
         when (connection) {
@@ -132,6 +134,7 @@ fun EdgeZApp() {
         } else if (activeConnection == connection) {
             activeConnection = ActiveConnection.NONE
             haLowStatus = null
+            haLowUsers = emptyMap()
             resetHaLowInitTrigger()
             scheduleReconnect(connection)
         }
@@ -192,11 +195,21 @@ fun EdgeZApp() {
 
         fun handleTransportFrame(source: ActiveConnection, frame: ByteArray) {
             if (source != currentActiveConnection) return
-            val status = decodeHaLowStatusFrame(frame) ?: return
-            triggerHaLowInitIfNeeded(source, status)
+            val message = decodeHaLowSyncFrame(frame)
+            val status = message?.halowStatus ?: decodeHaLowStatusFrame(frame)
+            val user = message?.toHaLowUser(source.name)
+            if (status == null && user == null) return
+            if (status != null) {
+                triggerHaLowInitIfNeeded(source, status)
+            }
             mainHandler.post {
                 if (source == currentActiveConnection) {
-                    haLowStatus = status
+                    if (status != null) {
+                        haLowStatus = status
+                    }
+                    if (user != null) {
+                        haLowUsers = haLowUsers + (user.nodeNum to user)
+                    }
                 }
             }
         }
@@ -289,6 +302,7 @@ fun EdgeZApp() {
             AppDestination.HOME -> HomeScreen(
                 activeConnection = activeConnection,
                 haLowStatus = haLowStatus,
+                users = haLowUsers.values.sortedByDescending { it.lastSeenMs },
             )
             AppDestination.FAVORITES -> PlaceholderScreen("Favorites")
             AppDestination.PROFILE -> PlaceholderScreen("Profile")

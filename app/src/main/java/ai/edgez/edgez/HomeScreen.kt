@@ -25,24 +25,11 @@ import androidx.compose.ui.unit.dp
 import ai.edgez.edgez.ui.theme.EdgeZTheme
 import ai.edgez.edgez.usb.HaLowInterfaceStatus
 
-private data class NodeListItem(
-    val name: String,
-    val role: String,
-    val nodeId: String,
-    val status: String,
-    val route: String,
-)
-
-private val previewNodes = listOf(
-    NodeListItem("Jason", "Owner", "!edgez00", "Online", "USB"),
-    NodeListItem("Field Node", "Sensor", "!edgez01", "Idle", "HaLow"),
-    NodeListItem("Relay", "Router", "!edgez02", "Seen recently", "Mesh"),
-)
-
 @Composable
 fun HomeScreen(
     activeConnection: ActiveConnection,
     haLowStatus: HaLowInterfaceStatus?,
+    users: List<HaLowUser>,
 ) {
     Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
         LazyColumn(
@@ -69,8 +56,14 @@ fun HomeScreen(
                 Text("Users / Nodes", style = MaterialTheme.typography.titleMedium)
             }
 
-            items(previewNodes) { node ->
-                NodeCard(node)
+            if (users.isEmpty()) {
+                item {
+                    Text("No HaLow users seen yet", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+
+            items(users, key = { it.nodeNum }) { user ->
+                NodeCard(user)
             }
         }
     }
@@ -101,7 +94,7 @@ private fun HaLowMeshStatusIcon(status: HaLowInterfaceStatus?) {
 }
 
 @Composable
-private fun NodeCard(node: NodeListItem) {
+private fun NodeCard(user: HaLowUser) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
         Column(
             modifier = Modifier
@@ -115,14 +108,14 @@ private fun NodeCard(node: NodeListItem) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column {
-                    Text(node.name, style = MaterialTheme.typography.titleMedium)
-                    Text(node.nodeId, style = MaterialTheme.typography.bodyMedium)
+                    Text(user.displayName, style = MaterialTheme.typography.titleMedium)
+                    Text(user.nodeId, style = MaterialTheme.typography.bodyMedium)
                 }
-                Text(node.status, style = MaterialTheme.typography.labelLarge)
+                Text("Seen", style = MaterialTheme.typography.labelLarge)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text(node.role, style = MaterialTheme.typography.bodyMedium)
-                Text(node.route, style = MaterialTheme.typography.bodyMedium)
+                Text(user.shortName.ifBlank { "User" }, style = MaterialTheme.typography.bodyMedium)
+                Text(user.route, style = MaterialTheme.typography.bodyMedium)
             }
         }
     }
@@ -132,6 +125,18 @@ private fun NodeCard(node: NodeListItem) {
 @Composable
 private fun HomePreview() {
     EdgeZTheme {
-        HomeScreen(ActiveConnection.NONE, null)
+        HomeScreen(
+            ActiveConnection.NONE,
+            null,
+            listOf(
+                HaLowUser(
+                    nodeNum = 0x1f7e6325,
+                    shortName = "Sams",
+                    longName = "Samsung",
+                    route = "BLE",
+                    lastSeenMs = 0,
+                ),
+            ),
+        )
     }
 }
