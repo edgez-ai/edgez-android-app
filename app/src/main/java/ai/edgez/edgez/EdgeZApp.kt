@@ -303,6 +303,9 @@ fun EdgeZApp() {
                 activeConnection = activeConnection,
                 haLowStatus = haLowStatus,
                 users = haLowUsers.values.sortedByDescending { it.lastSeenMs },
+                onRemoveNode = { user ->
+                    haLowUsers = haLowUsers - user.nodeNum
+                },
             )
             AppDestination.FAVORITES -> PlaceholderScreen("Favorites")
             AppDestination.PROFILE -> PlaceholderScreen("Profile")

@@ -1,15 +1,22 @@
 package ai.edgez.edgez
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -17,19 +24,28 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import ai.edgez.edgez.ui.theme.EdgeZTheme
 import ai.edgez.edgez.usb.HaLowInterfaceStatus
+import kotlin.math.roundToInt
 
 @Composable
 fun HomeScreen(
     activeConnection: ActiveConnection,
     haLowStatus: HaLowInterfaceStatus?,
     users: List<HaLowUser>,
+    onRemoveNode: (HaLowUser) -> Unit,
 ) {
     Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
         LazyColumn(
@@ -63,7 +79,10 @@ fun HomeScreen(
             }
 
             items(users, key = { it.nodeNum }) { user ->
-                NodeCard(user)
+                SwipeToRemoveNodeCard(
+                    user = user,
+                    onRemove = { onRemoveNode(user) },
+                )
             }
         }
     }
@@ -91,6 +110,54 @@ private fun HaLowMeshStatusIcon(status: HaLowInterfaceStatus?) {
         contentDescription = description,
         tint = color,
     )
+}
+
+@Composable
+private fun SwipeToRemoveNodeCard(
+    user: HaLowUser,
+    onRemove: () -> Unit,
+) {
+    val actionWidth = 96.dp
+    val actionWidthPx = with(LocalDensity.current) { actionWidth.toPx() }
+    var targetOffsetPx by remember(user.nodeNum) { mutableFloatStateOf(0f) }
+    val offsetPx by animateFloatAsState(targetValue = targetOffsetPx, label = "node-card-offset")
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Box(
+            modifier = Modifier.matchParentSize(),
+            contentAlignment = Alignment.CenterEnd,
+        ) {
+            Button(
+                modifier = Modifier
+                    .width(actionWidth)
+                    .fillMaxHeight(),
+                onClick = onRemove,
+            ) {
+                Text("Delete")
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .offset { IntOffset(offsetPx.roundToInt(), 0) }
+                .pointerInput(user.nodeNum) {
+                    detectHorizontalDragGestures(
+                        onDragEnd = {
+                            targetOffsetPx = if (targetOffsetPx < -actionWidthPx / 2f) {
+                                -actionWidthPx
+                            } else {
+                                0f
+                            }
+                        },
+                        onHorizontalDrag = { _, dragAmount ->
+                            targetOffsetPx = (targetOffsetPx + dragAmount).coerceIn(-actionWidthPx, 0f)
+                        },
+                    )
+                },
+        ) {
+            NodeCard(user)
+        }
+    }
 }
 
 @Composable
@@ -137,6 +204,7 @@ private fun HomePreview() {
                     lastSeenMs = 0,
                 ),
             ),
+            onRemoveNode = {},
         )
     }
 }
