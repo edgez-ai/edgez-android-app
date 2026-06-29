@@ -24,6 +24,14 @@ object X25519KeyGenerator {
         return scalarMult(scalar, CURVE25519_BASE_U)
     }
 
+    fun sharedSecret(privateKey: ByteArray, peerPublicKey: ByteArray): ByteArray {
+        require(privateKey.size == 32) { "X25519 private key must be 32 bytes" }
+        require(peerPublicKey.size == 32) { "X25519 peer public key must be 32 bytes" }
+        val scalar = privateKey.copyOf()
+        clamp(scalar)
+        return scalarMult(scalar, peerPublicKey.toLittleEndianBigInteger())
+    }
+
     private fun clamp(key: ByteArray) {
         key[0] = (key[0].toInt() and 248).toByte()
         key[31] = ((key[31].toInt() and 127) or 64).toByte()
@@ -94,5 +102,13 @@ object X25519KeyGenerator {
             out[outIndex++] = bigEndian[sourceIndex--]
         }
         return out
+    }
+
+    private fun ByteArray.toLittleEndianBigInteger(): BigInteger {
+        val bigEndian = ByteArray(size)
+        for (i in indices) {
+            bigEndian[lastIndex - i] = this[i]
+        }
+        return BigInteger(1, bigEndian)
     }
 }

@@ -7,6 +7,7 @@ import ai.edgez.edgez.usb.EDGEZ_MAX_PAYLOAD
 import ai.edgez.edgez.usb.EDGEZ_TYPE_HALOW_SYNC_FROM_RADIO
 import ai.edgez.edgez.usb.EDGEZ_TYPE_HALOW_SYNC_STATUS_RESP
 import ai.edgez.edgez.usb.EDGEZ_VERSION
+import ai.edgez.edgez.usb.ConversationMessage
 import ai.edgez.edgez.usb.EdgezUsbControlProto
 import ai.edgez.edgez.usb.HaLowInterfaceStatus
 import ai.edgez.edgez.usb.MobileFromRadio
@@ -97,6 +98,9 @@ fun MobileFromRadio.summary(): String {
         }
         return "RadioBuffer bytes=${rawRadioBuffer.size}"
     }
+    conversationMessage?.let { message ->
+        return "Conversation from=${message.senderUserId} name=${message.senderName} to=${message.recipientUserId} bytes=${message.ciphertext.size}"
+    }
     discoveredNode?.let { node ->
         val metadata = node.edgezMetadata
         val user = metadata?.let { " userId=${it.userId} userName=${it.userName}" } ?: ""
@@ -121,6 +125,18 @@ fun MobileFromRadio.toHaLowUser(route: String): HaLowUser? {
         route = route,
         lastSeenMs = System.currentTimeMillis(),
         publicKey = metadata.userPublicKey,
+    )
+}
+
+fun ConversationMessage.toHaLowUser(route: String): HaLowUser {
+    val name = senderName.ifBlank { "!%08x".format(senderUserId and 0xffffffffL) }
+    return HaLowUser(
+        nodeNum = senderUserId and 0xffffffffL,
+        shortName = name.take(4),
+        longName = name,
+        route = route,
+        lastSeenMs = System.currentTimeMillis(),
+        publicKey = senderPublicKey,
     )
 }
 

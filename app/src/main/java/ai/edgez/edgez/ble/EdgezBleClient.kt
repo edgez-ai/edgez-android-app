@@ -31,6 +31,7 @@ import ai.edgez.edgez.usb.EDGEZ_TYPE_HALOW_SYNC_FROM_RADIO
 import ai.edgez.edgez.usb.EDGEZ_TYPE_HALOW_SYNC_STATUS_RESP
 import ai.edgez.edgez.usb.EDGEZ_TYPE_HALOW_SYNC_TO_RADIO
 import ai.edgez.edgez.usb.EDGEZ_VERSION
+import ai.edgez.edgez.usb.ConversationMessage
 import ai.edgez.edgez.usb.EdgezUsbControlProto
 import ai.edgez.edgez.usb.USB_CONTROL_ACTION_ECHO
 import java.nio.ByteBuffer
@@ -200,6 +201,13 @@ class EdgezBleClient(private val context: Context) {
         return sendFrame(
             EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
             EdgezUsbControlProto.encodeHaLowInit(countryCode, meshId, passphrase, userId, userName, userPublicKey, maxHop),
+        )
+    }
+
+    fun sendConversationMessage(message: ConversationMessage): Result<String> {
+        return sendFrame(
+            EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
+            EdgezUsbControlProto.encodeConversationMessage(message),
         )
     }
 

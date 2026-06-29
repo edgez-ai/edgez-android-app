@@ -48,6 +48,7 @@ const val MOBILE_RADIO_VARIANT_REBOOTED = 7
 const val MOBILE_RADIO_VARIANT_HALOW_STATUS = 8
 const val MOBILE_RADIO_VARIANT_NODE_INFO = 9
 const val MOBILE_RADIO_VARIANT_INIT_HALOW = 10
+const val MOBILE_RADIO_VARIANT_CONVERSATION_MESSAGE = 11
 
 private const val ESPRESSIF_VID = 0x303A
 private const val EDGEZ_TYPE_CONTROL_REQ = 3.toByte()
@@ -163,6 +164,7 @@ data class MobileFromRadio(
     val rawRadioBuffer: ByteArray = ByteArray(0),
     val halowStatus: HaLowInterfaceStatus? = null,
     val discoveredNode: DiscoveredNodeInfo? = null,
+    val conversationMessage: ConversationMessage? = null,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -173,7 +175,8 @@ data class MobileFromRadio(
             id == other.id &&
             rawRadioBuffer.contentEquals(other.rawRadioBuffer) &&
             halowStatus == other.halowStatus &&
-            discoveredNode == other.discoveredNode
+            discoveredNode == other.discoveredNode &&
+            conversationMessage == other.conversationMessage
     }
 
     override fun hashCode(): Int {
@@ -182,6 +185,39 @@ data class MobileFromRadio(
         result = 31 * result + rawRadioBuffer.contentHashCode()
         result = 31 * result + (halowStatus?.hashCode() ?: 0)
         result = 31 * result + (discoveredNode?.hashCode() ?: 0)
+        result = 31 * result + (conversationMessage?.hashCode() ?: 0)
+        return result
+    }
+}
+
+data class ConversationMessage(
+    val senderUserId: Long = 0,
+    val senderName: String = "",
+    val senderPublicKey: ByteArray = ByteArray(0),
+    val recipientUserId: Long = 0,
+    val nonce: ByteArray = ByteArray(0),
+    val ciphertext: ByteArray = ByteArray(0),
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+
+        other as ConversationMessage
+        return senderUserId == other.senderUserId &&
+            senderName == other.senderName &&
+            senderPublicKey.contentEquals(other.senderPublicKey) &&
+            recipientUserId == other.recipientUserId &&
+            nonce.contentEquals(other.nonce) &&
+            ciphertext.contentEquals(other.ciphertext)
+    }
+
+    override fun hashCode(): Int {
+        var result = senderUserId.hashCode()
+        result = 31 * result + senderName.hashCode()
+        result = 31 * result + senderPublicKey.contentHashCode()
+        result = 31 * result + recipientUserId.hashCode()
+        result = 31 * result + nonce.contentHashCode()
+        result = 31 * result + ciphertext.contentHashCode()
         return result
     }
 }
@@ -305,6 +341,22 @@ object EdgezUsbControlProto {
         return out.toByteArray()
     }
 
+    fun encodeConversationMessage(message: ConversationMessage): ByteArray {
+        val conversation = ByteArrayOutputStream()
+        writeVarintField(conversation, 1, message.senderUserId)
+        writeStringField(conversation, 2, message.senderName.take(64))
+        writeBytesField(conversation, 3, message.senderPublicKey.copyOf(minOf(message.senderPublicKey.size, 32)))
+        writeVarintField(conversation, 4, message.recipientUserId)
+        writeBytesField(conversation, 5, message.nonce)
+        writeBytesField(conversation, 6, message.ciphertext)
+
+        val out = ByteArrayOutputStream()
+        writeVarintField(out, 1, MOBILE_RADIO_VARIANT_CONVERSATION_MESSAGE.toLong())
+        writeVarintField(out, 2, System.currentTimeMillis() and 0xffffffffL)
+        writeBytesField(out, 9, conversation.toByteArray())
+        return out.toByteArray()
+    }
+
     fun decodeMobileFromRadio(payload: ByteArray): HaLowInterfaceStatus? {
         return decodeMobileFromRadioMessage(payload)?.halowStatus
     }
@@ -316,6 +368,7 @@ object EdgezUsbControlProto {
         var rawRadioBuffer = ByteArray(0)
         var halowStatus: HaLowInterfaceStatus? = null
         var discoveredNode: DiscoveredNodeInfo? = null
+        var conversationMessage: ConversationMessage? = null
 
         while (offset < payload.size) {
             val tagRead = readVarint(payload, offset) ?: return null
@@ -341,6 +394,7 @@ object EdgezUsbControlProto {
                         3 -> rawRadioBuffer = payload.copyOfRange(offset, offset + len)
                         7 -> halowStatus = decodeHaLowInterfaceStatus(payload.copyOfRange(offset, offset + len))
                         8 -> discoveredNode = decodeDiscoveredNodeInfo(payload.copyOfRange(offset, offset + len))
+                        9 -> conversationMessage = decodeConversationMessage(payload.copyOfRange(offset, offset + len))
                     }
                     offset += len
                 }
@@ -354,6 +408,59 @@ object EdgezUsbControlProto {
             rawRadioBuffer = if (variant == MOBILE_RADIO_VARIANT_RAW_RADIO_BUFFER) rawRadioBuffer else ByteArray(0),
             halowStatus = if (variant == MOBILE_RADIO_VARIANT_HALOW_STATUS) halowStatus else null,
             discoveredNode = if (variant == MOBILE_RADIO_VARIANT_NODE_INFO) discoveredNode else null,
+            conversationMessage = if (variant == MOBILE_RADIO_VARIANT_CONVERSATION_MESSAGE) conversationMessage else null,
+        )
+    }
+
+    fun decodeConversationMessage(payload: ByteArray): ConversationMessage? {
+        var offset = 0
+        var senderUserId = 0L
+        var senderName = ""
+        var senderPublicKey = ByteArray(0)
+        var recipientUserId = 0L
+        var nonce = ByteArray(0)
+        var ciphertext = ByteArray(0)
+
+        while (offset < payload.size) {
+            val tagRead = readVarint(payload, offset) ?: return null
+            offset = tagRead.nextOffset
+            val field = (tagRead.value ushr 3).toInt()
+            val wireType = (tagRead.value and 0x07).toInt()
+
+            when (wireType) {
+                0 -> {
+                    val valueRead = readVarint(payload, offset) ?: return null
+                    offset = valueRead.nextOffset
+                    when (field) {
+                        1 -> senderUserId = valueRead.value
+                        4 -> recipientUserId = valueRead.value
+                    }
+                }
+                2 -> {
+                    val lenRead = readVarint(payload, offset) ?: return null
+                    offset = lenRead.nextOffset
+                    val len = lenRead.value.toInt()
+                    if (len < 0 || offset + len > payload.size) return null
+                    val bytes = payload.copyOfRange(offset, offset + len)
+                    when (field) {
+                        2 -> senderName = String(bytes, StandardCharsets.UTF_8)
+                        3 -> senderPublicKey = bytes
+                        5 -> nonce = bytes
+                        6 -> ciphertext = bytes
+                    }
+                    offset += len
+                }
+                else -> return null
+            }
+        }
+
+        return ConversationMessage(
+            senderUserId = senderUserId,
+            senderName = senderName,
+            senderPublicKey = senderPublicKey,
+            recipientUserId = recipientUserId,
+            nonce = nonce,
+            ciphertext = ciphertext,
         )
     }
 
@@ -708,6 +815,17 @@ class EdgezUsbClient(private val context: Context) {
         return sendFrame(
             EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
             EdgezUsbControlProto.encodeHaLowInit(countryCode, meshId, passphrase, userId, userName, userPublicKey, maxHop),
+            timeoutMs,
+        )
+    }
+
+    fun sendConversationMessage(
+        message: ConversationMessage,
+        timeoutMs: Int = 1500,
+    ): Result<String> {
+        return sendFrame(
+            EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
+            EdgezUsbControlProto.encodeConversationMessage(message),
             timeoutMs,
         )
     }

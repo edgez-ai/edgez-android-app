@@ -50,6 +50,8 @@ fun EdgeZApp() {
     var activeConnection by rememberSaveable { mutableStateOf(ActiveConnection.NONE) }
     var haLowStatus by remember { mutableStateOf<HaLowInterfaceStatus?>(null) }
     var haLowUsers by remember { mutableStateOf<Map<Long, HaLowUser>>(emptyMap()) }
+    var selectedConversationUser by remember { mutableStateOf<HaLowUser?>(null) }
+    var conversations by remember { mutableStateOf<Map<Long, List<ConversationEntry>>>(emptyMap()) }
 
     fun resetHaLowInitTrigger() {
         pendingHaLowInitKey.set(null)
@@ -65,6 +67,7 @@ fun EdgeZApp() {
         activeConnection = connection
         haLowStatus = null
         haLowUsers = emptyMap()
+        selectedConversationUser = null
         resetHaLowInitTrigger()
         lastConnectionPreferences.setLastSuccessfulConnection(connection)
         when (connection) {
@@ -135,6 +138,7 @@ fun EdgeZApp() {
             activeConnection = ActiveConnection.NONE
             haLowStatus = null
             haLowUsers = emptyMap()
+            selectedConversationUser = null
             resetHaLowInitTrigger()
             scheduleReconnect(connection)
         }
@@ -198,7 +202,8 @@ fun EdgeZApp() {
             val message = decodeHaLowSyncFrame(frame)
             val status = message?.halowStatus ?: decodeHaLowStatusFrame(frame)
             val user = message?.toHaLowUser(source.name)
-            if (status == null && user == null) return
+            val conversationMessage = message?.conversationMessage
+            if (status == null && user == null && conversationMessage == null) return
             if (status != null) {
                 triggerHaLowInitIfNeeded(source, status)
             }
@@ -209,6 +214,33 @@ fun EdgeZApp() {
                     }
                     if (user != null) {
                         haLowUsers = haLowUsers + (user.nodeNum to user)
+                    }
+                    if (conversationMessage != null) {
+                        val senderUser = conversationMessage.toHaLowUser(source.name)
+                        haLowUsers = haLowUsers + (senderUser.nodeNum to senderUser)
+                        if (selectedConversationUser?.nodeNum == senderUser.nodeNum) {
+                            selectedConversationUser = senderUser
+                        }
+                        val identity = lastConnectionPreferences.getOrCreateUserIdentity()
+                        if (conversationMessage.recipientUserId == (identity.userId and 0xffffffffL)) {
+                            val entry = runCatching {
+                                ConversationEntry(
+                                    text = decryptConversationText(identity, conversationMessage),
+                                    mine = false,
+                                    timestampMs = System.currentTimeMillis(),
+                                )
+                            }.getOrElse {
+                                ConversationEntry(
+                                    text = "Unable to decrypt message",
+                                    mine = false,
+                                    timestampMs = System.currentTimeMillis(),
+                                    status = it.message.orEmpty(),
+                                )
+                            }
+                            conversations = conversations + (
+                                senderUser.nodeNum to ((conversations[senderUser.nodeNum] ?: emptyList()) + entry)
+                                )
+                        }
                     }
                 }
             }
@@ -299,14 +331,58 @@ fun EdgeZApp() {
         },
     ) {
         when (currentDestination) {
-            AppDestination.HOME -> HomeScreen(
-                activeConnection = activeConnection,
-                haLowStatus = haLowStatus,
-                users = haLowUsers.values.sortedByDescending { it.lastSeenMs },
-                onRemoveNode = { user ->
-                    haLowUsers = haLowUsers - user.nodeNum
-                },
-            )
+            AppDestination.HOME -> {
+                val conversationUser = selectedConversationUser
+                if (conversationUser != null) {
+                    ConversationScreen(
+                        activeConnection = activeConnection,
+                        user = conversationUser,
+                        messages = conversations[conversationUser.nodeNum] ?: emptyList(),
+                        onBack = { selectedConversationUser = null },
+                        onSendMessage = { text ->
+                            val identity = lastConnectionPreferences.getOrCreateUserIdentity()
+                            runCatching {
+                                encryptConversationText(identity, conversationUser, text)
+                            }.fold(
+                                onSuccess = { encryptedMessage ->
+                                    val result = when (activeConnection) {
+                                        ActiveConnection.USB -> usbClient.sendConversationMessage(encryptedMessage)
+                                        ActiveConnection.BLE -> bleClient.sendConversationMessage(encryptedMessage)
+                                        ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+                                    }
+                                    result.onSuccess {
+                                        val entry = ConversationEntry(
+                                            text = text,
+                                            mine = true,
+                                            timestampMs = System.currentTimeMillis(),
+                                            status = "Sent via ${activeConnection.name}",
+                                        )
+                                        conversations = conversations + (
+                                            conversationUser.nodeNum to ((conversations[conversationUser.nodeNum] ?: emptyList()) + entry)
+                                            )
+                                    }
+                                },
+                                onFailure = { Result.failure(it) },
+                            )
+                        },
+                    )
+                } else {
+                    HomeScreen(
+                        activeConnection = activeConnection,
+                        haLowStatus = haLowStatus,
+                        users = haLowUsers.values.sortedByDescending { it.lastSeenMs },
+                        onRemoveNode = { user ->
+                            haLowUsers = haLowUsers - user.nodeNum
+                            if (selectedConversationUser?.nodeNum == user.nodeNum) {
+                                selectedConversationUser = null
+                            }
+                        },
+                        onOpenConversation = { user ->
+                            selectedConversationUser = user
+                        },
+                    )
+                }
+            }
             AppDestination.FAVORITES -> PlaceholderScreen("Favorites")
             AppDestination.PROFILE -> PlaceholderScreen("Profile")
             AppDestination.SETTINGS -> SettingsScreen(

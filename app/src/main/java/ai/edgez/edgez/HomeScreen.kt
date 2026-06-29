@@ -1,6 +1,7 @@
 package ai.edgez.edgez
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -46,6 +47,7 @@ fun HomeScreen(
     haLowStatus: HaLowInterfaceStatus?,
     users: List<HaLowUser>,
     onRemoveNode: (HaLowUser) -> Unit,
+    onOpenConversation: (HaLowUser) -> Unit,
 ) {
     Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
         LazyColumn(
@@ -82,6 +84,7 @@ fun HomeScreen(
                 SwipeToRemoveNodeCard(
                     user = user,
                     onRemove = { onRemoveNode(user) },
+                    onOpenConversation = { onOpenConversation(user) },
                 )
             }
         }
@@ -116,6 +119,7 @@ private fun HaLowMeshStatusIcon(status: HaLowInterfaceStatus?) {
 private fun SwipeToRemoveNodeCard(
     user: HaLowUser,
     onRemove: () -> Unit,
+    onOpenConversation: () -> Unit,
 ) {
     val actionWidth = 96.dp
     val actionWidthPx = with(LocalDensity.current) { actionWidth.toPx() }
@@ -140,6 +144,7 @@ private fun SwipeToRemoveNodeCard(
         Box(
             modifier = Modifier
                 .offset { IntOffset(offsetPx.roundToInt(), 0) }
+                .clickable(onClick = onOpenConversation)
                 .pointerInput(user.nodeNum) {
                     detectHorizontalDragGestures(
                         onDragEnd = {
@@ -205,6 +210,7 @@ private fun HomePreview() {
                 ),
             ),
             onRemoveNode = {},
+            onOpenConversation = {},
         )
     }
 }
