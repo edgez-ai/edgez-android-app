@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import ai.edgez.edgez.ble.EdgezBleClient
 import ai.edgez.edgez.usb.EdgezUsbClient
 import ai.edgez.edgez.usb.HaLowInterfaceStatus
+import ai.edgez.edgez.usb.PacketMime
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -417,9 +418,10 @@ fun EdgeZApp() {
                                 encryptConversationText(identity, conversationUser, text)
                             }.fold(
                                 onSuccess = { encryptedMessage ->
+                                    val maxHop = lastConnectionPreferences.getMeshMaxHop()
                                     val result = when (activeConnection) {
-                                        ActiveConnection.USB -> usbClient.sendConversationMessage(encryptedMessage)
-                                        ActiveConnection.BLE -> bleClient.sendConversationMessage(encryptedMessage)
+                                        ActiveConnection.USB -> usbClient.sendConversationMessage(encryptedMessage, PacketMime.TEXT, maxHop)
+                                        ActiveConnection.BLE -> bleClient.sendConversationMessage(encryptedMessage, PacketMime.TEXT, maxHop)
                                         ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
                                     }
                                     result.onSuccess {

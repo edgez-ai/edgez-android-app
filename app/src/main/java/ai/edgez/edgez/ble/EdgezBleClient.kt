@@ -33,6 +33,7 @@ import ai.edgez.edgez.usb.EDGEZ_TYPE_HALOW_SYNC_TO_RADIO
 import ai.edgez.edgez.usb.EDGEZ_VERSION
 import ai.edgez.edgez.usb.ConversationMessage
 import ai.edgez.edgez.usb.EdgezUsbControlProto
+import ai.edgez.edgez.usb.PacketMime
 import ai.edgez.edgez.usb.USB_CONTROL_ACTION_ECHO
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -228,10 +229,19 @@ class EdgezBleClient(private val context: Context) {
         )
     }
 
-    fun sendConversationMessage(message: ConversationMessage): Result<String> {
+    fun sendConversationMessage(
+        message: ConversationMessage,
+        mime: PacketMime = PacketMime.TEXT,
+        maxHop: Int = 0,
+    ): Result<String> {
+        val packet = runCatching {
+            EdgezUsbControlProto.encodeConversationMessage(message, mime, maxHop)
+        }.getOrElse { error ->
+            return Result.failure(error)
+        }
         return sendFrame(
             EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
-            EdgezUsbControlProto.encodeConversationMessage(message),
+            packet,
         )
     }
 

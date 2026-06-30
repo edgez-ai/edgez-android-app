@@ -32,6 +32,7 @@ const val EDGEZ_TYPE_HALOW_SYNC_STATUS_RESP = 19
 const val EDGEZ_TYPE_ERROR = 0x7f
 const val EDGEZ_HEADER_LEN = 8
 const val EDGEZ_MAX_PAYLOAD = 512
+const val EDGEZ_NETWORK_PACKET_MAX_PAYLOAD = 400
 
 const val USB_CONTROL_ACTION_SET_BLE_ENABLED = 1
 const val USB_CONTROL_ACTION_SET_PAIRING_ENABLED = 2
@@ -176,6 +177,8 @@ data class NetworkPacket(
     val sequence: Int = 0,
     val userHigh: Long = 0,
     val userLow: Long = 0,
+    val mime: PacketMime = PacketMime.UNSPECIFIED,
+    val maxHop: Int = 0,
     val payload: ByteArray = ByteArray(0),
     val beacon: EdgeZAssocMetadata? = null,
     val beaconRaw: String = "",
@@ -199,6 +202,8 @@ data class NetworkPacket(
             sequence == other.sequence &&
             userHigh == other.userHigh &&
             userLow == other.userLow &&
+            mime == other.mime &&
+            maxHop == other.maxHop &&
             payload.contentEquals(other.payload) &&
             beacon == other.beacon &&
             beaconRaw == other.beaconRaw &&
@@ -215,12 +220,29 @@ data class NetworkPacket(
         result = 31 * result + sequence
         result = 31 * result + userHigh.hashCode()
         result = 31 * result + userLow.hashCode()
+        result = 31 * result + mime.hashCode()
+        result = 31 * result + maxHop
         result = 31 * result + payload.contentHashCode()
         result = 31 * result + (beacon?.hashCode() ?: 0)
         result = 31 * result + beaconRaw.hashCode()
         result = 31 * result + (halowStatus?.hashCode() ?: 0)
         result = 31 * result + (init?.hashCode() ?: 0)
         return result
+    }
+}
+
+enum class PacketMime(val wireValue: Int) {
+    UNSPECIFIED(0),
+    TEXT(1),
+    VOICE(2),
+    IMAGE(3),
+    VIDEO(4),
+    BINARY(5);
+
+    companion object {
+        fun fromWireValue(value: Int): PacketMime {
+            return values().firstOrNull { it.wireValue == value } ?: UNSPECIFIED
+        }
     }
 }
 
@@ -396,7 +418,11 @@ object EdgezUsbControlProto {
         }
     }
 
-    fun encodeConversationMessage(message: ConversationMessage): ByteArray {
+    fun encodeConversationMessage(
+        message: ConversationMessage,
+        mime: PacketMime = PacketMime.TEXT,
+        maxHop: Int = 0,
+    ): ByteArray {
         val conversation = ByteArrayOutputStream()
         writeVarintField(conversation, 1, message.senderUserId)
         writeStringField(conversation, 2, message.senderName.take(64))
@@ -404,12 +430,18 @@ object EdgezUsbControlProto {
         writeVarintField(conversation, 4, message.recipientUserId)
         writeBytesField(conversation, 5, message.nonce)
         writeBytesField(conversation, 6, message.ciphertext)
+        val conversationPayload = conversation.toByteArray()
+        require(conversationPayload.size <= EDGEZ_NETWORK_PACKET_MAX_PAYLOAD) {
+            "NetworkPacket payload too large: ${conversationPayload.size}/$EDGEZ_NETWORK_PACKET_MAX_PAYLOAD"
+        }
 
         return encodeNetworkPacket(
             userIdHigh = 0,
             userIdLow = message.senderUserId,
+            mime = mime,
+            maxHop = maxHop,
         ) { out ->
-            writeBytesField(out, NETWORK_PACKET_PAYLOAD_TAG, conversation.toByteArray())
+            writeBytesField(out, NETWORK_PACKET_PAYLOAD_TAG, conversationPayload)
         }
     }
 
@@ -431,6 +463,8 @@ object EdgezUsbControlProto {
         var sequence = 0
         var userHigh = 0L
         var userLow = 0L
+        var mime = PacketMime.UNSPECIFIED
+        var maxHop = 0
         var packetPayload = ByteArray(0)
         var beacon: EdgeZAssocMetadata? = null
         var beaconRaw = ""
@@ -456,6 +490,8 @@ object EdgezUsbControlProto {
                         6 -> sequence = valueRead.value.toInt()
                         7 -> userHigh = valueRead.value
                         8 -> userLow = valueRead.value
+                        9 -> mime = PacketMime.fromWireValue(valueRead.value.toInt())
+                        10 -> maxHop = valueRead.value.toInt()
                     }
                 }
                 2 -> {
@@ -488,6 +524,8 @@ object EdgezUsbControlProto {
             sequence = sequence,
             userHigh = userHigh,
             userLow = userLow,
+            mime = mime,
+            maxHop = maxHop,
             payload = packetPayload,
             beacon = beacon,
             beaconRaw = beaconRaw,
@@ -754,6 +792,8 @@ object EdgezUsbControlProto {
     private fun encodeNetworkPacket(
         userIdHigh: Long,
         userIdLow: Long,
+        mime: PacketMime = PacketMime.UNSPECIFIED,
+        maxHop: Int = 0,
         writeBody: (ByteArrayOutputStream) -> Unit,
     ): ByteArray {
         val out = ByteArrayOutputStream()
@@ -763,6 +803,12 @@ object EdgezUsbControlProto {
         writeVarintField(out, 5, NETWORK_INTERFACE_HALOW.toLong())
         writeVarintField(out, 7, userIdHigh)
         writeVarintField(out, 8, userIdLow)
+        if (mime != PacketMime.UNSPECIFIED) {
+            writeVarintField(out, 9, mime.wireValue.toLong())
+        }
+        if (maxHop > 0) {
+            writeVarintField(out, 10, maxHop.coerceIn(0, 255).toLong())
+        }
         writeBody(out)
         return out.toByteArray()
     }
@@ -1036,11 +1082,18 @@ class EdgezUsbClient(private val context: Context) {
 
     fun sendConversationMessage(
         message: ConversationMessage,
+        mime: PacketMime = PacketMime.TEXT,
+        maxHop: Int = 0,
         timeoutMs: Int = 1500,
     ): Result<String> {
+        val packet = runCatching {
+            EdgezUsbControlProto.encodeConversationMessage(message, mime, maxHop)
+        }.getOrElse { error ->
+            return Result.failure(error)
+        }
         return sendFrame(
             EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
-            EdgezUsbControlProto.encodeConversationMessage(message),
+            packet,
             timeoutMs,
         )
     }
