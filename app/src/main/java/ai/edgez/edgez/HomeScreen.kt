@@ -25,8 +25,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -39,6 +41,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import ai.edgez.edgez.ui.theme.EdgeZTheme
 import ai.edgez.edgez.usb.HaLowInterfaceStatus
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 @Composable
@@ -167,6 +170,15 @@ private fun SwipeToRemoveNodeCard(
 
 @Composable
 private fun NodeCard(user: HaLowUser) {
+    var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000)
+            nowMs = System.currentTimeMillis()
+        }
+    }
+
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
         Column(
             modifier = Modifier
@@ -183,7 +195,10 @@ private fun NodeCard(user: HaLowUser) {
                     Text(user.displayName, style = MaterialTheme.typography.titleMedium)
                     Text(user.nodeId, style = MaterialTheme.typography.bodyMedium)
                 }
-                Text("Seen", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    text = "Last seen ${formatLastSeenAge(user.lastSeenMs, nowMs)}",
+                    style = MaterialTheme.typography.labelLarge,
+                )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text(user.shortName.ifBlank { "User" }, style = MaterialTheme.typography.bodyMedium)
@@ -191,6 +206,29 @@ private fun NodeCard(user: HaLowUser) {
             }
         }
     }
+}
+
+private fun formatLastSeenAge(lastSeenMs: Long, nowMs: Long): String {
+    if (lastSeenMs <= 0L) return "unknown"
+    val elapsedSeconds = ((nowMs - lastSeenMs).coerceAtLeast(0L)) / 1_000L
+    if (elapsedSeconds < 60L) return "just now"
+
+    val elapsedMinutes = elapsedSeconds / 60L
+    if (elapsedMinutes < 60L) return "${elapsedMinutes}min"
+
+    val elapsedHours = elapsedMinutes / 60L
+    if (elapsedHours < 24L) return "${elapsedHours}hour"
+
+    val elapsedDays = elapsedHours / 24L
+    if (elapsedDays < 7L) return "${elapsedDays}day"
+
+    val elapsedWeeks = elapsedDays / 7L
+    if (elapsedDays < 30L) return "${elapsedWeeks}week"
+
+    val elapsedMonths = elapsedDays / 30L
+    if (elapsedDays < 365L) return "${elapsedMonths}month"
+
+    return "${elapsedDays / 365L}year"
 }
 
 @Preview(showBackground = true)
