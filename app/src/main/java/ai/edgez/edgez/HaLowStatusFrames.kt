@@ -5,9 +5,6 @@ import ai.edgez.edgez.usb.EDGEZ_HEADER_LEN
 import ai.edgez.edgez.usb.EDGEZ_MAGIC_0
 import ai.edgez.edgez.usb.EDGEZ_MAGIC_1
 import ai.edgez.edgez.usb.EDGEZ_MAX_PAYLOAD
-import ai.edgez.edgez.usb.EDGEZ_TYPE_HALOW_SYNC_FROM_RADIO
-import ai.edgez.edgez.usb.EDGEZ_TYPE_HALOW_SYNC_STATUS_RESP
-import ai.edgez.edgez.usb.EDGEZ_VERSION
 import ai.edgez.edgez.usb.EdgezUsbControlProto
 import ai.edgez.edgez.usb.HaLowInterfaceStatus
 import ai.edgez.edgez.usb.NetworkPacket
@@ -100,18 +97,12 @@ private fun displayUserId(userUuid: String, userId: Long): String {
 private fun decodeHaLowSyncPayload(frame: ByteArray): ByteArray? {
     if (frame.size < EDGEZ_HEADER_LEN ||
         frame[0] != EDGEZ_MAGIC_0 ||
-        frame[1] != EDGEZ_MAGIC_1 ||
-        frame[2] != EDGEZ_VERSION
+        frame[1] != EDGEZ_MAGIC_1
     ) {
         return null
     }
 
-    val type = frame[3].toInt() and 0xff
-    if (type != EDGEZ_TYPE_HALOW_SYNC_FROM_RADIO && type != EDGEZ_TYPE_HALOW_SYNC_STATUS_RESP) {
-        return null
-    }
-
-    val payloadLen = (frame[6].toInt() and 0xff) or ((frame[7].toInt() and 0xff) shl 8)
+    val payloadLen = (frame[2].toInt() and 0xff) or ((frame[3].toInt() and 0xff) shl 8)
     if (payloadLen > EDGEZ_MAX_PAYLOAD || EDGEZ_HEADER_LEN + payloadLen > frame.size) {
         return null
     }

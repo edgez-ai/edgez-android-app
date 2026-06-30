@@ -22,15 +22,7 @@ import java.util.concurrent.CopyOnWriteArraySet
 const val ACTION_USB_PERMISSION = "ai.edgez.edgez.USB_PERMISSION"
 const val EDGEZ_MAGIC_0 = 'E'.code.toByte()
 const val EDGEZ_MAGIC_1 = 'Z'.code.toByte()
-const val EDGEZ_VERSION = 1.toByte()
-const val EDGEZ_TYPE_ECHO_RESP = 2
-const val EDGEZ_TYPE_CONTROL_RESP = 4
-const val EDGEZ_TYPE_HALOW_SYNC_TO_RADIO = 16
-const val EDGEZ_TYPE_HALOW_SYNC_FROM_RADIO = 17
-const val EDGEZ_TYPE_HALOW_SYNC_STATUS_REQ = 18
-const val EDGEZ_TYPE_HALOW_SYNC_STATUS_RESP = 19
-const val EDGEZ_TYPE_ERROR = 0x7f
-const val EDGEZ_HEADER_LEN = 8
+const val EDGEZ_HEADER_LEN = 4
 const val EDGEZ_MAX_PAYLOAD = 512
 const val EDGEZ_NETWORK_PACKET_MAX_PAYLOAD = 400
 
@@ -38,8 +30,6 @@ const val USB_CONTROL_ACTION_SET_BLE_ENABLED = 1
 const val USB_CONTROL_ACTION_SET_PAIRING_ENABLED = 2
 const val USB_CONTROL_ACTION_SET_WIFI_CREDENTIALS = 3
 const val USB_CONTROL_ACTION_GET_STATUS = 4
-const val USB_CONTROL_ACTION_ECHO = 5
-const val USB_CONTROL_ACTION_GET_HALOW_SYNC_STATUS = 6
 private const val NETWORK_OPERATION_REQUEST = 1
 private const val NETWORK_INTERFACE_HALOW = 5
 private const val NETWORK_PACKET_PAYLOAD_TAG = 100
@@ -48,7 +38,6 @@ private const val NETWORK_PACKET_STATUS_TAG = 102
 private const val NETWORK_PACKET_INIT_TAG = 103
 
 private const val ESPRESSIF_VID = 0x303A
-private const val EDGEZ_TYPE_CONTROL_REQ = 3.toByte()
 private const val EDGEZ_MAX_FRAME = EDGEZ_HEADER_LEN + EDGEZ_MAX_PAYLOAD
 private const val USB_CONTROL_STATUS_OK = 1
 private const val TAG = "EdgezUsbClient"
@@ -298,7 +287,6 @@ object EdgezUsbControlProto {
                 writeStringField(out, 5, wifiPassphrase.take(64))
                 writeVarintField(out, 6, if (connectAfterSet) 1 else 0)
             }
-            USB_CONTROL_ACTION_ECHO -> writeStringField(out, 7, echoPayload.take(128))
         }
         return out.toByteArray()
     }
@@ -406,6 +394,12 @@ object EdgezUsbControlProto {
             userIdLow = userIdLow,
         ) { out ->
             writeStringField(out, NETWORK_PACKET_BEACON_TAG, beacon)
+        }
+    }
+
+    fun encodeStatusRequest(): ByteArray {
+        return encodeNetworkPacket { out ->
+            writeBytesField(out, NETWORK_PACKET_STATUS_TAG, ByteArray(0))
         }
     }
 
@@ -902,7 +896,6 @@ class EdgezUsbClient(private val context: Context) {
     private val debugListeners = CopyOnWriteArraySet<(String) -> Unit>()
     private val rxBuffer = ByteArray(EDGEZ_MAX_FRAME * 4)
     private var rxLen = 0
-    private var seq = 0
 
     fun scan(): List<UsbCandidate> {
         val devices = usbManager.deviceList.values.toList()
@@ -1003,24 +996,14 @@ class EdgezUsbClient(private val context: Context) {
         echoPayload: String = "",
         timeoutMs: Int = 1500,
     ): Result<String> {
-        val payload = EdgezUsbControlProto.encodeRequest(
-            action = action,
-            bleEnabled = bleEnabled,
-            pairingEnabled = pairingEnabled,
-            wifiSsid = wifiSsid,
-            wifiPassphrase = wifiPassphrase,
-            connectAfterSet = connectAfterSet,
-            echoPayload = echoPayload,
-        )
-        return sendFrame(EDGEZ_TYPE_CONTROL_REQ, payload, timeoutMs)
+        if (action != USB_CONTROL_ACTION_GET_STATUS) {
+            return Result.failure(UnsupportedOperationException("Legacy control action is no longer supported"))
+        }
+        return sendFrame(EdgezUsbControlProto.encodeStatusRequest(), timeoutMs)
     }
 
     fun sendEcho(message: String, timeoutMs: Int = 1500): Result<String> {
-        return sendControl(
-            action = USB_CONTROL_ACTION_ECHO,
-            echoPayload = message.take(128),
-            timeoutMs = timeoutMs,
-        )
+        return Result.failure(UnsupportedOperationException("Legacy echo is no longer supported"))
     }
 
     fun sendHaLowInit(
@@ -1035,7 +1018,6 @@ class EdgezUsbClient(private val context: Context) {
         timeoutMs: Int = 1500,
     ): Result<String> {
         return sendFrame(
-            EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
             EdgezUsbControlProto.encodeHaLowInit(countryCode, meshId, passphrase, userIdHigh, userIdLow, userName, userPublicKey, maxHop),
             timeoutMs,
         )
@@ -1052,7 +1034,6 @@ class EdgezUsbClient(private val context: Context) {
         timeoutMs: Int = 1500,
     ): Result<String> {
         return sendFrame(
-            EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
             EdgezUsbControlProto.encodeHaLowBeacon(
                 userIdHigh,
                 userIdLow,
@@ -1080,11 +1061,7 @@ class EdgezUsbClient(private val context: Context) {
         }.getOrElse { error ->
             return Result.failure(error)
         }
-        return sendFrame(
-            EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
-            packet,
-            timeoutMs,
-        )
+        return sendFrame(packet, timeoutMs)
     }
 
     private fun startRxTask(endpoint: UsbEndpoint) {
@@ -1159,22 +1136,7 @@ class EdgezUsbClient(private val context: Context) {
             if (rxLen < EDGEZ_HEADER_LEN) {
                 break
             }
-            if (rxBuffer[2] != EDGEZ_VERSION) {
-                emitDebug("RX bad version=${rxBuffer[2].toInt() and 0xff}; resync")
-                System.arraycopy(rxBuffer, 1, rxBuffer, 0, rxLen - 1)
-                rxLen -= 1
-                continue
-            }
-
-            val type = rxBuffer[3].toInt() and 0xff
-            if (!isKnownRxFrameType(type)) {
-                emitDebug("RX bad type=$type; resync")
-                System.arraycopy(rxBuffer, 1, rxBuffer, 0, rxLen - 1)
-                rxLen -= 1
-                continue
-            }
-
-            val payloadLen = readLe16(rxBuffer, 6)
+            val payloadLen = readLe16(rxBuffer, 2)
             if (payloadLen > EDGEZ_MAX_PAYLOAD) {
                 emitDebug("RX bad len=$payloadLen; resync")
                 System.arraycopy(rxBuffer, 1, rxBuffer, 0, rxLen - 1)
@@ -1188,8 +1150,7 @@ class EdgezUsbClient(private val context: Context) {
             }
 
             val frame = Arrays.copyOf(rxBuffer, frameLen)
-            val seq = readLe16(frame, 4)
-            emitDebug("RX frame type=$type seq=$seq len=$payloadLen")
+            emitDebug("RX protobuf frame len=$payloadLen")
             dispatchFrame(frame)
             if (rxLen == frameLen) {
                 rxLen = 0
@@ -1200,37 +1161,33 @@ class EdgezUsbClient(private val context: Context) {
         }
     }
 
-    private fun sendFrame(type: Byte, payload: ByteArray, timeoutMs: Int): Result<String> {
+    private fun sendFrame(payload: ByteArray, timeoutMs: Int): Result<String> {
         val activeConnection = connection ?: return Result.failure(IllegalStateException("USB is not connected"))
         val endpoint = writeEndpoint ?: return Result.failure(IllegalStateException("USB write endpoint is not open"))
         if (payload.size > EDGEZ_MAX_PAYLOAD) {
             return Result.failure(IllegalArgumentException("Payload too large: ${payload.size}/$EDGEZ_MAX_PAYLOAD"))
         }
 
-        val currentSeq = (seq++ and 0xffff)
         val tx = ByteBuffer.allocate(EDGEZ_HEADER_LEN + payload.size).order(ByteOrder.LITTLE_ENDIAN)
         tx.put(EDGEZ_MAGIC_0)
         tx.put(EDGEZ_MAGIC_1)
-        tx.put(EDGEZ_VERSION)
-        tx.put(type)
-        tx.putShort(currentSeq.toShort())
         tx.putShort(payload.size.toShort())
         tx.put(payload)
 
         val txBytes = tx.array()
-        emitDebug("TX frame type=${type.toInt() and 0xff} seq=$currentSeq len=${payload.size} ep=${endpoint.describe()}")
+        emitDebug("TX protobuf frame len=${payload.size} ep=${endpoint.describe()}")
         try {
             val written = activeConnection.bulkTransfer(endpoint, txBytes, txBytes.size, timeoutMs)
             if (written != txBytes.size) {
-                emitDebug("TX short seq=$currentSeq written=$written/${txBytes.size}")
+                emitDebug("TX short written=$written/${txBytes.size}")
                 return Result.failure(IllegalStateException("USB short write on ${endpoint.describe()}: $written/${txBytes.size}"))
             }
         } catch (e: RuntimeException) {
-            emitDebug("TX failed seq=$currentSeq: ${e.message}")
+            emitDebug("TX failed: ${e.message}")
             return Result.failure(IllegalStateException("USB write failed on ${endpoint.describe()}: ${e.message}", e))
         }
-        emitDebug("TX result seq=$currentSeq written=${txBytes.size}/${txBytes.size}")
-        return Result.success("Sent seq=$currentSeq")
+        emitDebug("TX result written=${txBytes.size}/${txBytes.size}")
+        return Result.success("Sent protobuf")
     }
 
     private fun dispatchFrame(frame: ByteArray) {
@@ -1333,11 +1290,4 @@ class EdgezUsbClient(private val context: Context) {
         return (data[start].toInt() and 0xff) or ((data[start + 1].toInt() and 0xff) shl 8)
     }
 
-    private fun isKnownRxFrameType(type: Int): Boolean {
-        return type == EDGEZ_TYPE_ECHO_RESP ||
-            type == EDGEZ_TYPE_CONTROL_RESP ||
-            type == EDGEZ_TYPE_HALOW_SYNC_FROM_RADIO ||
-            type == EDGEZ_TYPE_HALOW_SYNC_STATUS_RESP ||
-            type == EDGEZ_TYPE_ERROR
-    }
 }

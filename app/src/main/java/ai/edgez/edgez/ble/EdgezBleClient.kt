@@ -24,23 +24,14 @@ import ai.edgez.edgez.usb.EDGEZ_HEADER_LEN
 import ai.edgez.edgez.usb.EDGEZ_MAGIC_0
 import ai.edgez.edgez.usb.EDGEZ_MAGIC_1
 import ai.edgez.edgez.usb.EDGEZ_MAX_PAYLOAD
-import ai.edgez.edgez.usb.EDGEZ_TYPE_CONTROL_RESP
-import ai.edgez.edgez.usb.EDGEZ_TYPE_ECHO_RESP
-import ai.edgez.edgez.usb.EDGEZ_TYPE_ERROR
-import ai.edgez.edgez.usb.EDGEZ_TYPE_HALOW_SYNC_FROM_RADIO
-import ai.edgez.edgez.usb.EDGEZ_TYPE_HALOW_SYNC_STATUS_RESP
-import ai.edgez.edgez.usb.EDGEZ_TYPE_HALOW_SYNC_TO_RADIO
-import ai.edgez.edgez.usb.EDGEZ_VERSION
 import ai.edgez.edgez.usb.ConversationMessage
 import ai.edgez.edgez.usb.EdgezUsbControlProto
 import ai.edgez.edgez.usb.PacketMime
-import ai.edgez.edgez.usb.USB_CONTROL_ACTION_ECHO
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArraySet
 
-private const val EDGEZ_TYPE_CONTROL_REQ = 3.toByte()
 private const val EDGEZ_MAX_FRAME = EDGEZ_HEADER_LEN + EDGEZ_MAX_PAYLOAD
 private val EDGEZ_SERVICE_UUID: UUID = UUID.fromString("0000fff0-0000-1000-8000-00805f9b34fb")
 private val EDGEZ_RX_UUID: UUID = UUID.fromString("0000fff1-0000-1000-8000-00805f9b34fb")
@@ -63,7 +54,6 @@ class EdgezBleClient(private val context: Context) {
     private val debugListeners = CopyOnWriteArraySet<(String) -> Unit>()
     private val rxBuffer = ByteArray(EDGEZ_MAX_FRAME * 2)
     private var rxLen = 0
-    private var seq = 0
     private var scanCallback: ScanCallback? = null
     private var gatt: BluetoothGatt? = null
     private var rxCharacteristic: BluetoothGattCharacteristic? = null
@@ -171,23 +161,14 @@ class EdgezBleClient(private val context: Context) {
         echoPayload: String = "",
         timeoutMs: Int = 1500,
     ): Result<String> {
-        val payload = EdgezUsbControlProto.encodeRequest(
-            action = action,
-            bleEnabled = bleEnabled,
-            pairingEnabled = pairingEnabled,
-            wifiSsid = wifiSsid,
-            wifiPassphrase = wifiPassphrase,
-            connectAfterSet = connectAfterSet,
-            echoPayload = echoPayload,
-        )
-        return sendFrame(EDGEZ_TYPE_CONTROL_REQ, payload)
+        if (action != ai.edgez.edgez.usb.USB_CONTROL_ACTION_GET_STATUS) {
+            return Result.failure(UnsupportedOperationException("Legacy control action is no longer supported"))
+        }
+        return sendFrame(EdgezUsbControlProto.encodeStatusRequest())
     }
 
     fun sendEcho(message: String): Result<String> {
-        return sendControl(
-            action = USB_CONTROL_ACTION_ECHO,
-            echoPayload = message.take(128),
-        )
+        return Result.failure(UnsupportedOperationException("Legacy echo is no longer supported"))
     }
 
     fun sendHaLowInit(
@@ -201,7 +182,6 @@ class EdgezBleClient(private val context: Context) {
         maxHop: Int,
     ): Result<String> {
         return sendFrame(
-            EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
             EdgezUsbControlProto.encodeHaLowInit(countryCode, meshId, passphrase, userIdHigh, userIdLow, userName, userPublicKey, maxHop),
         )
     }
@@ -216,7 +196,6 @@ class EdgezBleClient(private val context: Context) {
         locationTimestampMs: Long = 0,
     ): Result<String> {
         return sendFrame(
-            EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
             EdgezUsbControlProto.encodeHaLowBeacon(
                 userIdHigh,
                 userIdLow,
@@ -242,32 +221,25 @@ class EdgezBleClient(private val context: Context) {
         }.getOrElse { error ->
             return Result.failure(error)
         }
-        return sendFrame(
-            EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
-            packet,
-        )
+        return sendFrame(packet)
     }
 
     @SuppressLint("MissingPermission")
-    private fun sendFrame(type: Byte, payload: ByteArray): Result<String> {
+    private fun sendFrame(payload: ByteArray): Result<String> {
         val gatt = gatt ?: return Result.failure(IllegalStateException("BLE is not connected"))
         val rx = rxCharacteristic ?: return Result.failure(IllegalStateException("BLE control service is not ready"))
         if (payload.size > EDGEZ_MAX_PAYLOAD) {
             return Result.failure(IllegalArgumentException("Payload too large: ${payload.size}/$EDGEZ_MAX_PAYLOAD"))
         }
 
-        val currentSeq = (seq++ and 0xffff)
         val tx = ByteBuffer.allocate(EDGEZ_HEADER_LEN + payload.size).order(ByteOrder.LITTLE_ENDIAN)
         tx.put(EDGEZ_MAGIC_0)
         tx.put(EDGEZ_MAGIC_1)
-        tx.put(EDGEZ_VERSION)
-        tx.put(type)
-        tx.putShort(currentSeq.toShort())
         tx.putShort(payload.size.toShort())
         tx.put(payload)
 
         val frame = tx.array()
-        emitDebug("TX frame type=${type.toInt() and 0xff} seq=$currentSeq len=${payload.size}")
+        emitDebug("TX protobuf frame len=${payload.size}")
         val ok = if (Build.VERSION.SDK_INT >= 33) {
             gatt.writeCharacteristic(rx, frame, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == BluetoothGatt.GATT_SUCCESS
         } else {
@@ -275,7 +247,7 @@ class EdgezBleClient(private val context: Context) {
             rx.value = frame
             gatt.writeCharacteristic(rx)
         }
-        return if (ok) Result.success("BLE sent seq=$currentSeq") else Result.failure(IllegalStateException("BLE write failed"))
+        return if (ok) Result.success("BLE sent protobuf") else Result.failure(IllegalStateException("BLE write failed"))
     }
 
     private val callback = object : BluetoothGattCallback() {
@@ -372,22 +344,7 @@ class EdgezBleClient(private val context: Context) {
             if (rxLen < EDGEZ_HEADER_LEN) {
                 break
             }
-            if (rxBuffer[2] != EDGEZ_VERSION) {
-                emitDebug("RX bad version=${rxBuffer[2].toInt() and 0xff}; resync")
-                System.arraycopy(rxBuffer, 1, rxBuffer, 0, rxLen - 1)
-                rxLen -= 1
-                continue
-            }
-
-            val type = rxBuffer[3].toInt() and 0xff
-            if (!isKnownRxFrameType(type)) {
-                emitDebug("RX bad type=$type; resync")
-                System.arraycopy(rxBuffer, 1, rxBuffer, 0, rxLen - 1)
-                rxLen -= 1
-                continue
-            }
-
-            val payloadLen = readLe16(rxBuffer, 6)
+            val payloadLen = readLe16(rxBuffer, 2)
             if (payloadLen > EDGEZ_MAX_PAYLOAD) {
                 emitDebug("RX bad len=$payloadLen; resync")
                 System.arraycopy(rxBuffer, 1, rxBuffer, 0, rxLen - 1)
@@ -400,7 +357,7 @@ class EdgezBleClient(private val context: Context) {
             }
 
             val frame = rxBuffer.copyOf(frameLen)
-            emitDebug("RX frame type=${frame[3].toInt() and 0xff} seq=${readLe16(frame, 4)} len=$payloadLen")
+            emitDebug("RX protobuf frame len=$payloadLen")
             frameListeners.forEach { it(frame) }
             if (rxLen == frameLen) {
                 rxLen = 0
@@ -430,11 +387,4 @@ class EdgezBleClient(private val context: Context) {
         return (data[start].toInt() and 0xff) or ((data[start + 1].toInt() and 0xff) shl 8)
     }
 
-    private fun isKnownRxFrameType(type: Int): Boolean {
-        return type == EDGEZ_TYPE_ECHO_RESP ||
-            type == EDGEZ_TYPE_CONTROL_RESP ||
-            type == EDGEZ_TYPE_HALOW_SYNC_FROM_RADIO ||
-            type == EDGEZ_TYPE_HALOW_SYNC_STATUS_RESP ||
-            type == EDGEZ_TYPE_ERROR
-    }
 }
