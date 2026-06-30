@@ -92,32 +92,31 @@ fun HaLowInterfaceStatus.summary(): String {
 }
 
 fun MobileFromRadio.summary(): String {
-    user?.let {
-        return "NetworkPacket user=${it.userName.ifBlank { "unknown" }} id=${"!%08x".format(it.userId and 0xffffffffL)} bytes=${rawRadioBuffer.size}"
+    beacon?.let {
+        val node = from.takeIf { value -> value != 0L } ?: (it.userId and 0xffffffffL)
+        return "NetworkPacket beacon user=${it.userName.ifBlank { "unknown" }} node=0x%012x userId=${"!%08x".format(it.userId and 0xffffffffL)} id=$id".format(node)
+    }
+    conversationMessage?.let { message ->
+        return "Conversation from=${message.senderUserId} name=${message.senderName} to=${message.recipientUserId} bytes=${message.ciphertext.size}"
     }
     if (rawRadioBuffer.isNotEmpty()) {
         parseEdgeZUserFromRawRadioBuffer(rawRadioBuffer, "HaLow")?.let { user ->
             return "RadioBuffer user=${user.displayName} node=${user.nodeId} short=${user.shortName}"
         }
-        return "RadioBuffer bytes=${rawRadioBuffer.size}"
-    }
-    conversationMessage?.let { message ->
-        return "Conversation from=${message.senderUserId} name=${message.senderName} to=${message.recipientUserId} bytes=${message.ciphertext.size}"
-    }
-    discoveredNode?.let { node ->
-        val metadata = node.edgezMetadata
-        val user = metadata?.let { " userId=${it.userId} userName=${it.userName}" } ?: ""
-        return "NodeInfo meshId=${node.meshId} ssid=${node.ssid} rssi=${node.rssi} freq=${node.channelFreqHz} bw=${node.bandwidthMhz}$user"
+        return "NetworkPacket payload bytes=${rawRadioBuffer.size} from=0x%012x id=$id".format(from)
     }
     halowStatus?.let { return it.summary() }
-    return "variant=$variant id=$id"
+    init?.let {
+        return "NetworkPacket init country=${it.countryCode} meshId=${it.meshId} maxHop=${it.maxHop} user=${it.userName.ifBlank { "unknown" }} id=$id"
+    }
+    return "NetworkPacket op=$operation iface=$interfaceId seq=$sequence id=$id from=0x%012x to=0x%012x user=$user".format(from, to)
 }
 
 fun MobileFromRadio.toHaLowUser(route: String): HaLowUser? {
-    user?.let { metadata ->
+    beacon?.let { metadata ->
         if (metadata.userId == 0L && metadata.userName.isBlank()) return null
         return HaLowUser(
-            nodeNum = metadata.userId and 0xffffffffL,
+            nodeNum = from.takeIf { it != 0L } ?: (metadata.userId and 0xffffffffL),
             shortName = metadata.userName.take(4),
             longName = metadata.userName,
             route = route,
@@ -129,18 +128,7 @@ fun MobileFromRadio.toHaLowUser(route: String): HaLowUser? {
     if (rawRadioBuffer.isNotEmpty()) {
         return parseEdgeZUserFromRawRadioBuffer(rawRadioBuffer, route)
     }
-
-    val node = discoveredNode ?: return null
-    val metadata = node.edgezMetadata ?: return null
-    if (metadata.userId == 0L && metadata.userName.isBlank()) return null
-    return HaLowUser(
-        nodeNum = metadata.userId and 0xffffffffL,
-        shortName = metadata.userName.take(4),
-        longName = metadata.userName,
-        route = route,
-        lastSeenMs = System.currentTimeMillis(),
-        publicKey = metadata.userPublicKey,
-    )
+    return null
 }
 
 fun ConversationMessage.toHaLowUser(route: String): HaLowUser {

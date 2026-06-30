@@ -39,17 +39,6 @@ const val USB_CONTROL_ACTION_SET_WIFI_CREDENTIALS = 3
 const val USB_CONTROL_ACTION_GET_STATUS = 4
 const val USB_CONTROL_ACTION_ECHO = 5
 const val USB_CONTROL_ACTION_GET_HALOW_SYNC_STATUS = 6
-const val MOBILE_RADIO_VARIANT_RAW_RADIO_BUFFER = 1
-const val MOBILE_RADIO_VARIANT_WANT_CONFIG = 2
-const val MOBILE_RADIO_VARIANT_DISCONNECT = 3
-const val MOBILE_RADIO_VARIANT_HEARTBEAT = 4
-const val MOBILE_RADIO_VARIANT_CONFIG_COMPLETE = 5
-const val MOBILE_RADIO_VARIANT_QUEUE_STATUS = 6
-const val MOBILE_RADIO_VARIANT_REBOOTED = 7
-const val MOBILE_RADIO_VARIANT_HALOW_STATUS = 8
-const val MOBILE_RADIO_VARIANT_NODE_INFO = 9
-const val MOBILE_RADIO_VARIANT_INIT_HALOW = 10
-const val MOBILE_RADIO_VARIANT_CONVERSATION_MESSAGE = 11
 private const val NETWORK_OPERATION_REQUEST = 1
 private const val NETWORK_INTERFACE_HALOW = 5
 private const val NETWORK_PACKET_PAYLOAD_TAG = 100
@@ -166,40 +155,95 @@ data class DiscoveredNodeInfo(
     }
 }
 
-data class MobileFromRadio(
-    val variant: Int = 0,
-    val id: Int = 0,
-    val rawRadioBuffer: ByteArray = ByteArray(0),
-    val halowStatus: HaLowInterfaceStatus? = null,
-    val discoveredNode: DiscoveredNodeInfo? = null,
-    val conversationMessage: ConversationMessage? = null,
-    val user: EdgeZAssocMetadata? = null,
+data class HaLowInitConfig(
+    val countryCode: String = "",
+    val meshId: String = "",
+    val passphrase: String = "",
+    val maxHop: Int = 0,
+    val userId: Long = 0,
+    val userName: String = "",
+    val userPublicKey: ByteArray = ByteArray(0),
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (javaClass != other?.javaClass) return false
 
-        other as MobileFromRadio
-        return variant == other.variant &&
-            id == other.id &&
-            rawRadioBuffer.contentEquals(other.rawRadioBuffer) &&
-            halowStatus == other.halowStatus &&
-            discoveredNode == other.discoveredNode &&
-            conversationMessage == other.conversationMessage &&
-            user == other.user
+        other as HaLowInitConfig
+        return countryCode == other.countryCode &&
+            meshId == other.meshId &&
+            passphrase == other.passphrase &&
+            maxHop == other.maxHop &&
+            userId == other.userId &&
+            userName == other.userName &&
+            userPublicKey.contentEquals(other.userPublicKey)
     }
 
     override fun hashCode(): Int {
-        var result = variant
-        result = 31 * result + id
-        result = 31 * result + rawRadioBuffer.contentHashCode()
-        result = 31 * result + (halowStatus?.hashCode() ?: 0)
-        result = 31 * result + (discoveredNode?.hashCode() ?: 0)
-        result = 31 * result + (conversationMessage?.hashCode() ?: 0)
-        result = 31 * result + (user?.hashCode() ?: 0)
+        var result = countryCode.hashCode()
+        result = 31 * result + meshId.hashCode()
+        result = 31 * result + passphrase.hashCode()
+        result = 31 * result + maxHop
+        result = 31 * result + userId.hashCode()
+        result = 31 * result + userName.hashCode()
+        result = 31 * result + userPublicKey.contentHashCode()
         return result
     }
 }
+
+data class NetworkPacket(
+    val id: Long = 0,
+    val from: Long = 0,
+    val to: Long = 0,
+    val operation: Int = 0,
+    val interfaceId: Int = 0,
+    val sequence: Int = 0,
+    val user: Long = 0,
+    val payload: ByteArray = ByteArray(0),
+    val beacon: EdgeZAssocMetadata? = null,
+    val beaconRaw: String = "",
+    val halowStatus: HaLowInterfaceStatus? = null,
+    val init: HaLowInitConfig? = null,
+) {
+    val rawRadioBuffer: ByteArray get() = payload
+    val conversationMessage: ConversationMessage? get() = EdgezUsbControlProto.decodeConversationMessage(payload)
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+
+        other as NetworkPacket
+        return id == other.id &&
+            from == other.from &&
+            to == other.to &&
+            operation == other.operation &&
+            interfaceId == other.interfaceId &&
+            sequence == other.sequence &&
+            user == other.user &&
+            payload.contentEquals(other.payload) &&
+            beacon == other.beacon &&
+            beaconRaw == other.beaconRaw &&
+            halowStatus == other.halowStatus &&
+            init == other.init
+    }
+
+    override fun hashCode(): Int {
+        var result = id.hashCode()
+        result = 31 * result + from.hashCode()
+        result = 31 * result + to.hashCode()
+        result = 31 * result + operation
+        result = 31 * result + interfaceId
+        result = 31 * result + sequence
+        result = 31 * result + user.hashCode()
+        result = 31 * result + payload.contentHashCode()
+        result = 31 * result + (beacon?.hashCode() ?: 0)
+        result = 31 * result + beaconRaw.hashCode()
+        result = 31 * result + (halowStatus?.hashCode() ?: 0)
+        result = 31 * result + (init?.hashCode() ?: 0)
+        return result
+    }
+}
+
+typealias MobileFromRadio = NetworkPacket
 
 data class ConversationMessage(
     val senderUserId: Long = 0,
@@ -382,15 +426,27 @@ object EdgezUsbControlProto {
     }
 
     fun decodeMobileFromRadio(payload: ByteArray): HaLowInterfaceStatus? {
-        return decodeMobileFromRadioMessage(payload)?.halowStatus
+        return decodeNetworkPacket(payload)?.halowStatus
     }
 
     fun decodeMobileFromRadioMessage(payload: ByteArray): MobileFromRadio? {
+        return decodeNetworkPacket(payload)
+    }
+
+    fun decodeNetworkPacket(payload: ByteArray): NetworkPacket? {
         var offset = 0
         var id = 0L
-        var rawRadioBuffer = ByteArray(0)
+        var from = 0L
+        var to = 0L
+        var operation = 0
+        var interfaceId = 0
+        var sequence = 0
+        var user = 0L
+        var packetPayload = ByteArray(0)
+        var beacon: EdgeZAssocMetadata? = null
+        var beaconRaw = ""
         var halowStatus: HaLowInterfaceStatus? = null
-        var user: EdgeZAssocMetadata? = null
+        var init: HaLowInitConfig? = null
 
         while (offset < payload.size) {
             val tagRead = readVarint(payload, offset) ?: return null
@@ -404,6 +460,12 @@ object EdgezUsbControlProto {
                     offset = valueRead.nextOffset
                     when (field) {
                         1 -> id = valueRead.value
+                        2 -> from = valueRead.value
+                        3 -> to = valueRead.value
+                        4 -> operation = valueRead.value.toInt()
+                        5 -> interfaceId = valueRead.value.toInt()
+                        6 -> sequence = valueRead.value.toInt()
+                        7 -> user = valueRead.value
                     }
                 }
                 2 -> {
@@ -413,9 +475,13 @@ object EdgezUsbControlProto {
                     if (len < 0 || offset + len > payload.size) return null
                     val bytes = payload.copyOfRange(offset, offset + len)
                     when (field) {
-                        NETWORK_PACKET_PAYLOAD_TAG -> rawRadioBuffer = bytes
-                        NETWORK_PACKET_BEACON_TAG -> user = decodeBeaconString(bytes)
+                        NETWORK_PACKET_PAYLOAD_TAG -> packetPayload = bytes
+                        NETWORK_PACKET_BEACON_TAG -> {
+                            beaconRaw = String(bytes, StandardCharsets.UTF_8)
+                            beacon = decodeBeaconString(bytes)
+                        }
                         NETWORK_PACKET_STATUS_TAG -> halowStatus = decodeHaLowInterfaceStatus(bytes)
+                        NETWORK_PACKET_INIT_TAG -> init = decodeHaLowInitConfig(bytes)
                     }
                     offset += len
                 }
@@ -423,19 +489,19 @@ object EdgezUsbControlProto {
             }
         }
 
-        val variant = when {
-            halowStatus != null -> MOBILE_RADIO_VARIANT_HALOW_STATUS
-            rawRadioBuffer.isNotEmpty() -> MOBILE_RADIO_VARIANT_RAW_RADIO_BUFFER
-            user != null -> MOBILE_RADIO_VARIANT_NODE_INFO
-            else -> 0
-        }
-
-        return MobileFromRadio(
-            variant = variant,
-            id = (id and 0xffffffffL).toInt(),
-            rawRadioBuffer = rawRadioBuffer,
-            halowStatus = halowStatus,
+        return NetworkPacket(
+            id = id,
+            from = from,
+            to = to,
+            operation = operation,
+            interfaceId = interfaceId,
+            sequence = sequence,
             user = user,
+            payload = packetPayload,
+            beacon = beacon,
+            beaconRaw = beaconRaw,
+            halowStatus = halowStatus,
+            init = init,
         )
     }
 
@@ -555,6 +621,61 @@ object EdgezUsbControlProto {
             ipAddr = ipAddr,
             gateway = gateway,
             macAddress = macAddress,
+        )
+    }
+
+    fun decodeHaLowInitConfig(payload: ByteArray): HaLowInitConfig? {
+        var offset = 0
+        var countryCode = ""
+        var meshId = ""
+        var passphrase = ""
+        var maxHop = 0
+        var userId = 0L
+        var userName = ""
+        var userPublicKey = ByteArray(0)
+
+        while (offset < payload.size) {
+            val tagRead = readVarint(payload, offset) ?: return null
+            offset = tagRead.nextOffset
+            val field = (tagRead.value ushr 3).toInt()
+            val wireType = (tagRead.value and 0x07).toInt()
+
+            when (wireType) {
+                0 -> {
+                    val valueRead = readVarint(payload, offset) ?: return null
+                    offset = valueRead.nextOffset
+                    when (field) {
+                        4 -> maxHop = valueRead.value.toInt()
+                        5 -> userId = valueRead.value
+                    }
+                }
+                2 -> {
+                    val lenRead = readVarint(payload, offset) ?: return null
+                    offset = lenRead.nextOffset
+                    val len = lenRead.value.toInt()
+                    if (len < 0 || offset + len > payload.size) return null
+                    val bytes = payload.copyOfRange(offset, offset + len)
+                    when (field) {
+                        1 -> countryCode = String(bytes, StandardCharsets.UTF_8)
+                        2 -> meshId = String(bytes, StandardCharsets.UTF_8)
+                        3 -> passphrase = String(bytes, StandardCharsets.UTF_8)
+                        6 -> userName = String(bytes, StandardCharsets.UTF_8)
+                        7 -> userPublicKey = bytes
+                    }
+                    offset += len
+                }
+                else -> return null
+            }
+        }
+
+        return HaLowInitConfig(
+            countryCode = countryCode,
+            meshId = meshId,
+            passphrase = passphrase,
+            maxHop = maxHop,
+            userId = userId,
+            userName = userName,
+            userPublicKey = userPublicKey,
         )
     }
 
