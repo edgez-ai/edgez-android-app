@@ -21,6 +21,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -35,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.IntOffset
@@ -170,6 +172,7 @@ private fun SwipeToRemoveNodeCard(
 
 @Composable
 private fun NodeCard(user: HaLowUser) {
+    val context = LocalContext.current
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     LaunchedEffect(Unit) {
@@ -196,10 +199,23 @@ private fun NodeCard(user: HaLowUser) {
                     Text("Node ${user.nodeId}", style = MaterialTheme.typography.bodyMedium)
                     Text("User ${user.userIdText}", style = MaterialTheme.typography.bodySmall)
                 }
-                Text(
-                    text = "Last seen ${formatLastSeenAge(user.lastSeenMs, nowMs)}",
-                    style = MaterialTheme.typography.labelLarge,
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Last seen ${formatLastSeenAge(user.lastSeenMs, nowMs)}",
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                    if (user.hasLocation()) {
+                        IconButton(onClick = { context.openUserLocationInMap(user) }) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_location),
+                                contentDescription = "Open location in map",
+                            )
+                        }
+                    }
+                }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text(user.shortName.ifBlank { "User" }, style = MaterialTheme.typography.bodyMedium)

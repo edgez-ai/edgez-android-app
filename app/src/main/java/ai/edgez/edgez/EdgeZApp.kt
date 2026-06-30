@@ -60,6 +60,7 @@ fun EdgeZApp() {
     var haLowUsers by remember { mutableStateOf(edgeZDatabase.getUsers()) }
     var selectedConversationUser by remember { mutableStateOf<HaLowUser?>(null) }
     var conversations by remember { mutableStateOf(edgeZDatabase.getMessages()) }
+    var shareLocation by rememberSaveable { mutableStateOf(lastConnectionPreferences.getShareLocation()) }
 
     fun resetHaLowInitTrigger() {
         pendingHaLowInitKey.set(null)
@@ -154,6 +155,7 @@ fun EdgeZApp() {
     }
     val currentActiveConnection by rememberUpdatedState(activeConnection)
     val currentHaLowStatus by rememberUpdatedState(haLowStatus)
+    val currentShareLocation by rememberUpdatedState(shareLocation)
 
     DisposableEffect(Unit) {
         fun triggerHaLowInitIfNeeded(source: ActiveConnection, status: HaLowInterfaceStatus) {
@@ -260,7 +262,7 @@ fun EdgeZApp() {
                 val status = currentHaLowStatus
                 if (source != ActiveConnection.NONE && status != null && status.supported && status.stackInitialized && status.meshMode) {
                     val userIdentity = lastConnectionPreferences.getOrCreateUserIdentity()
-                    val location = if (lastConnectionPreferences.getShareLocation()) {
+                    val location = if (currentShareLocation) {
                         context.applicationContext.getBestKnownLocation()
                     } else {
                         null
@@ -443,6 +445,11 @@ fun EdgeZApp() {
                 client = usbClient,
                 bleClient = bleClient,
                 activeConnection = activeConnection,
+                shareLocation = shareLocation,
+                onShareLocationChange = { enabled ->
+                    shareLocation = enabled
+                    lastConnectionPreferences.setShareLocation(enabled)
+                },
                 onTransportConnectionChange = { connection, connected ->
                     setTransportConnected(connection, connected)
                 },

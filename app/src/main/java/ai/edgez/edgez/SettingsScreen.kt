@@ -57,6 +57,8 @@ fun SettingsScreen(
     client: EdgezUsbClient,
     bleClient: EdgezBleClient,
     activeConnection: ActiveConnection,
+    shareLocation: Boolean,
+    onShareLocationChange: (Boolean) -> Unit,
     onTransportConnectionChange: (ActiveConnection, Boolean) -> Unit,
 ) {
     val context = LocalContext.current
@@ -74,7 +76,6 @@ fun SettingsScreen(
     var maxHop by rememberSaveable { mutableStateOf(connectionPreferences.getMeshMaxHop().toString()) }
     var userIdentity by remember { mutableStateOf(connectionPreferences.getOrCreateUserIdentity()) }
     var userName by rememberSaveable { mutableStateOf(userIdentity.name) }
-    var shareLocation by rememberSaveable { mutableStateOf(connectionPreferences.getShareLocation()) }
     var showDebugPopup by rememberSaveable { mutableStateOf(false) }
     var status by remember { mutableStateOf("Connect the ESP32-S3 USB port, then scan.") }
     val activity = context as? ComponentActivity
@@ -341,9 +342,12 @@ fun SettingsScreen(
                         Switch(
                             checked = shareLocation,
                             onCheckedChange = { enabled ->
-                                shareLocation = enabled
+                                connectionPreferences.setShareLocation(enabled)
+                                onShareLocationChange(enabled)
                                 if (enabled && !hasLocationPermission()) {
                                     requestLocationPermissions()
+                                } else {
+                                    status = if (enabled) "Location sharing enabled" else "Location sharing disabled"
                                 }
                             },
                         )
@@ -425,6 +429,8 @@ private fun SettingsPreview() {
             client = EdgezUsbClient(context),
             bleClient = EdgezBleClient(context),
             activeConnection = ActiveConnection.NONE,
+            shareLocation = false,
+            onShareLocationChange = {},
             onTransportConnectionChange = { _, _ -> },
         )
     }

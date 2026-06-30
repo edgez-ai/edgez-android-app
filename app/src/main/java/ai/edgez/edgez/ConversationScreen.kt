@@ -11,6 +11,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -23,6 +25,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -38,6 +42,7 @@ fun ConversationScreen(
 ) {
     var draft by rememberSaveable(user.nodeNum) { mutableStateOf("") }
     var status by rememberSaveable(user.nodeNum) { mutableStateOf("") }
+    val context = LocalContext.current
     val canSend = activeConnection != ActiveConnection.NONE && user.publicKey.size == 32 && draft.isNotBlank()
 
     Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
@@ -56,10 +61,23 @@ fun ConversationScreen(
                 TextButton(onClick = onBack) {
                     Text("Back")
                 }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(user.displayName, style = MaterialTheme.typography.titleLarge)
-                    Text("Node ${user.nodeId}", style = MaterialTheme.typography.bodySmall)
-                    Text("User ${user.userIdText}", style = MaterialTheme.typography.bodySmall)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (user.hasLocation()) {
+                        IconButton(onClick = { context.openUserLocationInMap(user) }) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_location),
+                                contentDescription = "Open location in map",
+                            )
+                        }
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(user.displayName, style = MaterialTheme.typography.titleLarge)
+                        Text("Node ${user.nodeId}", style = MaterialTheme.typography.bodySmall)
+                        Text("User ${user.userIdText}", style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
 
