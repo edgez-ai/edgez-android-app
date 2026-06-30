@@ -221,12 +221,7 @@ fun EdgeZApp() {
                         haLowUsers = haLowUsers + (user.nodeNum to user)
                     }
                     if (conversationMessage != null) {
-                        val senderUser = conversationMessage.toHaLowUser(source.name)
-                        edgeZDatabase.upsertUser(senderUser)
-                        haLowUsers = haLowUsers + (senderUser.nodeNum to senderUser)
-                        if (selectedConversationUser?.nodeNum == senderUser.nodeNum) {
-                            selectedConversationUser = senderUser
-                        }
+                        val senderNodeNum = conversationMessage.senderUserId and 0xffffffffL
                         val identity = lastConnectionPreferences.getOrCreateUserIdentity()
                         if (conversationMessage.recipientUserId == (identity.userIdLow and 0xffffffffL)) {
                             val entry = runCatching {
@@ -243,9 +238,9 @@ fun EdgeZApp() {
                                     status = it.message.orEmpty(),
                                 )
                             }
-                            edgeZDatabase.insertMessage(senderUser.nodeNum, entry)
+                            edgeZDatabase.insertMessage(senderNodeNum, entry)
                             conversations = conversations + (
-                                senderUser.nodeNum to ((conversations[senderUser.nodeNum] ?: emptyList()) + entry)
+                                senderNodeNum to ((conversations[senderNodeNum] ?: emptyList()) + entry)
                                 )
                         }
                     }

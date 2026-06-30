@@ -138,9 +138,6 @@ fun MobileFromRadio.summary(): String {
         return "Conversation from=${message.senderUserId} name=${message.senderName} to=${message.recipientUserId} bytes=${message.ciphertext.size}"
     }
     if (rawRadioBuffer.isNotEmpty()) {
-        parseEdgeZUserFromRawRadioBuffer(rawRadioBuffer, "HaLow")?.let { user ->
-            return "RadioBuffer user=${user.displayName} node=${user.nodeId} short=${user.shortName}"
-        }
         return "NetworkPacket payload bytes=${rawRadioBuffer.size} from=0x%012x id=$id".format(from)
     }
     halowStatus?.let { return it.summary() }
@@ -165,9 +162,6 @@ fun MobileFromRadio.toHaLowUser(route: String): HaLowUser? {
         )
     }
 
-    if (rawRadioBuffer.isNotEmpty()) {
-        return parseEdgeZUserFromRawRadioBuffer(rawRadioBuffer, route)
-    }
     return null
 }
 
