@@ -120,44 +120,6 @@ data class EdgeZAssocMetadata(
     }
 }
 
-data class DiscoveredNodeInfo(
-    val bssid: ByteArray = ByteArray(0),
-    val ssid: String = "",
-    val meshId: String = "",
-    val rssi: Int = 0,
-    val channelFreqHz: Int = 0,
-    val bandwidthMhz: Int = 0,
-    val informationElements: ByteArray = ByteArray(0),
-    val edgezMetadata: EdgeZAssocMetadata? = null,
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (javaClass != other?.javaClass) return false
-
-        other as DiscoveredNodeInfo
-        return bssid.contentEquals(other.bssid) &&
-            ssid == other.ssid &&
-            meshId == other.meshId &&
-            rssi == other.rssi &&
-            channelFreqHz == other.channelFreqHz &&
-            bandwidthMhz == other.bandwidthMhz &&
-            informationElements.contentEquals(other.informationElements) &&
-            edgezMetadata == other.edgezMetadata
-    }
-
-    override fun hashCode(): Int {
-        var result = bssid.contentHashCode()
-        result = 31 * result + ssid.hashCode()
-        result = 31 * result + meshId.hashCode()
-        result = 31 * result + rssi
-        result = 31 * result + channelFreqHz
-        result = 31 * result + bandwidthMhz
-        result = 31 * result + informationElements.contentHashCode()
-        result = 31 * result + (edgezMetadata?.hashCode() ?: 0)
-        return result
-    }
-}
-
 data class HaLowInitConfig(
     val countryCode: String = "",
     val meshId: String = "",
@@ -252,8 +214,6 @@ data class NetworkPacket(
         return result
     }
 }
-
-typealias MobileFromRadio = NetworkPacket
 
 data class ConversationMessage(
     val senderUserId: Long = 0,
@@ -445,7 +405,7 @@ object EdgezUsbControlProto {
         return decodeNetworkPacket(payload)?.halowStatus
     }
 
-    fun decodeMobileFromRadioMessage(payload: ByteArray): MobileFromRadio? {
+    fun decodeMobileFromRadioMessage(payload: ByteArray): NetworkPacket? {
         return decodeNetworkPacket(payload)
     }
 
@@ -708,64 +668,6 @@ object EdgezUsbControlProto {
             userIdLow = userIdLow,
             userName = userName,
             userPublicKey = userPublicKey,
-        )
-    }
-
-    fun decodeDiscoveredNodeInfo(payload: ByteArray): DiscoveredNodeInfo? {
-        var offset = 0
-        var bssid = ByteArray(0)
-        var ssid = ""
-        var meshId = ""
-        var rssi = 0
-        var channelFreqHz = 0
-        var bandwidthMhz = 0
-        var informationElements = ByteArray(0)
-        var edgezMetadata: EdgeZAssocMetadata? = null
-
-        while (offset < payload.size) {
-            val tagRead = readVarint(payload, offset) ?: return null
-            offset = tagRead.nextOffset
-            val field = (tagRead.value ushr 3).toInt()
-            val wireType = (tagRead.value and 0x07).toInt()
-
-            when (wireType) {
-                0 -> {
-                    val valueRead = readVarint(payload, offset) ?: return null
-                    offset = valueRead.nextOffset
-                    when (field) {
-                        4 -> rssi = valueRead.value.toInt()
-                        5 -> channelFreqHz = valueRead.value.toInt()
-                        6 -> bandwidthMhz = valueRead.value.toInt()
-                    }
-                }
-                2 -> {
-                    val lenRead = readVarint(payload, offset) ?: return null
-                    offset = lenRead.nextOffset
-                    val len = lenRead.value.toInt()
-                    if (len < 0 || offset + len > payload.size) return null
-                    val bytes = payload.copyOfRange(offset, offset + len)
-                    when (field) {
-                        1 -> bssid = bytes
-                        2 -> ssid = String(bytes, StandardCharsets.UTF_8)
-                        3 -> meshId = String(bytes, StandardCharsets.UTF_8)
-                        7 -> informationElements = bytes
-                        8 -> edgezMetadata = decodeEdgeZAssocMetadata(bytes)
-                    }
-                    offset += len
-                }
-                else -> return null
-            }
-        }
-
-        return DiscoveredNodeInfo(
-            bssid = bssid,
-            ssid = ssid,
-            meshId = meshId,
-            rssi = rssi,
-            channelFreqHz = channelFreqHz,
-            bandwidthMhz = bandwidthMhz,
-            informationElements = informationElements,
-            edgezMetadata = edgezMetadata,
         )
     }
 
