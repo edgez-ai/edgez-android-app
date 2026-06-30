@@ -21,6 +21,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
             """
             CREATE TABLE $TABLE_USERS (
                 node_num INTEGER PRIMARY KEY,
+                user_uuid TEXT NOT NULL DEFAULT '',
                 short_name TEXT NOT NULL,
                 long_name TEXT NOT NULL,
                 route TEXT NOT NULL,
@@ -47,11 +48,15 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
 
+    override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        db.setVersion(newVersion)
+    }
+
     fun getUsers(): Map<Long, HaLowUser> {
         val users = linkedMapOf<Long, HaLowUser>()
         readableDatabase.query(
             TABLE_USERS,
-            arrayOf("node_num", "short_name", "long_name", "route", "last_seen_ms", "public_key"),
+            arrayOf("node_num", "user_uuid", "short_name", "long_name", "route", "last_seen_ms", "public_key"),
             null,
             null,
             null,
@@ -59,14 +64,18 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
             "last_seen_ms DESC",
         ).use { cursor ->
             val nodeNumIndex = cursor.getColumnIndexOrThrow("node_num")
+            val userUuidIndex = cursor.getColumnIndexOrThrow("user_uuid")
             val shortNameIndex = cursor.getColumnIndexOrThrow("short_name")
             val longNameIndex = cursor.getColumnIndexOrThrow("long_name")
             val routeIndex = cursor.getColumnIndexOrThrow("route")
             val lastSeenIndex = cursor.getColumnIndexOrThrow("last_seen_ms")
             val publicKeyIndex = cursor.getColumnIndexOrThrow("public_key")
             while (cursor.moveToNext()) {
+                val userUuid = cursor.getString(userUuidIndex)
                 val user = HaLowUser(
                     nodeNum = cursor.getLong(nodeNumIndex),
+                    userId = userIdLowFromUuid(userUuid),
+                    userUuid = userUuid,
                     shortName = cursor.getString(shortNameIndex),
                     longName = cursor.getString(longNameIndex),
                     route = cursor.getString(routeIndex),
@@ -115,6 +124,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
             null,
             ContentValues().apply {
                 put("node_num", user.nodeNum)
+                put("user_uuid", user.userUuid)
                 put("short_name", user.shortName)
                 put("long_name", user.longName)
                 put("route", user.route)
@@ -142,5 +152,13 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 put("status", entry.status)
             },
         )
+    }
+
+    private fun userIdLowFromUuid(userUuid: String): Long {
+        val parts = userUuid.split('-')
+        if (parts.size != 5) return 0L
+        val lowHex = parts[3] + parts[4]
+        if (lowHex.length != 16) return 0L
+        return lowHex.toULongOrNull(16)?.toLong() ?: 0L
     }
 }

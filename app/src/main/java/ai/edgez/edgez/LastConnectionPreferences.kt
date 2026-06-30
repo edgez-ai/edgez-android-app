@@ -2,7 +2,7 @@ package ai.edgez.edgez
 
 import android.content.Context
 import android.util.Base64
-import java.security.SecureRandom
+import java.util.UUID
 
 private const val LAST_CONNECTION_PREFS = "edgez_connection"
 private const val KEY_LAST_SUCCESSFUL_CONNECTION = "last_successful_connection"
@@ -10,7 +10,7 @@ private const val KEY_MESH_COUNTRY = "mesh_country"
 private const val KEY_MESH_ID = "mesh_id"
 private const val KEY_MESH_PASSPHRASE = "mesh_passphrase"
 private const val KEY_MESH_MAX_HOP = "mesh_max_hop"
-private const val KEY_USER_ID = "user_id"
+private const val KEY_USER_UUID = "user_uuid"
 private const val KEY_USER_NAME = "user_name"
 private const val KEY_USER_PRIVATE_KEY = "user_private_key"
 private const val KEY_USER_PUBLIC_KEY = "user_public_key"
@@ -18,7 +18,6 @@ private const val DEFAULT_MESH_ID = "edgez"
 private const val DEFAULT_MESH_MAX_HOP = 2
 private const val DEFAULT_USER_NAME = "EdgeZ User"
 private val SUPPORTED_MESH_COUNTRIES = setOf("US", "JP", "EU")
-private val USER_ID_RANDOM = SecureRandom()
 
 class LastConnectionPreferences(context: Context) {
     private val prefs = context.getSharedPreferences(LAST_CONNECTION_PREFS, Context.MODE_PRIVATE)
@@ -62,18 +61,27 @@ class LastConnectionPreferences(context: Context) {
     }
 
     fun getOrCreateUserIdentity(): UserIdentity {
-        val existingUserId = getStoredUserId()
+        val existingUserUuid = getStoredUserUuid()
         val existingPrivateKey = decodeBytes(prefs.getString(KEY_USER_PRIVATE_KEY, null), 32)
         val existingPublicKey = decodeBytes(prefs.getString(KEY_USER_PUBLIC_KEY, null), 32)
         val name = getUserName()
-        if (existingUserId != null && existingPrivateKey != null && existingPublicKey != null) {
-            return UserIdentity(existingUserId, name, existingPrivateKey, existingPublicKey)
+        if (existingUserUuid != null && existingPrivateKey != null && existingPublicKey != null) {
+            return UserIdentity(
+                userUuid = existingUserUuid.toString(),
+                userIdHigh = existingUserUuid.mostSignificantBits,
+                userIdLow = existingUserUuid.leastSignificantBits,
+                name = name,
+                privateKey = existingPrivateKey,
+                publicKey = existingPublicKey,
+            )
         }
 
-        val userId = existingUserId ?: newUserId()
+        val userUuid = existingUserUuid ?: newUserUuid()
         val keyPair = X25519KeyGenerator.generateKeyPair()
         val identity = UserIdentity(
-            userId = userId,
+            userUuid = userUuid.toString(),
+            userIdHigh = userUuid.mostSignificantBits,
+            userIdLow = userUuid.leastSignificantBits,
             name = name,
             privateKey = keyPair.first,
             publicKey = keyPair.second,
@@ -110,24 +118,25 @@ class LastConnectionPreferences(context: Context) {
 
     private fun saveUserIdentity(identity: UserIdentity) {
         prefs.edit()
-            .putString(KEY_USER_ID, identity.userId.toString())
+            .putString(KEY_USER_UUID, identity.userUuid)
             .putString(KEY_USER_NAME, identity.name.ifBlank { DEFAULT_USER_NAME }.take(64))
             .putString(KEY_USER_PRIVATE_KEY, encodeBytes(identity.privateKey))
             .putString(KEY_USER_PUBLIC_KEY, encodeBytes(identity.publicKey))
             .apply()
     }
 
-    private fun getStoredUserId(): Long? {
-        val userId = prefs.getString(KEY_USER_ID, null)?.toLongOrNull()
-        return userId?.takeIf { it > 0L }
+    private fun getStoredUserUuid(): UUID? {
+        return runCatching { UUID.fromString(prefs.getString(KEY_USER_UUID, null)) }
+            .getOrNull()
+            ?.takeIf { it.mostSignificantBits != 0L || it.leastSignificantBits != 0L }
     }
 
-    private fun newUserId(): Long {
-        var userId = USER_ID_RANDOM.nextLong() and Long.MAX_VALUE
-        while (userId == 0L) {
-            userId = USER_ID_RANDOM.nextLong() and Long.MAX_VALUE
+    private fun newUserUuid(): UUID {
+        var uuid = UUID.randomUUID()
+        while (uuid.mostSignificantBits == 0L && uuid.leastSignificantBits == 0L) {
+            uuid = UUID.randomUUID()
         }
-        return userId
+        return uuid
     }
 
     private fun encodeBytes(bytes: ByteArray): String {

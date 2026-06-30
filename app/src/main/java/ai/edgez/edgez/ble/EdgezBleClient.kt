@@ -193,25 +193,27 @@ class EdgezBleClient(private val context: Context) {
         countryCode: String,
         meshId: String,
         passphrase: String,
-        userId: Long,
+        userIdHigh: Long,
+        userIdLow: Long,
         userName: String,
         userPublicKey: ByteArray,
         maxHop: Int,
     ): Result<String> {
         return sendFrame(
             EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
-            EdgezUsbControlProto.encodeHaLowInit(countryCode, meshId, passphrase, userId, userName, userPublicKey, maxHop),
+            EdgezUsbControlProto.encodeHaLowInit(countryCode, meshId, passphrase, userIdHigh, userIdLow, userName, userPublicKey, maxHop),
         )
     }
 
     fun sendHaLowBeacon(
-        userId: Long,
+        userIdHigh: Long,
+        userIdLow: Long,
         userName: String,
         userPublicKey: ByteArray,
     ): Result<String> {
         return sendFrame(
             EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
-            EdgezUsbControlProto.encodeHaLowBeacon(userId, userName, userPublicKey),
+            EdgezUsbControlProto.encodeHaLowBeacon(userIdHigh, userIdLow, userName, userPublicKey),
         )
     }
 

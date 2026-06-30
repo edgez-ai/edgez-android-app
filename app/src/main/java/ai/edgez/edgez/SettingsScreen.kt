@@ -283,7 +283,7 @@ fun SettingsScreen(
             item {
                 SettingsCard(title = "User") {
                     Text("User ID", style = MaterialTheme.typography.titleSmall)
-                    Text(userIdentity.userId.toString(), style = MaterialTheme.typography.bodyMedium)
+                    Text(userIdentity.userUuid, style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = userName,

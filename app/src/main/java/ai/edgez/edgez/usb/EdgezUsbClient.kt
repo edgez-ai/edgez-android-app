@@ -95,7 +95,8 @@ data class HaLowInterfaceStatus(
 }
 
 data class EdgeZAssocMetadata(
-    val userId: Long = 0,
+    val userIdHigh: Long = 0,
+    val userIdLow: Long = 0,
     val userName: String = "",
     val userPublicKey: ByteArray = ByteArray(0),
 ) {
@@ -104,13 +105,15 @@ data class EdgeZAssocMetadata(
         if (javaClass != other?.javaClass) return false
 
         other as EdgeZAssocMetadata
-        return userId == other.userId &&
+        return userIdHigh == other.userIdHigh &&
+            userIdLow == other.userIdLow &&
             userName == other.userName &&
             userPublicKey.contentEquals(other.userPublicKey)
     }
 
     override fun hashCode(): Int {
-        var result = userId.hashCode()
+        var result = userIdHigh.hashCode()
+        result = 31 * result + userIdLow.hashCode()
         result = 31 * result + userName.hashCode()
         result = 31 * result + userPublicKey.contentHashCode()
         return result
@@ -160,7 +163,8 @@ data class HaLowInitConfig(
     val meshId: String = "",
     val passphrase: String = "",
     val maxHop: Int = 0,
-    val userId: Long = 0,
+    val userIdHigh: Long = 0,
+    val userIdLow: Long = 0,
     val userName: String = "",
     val userPublicKey: ByteArray = ByteArray(0),
 ) {
@@ -173,7 +177,8 @@ data class HaLowInitConfig(
             meshId == other.meshId &&
             passphrase == other.passphrase &&
             maxHop == other.maxHop &&
-            userId == other.userId &&
+            userIdHigh == other.userIdHigh &&
+            userIdLow == other.userIdLow &&
             userName == other.userName &&
             userPublicKey.contentEquals(other.userPublicKey)
     }
@@ -183,7 +188,8 @@ data class HaLowInitConfig(
         result = 31 * result + meshId.hashCode()
         result = 31 * result + passphrase.hashCode()
         result = 31 * result + maxHop
-        result = 31 * result + userId.hashCode()
+        result = 31 * result + userIdHigh.hashCode()
+        result = 31 * result + userIdLow.hashCode()
         result = 31 * result + userName.hashCode()
         result = 31 * result + userPublicKey.contentHashCode()
         return result
@@ -197,7 +203,8 @@ data class NetworkPacket(
     val operation: Int = 0,
     val interfaceId: Int = 0,
     val sequence: Int = 0,
-    val user: Long = 0,
+    val userHigh: Long = 0,
+    val userLow: Long = 0,
     val payload: ByteArray = ByteArray(0),
     val beacon: EdgeZAssocMetadata? = null,
     val beaconRaw: String = "",
@@ -219,7 +226,8 @@ data class NetworkPacket(
             operation == other.operation &&
             interfaceId == other.interfaceId &&
             sequence == other.sequence &&
-            user == other.user &&
+            userHigh == other.userHigh &&
+            userLow == other.userLow &&
             payload.contentEquals(other.payload) &&
             beacon == other.beacon &&
             beaconRaw == other.beaconRaw &&
@@ -234,7 +242,8 @@ data class NetworkPacket(
         result = 31 * result + operation
         result = 31 * result + interfaceId
         result = 31 * result + sequence
-        result = 31 * result + user.hashCode()
+        result = 31 * result + userHigh.hashCode()
+        result = 31 * result + userLow.hashCode()
         result = 31 * result + payload.contentHashCode()
         result = 31 * result + (beacon?.hashCode() ?: 0)
         result = 31 * result + beaconRaw.hashCode()
@@ -376,7 +385,8 @@ object EdgezUsbControlProto {
         countryCode: String,
         meshId: String,
         passphrase: String,
-        userId: Long,
+        userIdHigh: Long,
+        userIdLow: Long,
         userName: String,
         userPublicKey: ByteArray,
         maxHop: Int,
@@ -386,25 +396,29 @@ object EdgezUsbControlProto {
         writeStringField(init, 2, meshId.take(32))
         writeStringField(init, 3, passphrase.take(64))
         writeVarintField(init, 4, maxHop.coerceIn(0, 255).toLong())
-        writeVarintField(init, 5, userId)
-        writeStringField(init, 6, userName.take(64))
-        writeBytesField(init, 7, userPublicKey.copyOf(minOf(userPublicKey.size, 32)))
+        writeVarintField(init, 5, userIdHigh)
+        writeVarintField(init, 6, userIdLow)
+        writeStringField(init, 7, userName.take(64))
+        writeBytesField(init, 8, userPublicKey.copyOf(minOf(userPublicKey.size, 32)))
 
         return encodeNetworkPacket(
-            userId = userId,
+            userIdHigh = userIdHigh,
+            userIdLow = userIdLow,
         ) { out ->
             writeBytesField(out, NETWORK_PACKET_INIT_TAG, init.toByteArray())
         }
     }
 
     fun encodeHaLowBeacon(
-        userId: Long,
+        userIdHigh: Long,
+        userIdLow: Long,
         userName: String,
         userPublicKey: ByteArray,
     ): ByteArray {
-        val beacon = encodeBeacon(userId, userName, userPublicKey)
+        val beacon = encodeBeacon(userIdHigh, userIdLow, userName, userPublicKey)
         return encodeNetworkPacket(
-            userId = userId,
+            userIdHigh = userIdHigh,
+            userIdLow = userIdLow,
         ) { out ->
             writeStringField(out, NETWORK_PACKET_BEACON_TAG, beacon)
         }
@@ -420,7 +434,8 @@ object EdgezUsbControlProto {
         writeBytesField(conversation, 6, message.ciphertext)
 
         return encodeNetworkPacket(
-            userId = message.senderUserId,
+            userIdHigh = 0,
+            userIdLow = message.senderUserId,
         ) { out ->
             writeBytesField(out, NETWORK_PACKET_PAYLOAD_TAG, conversation.toByteArray())
         }
@@ -442,7 +457,8 @@ object EdgezUsbControlProto {
         var operation = 0
         var interfaceId = 0
         var sequence = 0
-        var user = 0L
+        var userHigh = 0L
+        var userLow = 0L
         var packetPayload = ByteArray(0)
         var beacon: EdgeZAssocMetadata? = null
         var beaconRaw = ""
@@ -466,7 +482,8 @@ object EdgezUsbControlProto {
                         4 -> operation = valueRead.value.toInt()
                         5 -> interfaceId = valueRead.value.toInt()
                         6 -> sequence = valueRead.value.toInt()
-                        7 -> user = valueRead.value
+                        7 -> userHigh = valueRead.value
+                        8 -> userLow = valueRead.value
                     }
                 }
                 2 -> {
@@ -497,7 +514,8 @@ object EdgezUsbControlProto {
             operation = operation,
             interfaceId = interfaceId,
             sequence = sequence,
-            user = user,
+            userHigh = userHigh,
+            userLow = userLow,
             payload = packetPayload,
             beacon = beacon,
             beaconRaw = beaconRaw,
@@ -641,7 +659,8 @@ object EdgezUsbControlProto {
         var meshId = ""
         var passphrase = ""
         var maxHop = 0
-        var userId = 0L
+        var userIdHigh = 0L
+        var userIdLow = 0L
         var userName = ""
         var userPublicKey = ByteArray(0)
 
@@ -657,7 +676,8 @@ object EdgezUsbControlProto {
                     offset = valueRead.nextOffset
                     when (field) {
                         4 -> maxHop = valueRead.value.toInt()
-                        5 -> userId = valueRead.value
+                        5 -> userIdHigh = valueRead.value
+                        6 -> userIdLow = valueRead.value
                     }
                 }
                 2 -> {
@@ -670,8 +690,8 @@ object EdgezUsbControlProto {
                         1 -> countryCode = String(bytes, StandardCharsets.UTF_8)
                         2 -> meshId = String(bytes, StandardCharsets.UTF_8)
                         3 -> passphrase = String(bytes, StandardCharsets.UTF_8)
-                        6 -> userName = String(bytes, StandardCharsets.UTF_8)
-                        7 -> userPublicKey = bytes
+                        7 -> userName = String(bytes, StandardCharsets.UTF_8)
+                        8 -> userPublicKey = bytes
                     }
                     offset += len
                 }
@@ -684,7 +704,8 @@ object EdgezUsbControlProto {
             meshId = meshId,
             passphrase = passphrase,
             maxHop = maxHop,
-            userId = userId,
+            userIdHigh = userIdHigh,
+            userIdLow = userIdLow,
             userName = userName,
             userPublicKey = userPublicKey,
         )
@@ -750,7 +771,8 @@ object EdgezUsbControlProto {
 
     fun decodeEdgeZAssocMetadata(payload: ByteArray): EdgeZAssocMetadata? {
         var offset = 0
-        var userId = 0L
+        var userIdHigh = 0L
+        var userIdLow = 0L
         var userName = ""
         var userPublicKey = ByteArray(0)
 
@@ -764,8 +786,9 @@ object EdgezUsbControlProto {
                 0 -> {
                     val valueRead = readVarint(payload, offset) ?: return null
                     offset = valueRead.nextOffset
-                    if (field == 1) {
-                        userId = valueRead.value
+                    when (field) {
+                        1 -> userIdHigh = valueRead.value
+                        2 -> userIdLow = valueRead.value
                     }
                 }
                 2 -> {
@@ -775,8 +798,8 @@ object EdgezUsbControlProto {
                     if (len < 0 || offset + len > payload.size) return null
                     val bytes = payload.copyOfRange(offset, offset + len)
                     when (field) {
-                        2 -> userName = String(bytes, StandardCharsets.UTF_8)
-                        3 -> userPublicKey = bytes
+                        3 -> userName = String(bytes, StandardCharsets.UTF_8)
+                        4 -> userPublicKey = bytes
                     }
                     offset += len
                 }
@@ -784,37 +807,40 @@ object EdgezUsbControlProto {
             }
         }
 
-        if (userId == 0L && userName.isBlank() && userPublicKey.isEmpty()) {
+        if (userIdHigh == 0L && userIdLow == 0L && userName.isBlank() && userPublicKey.isEmpty()) {
             return null
         }
 
-        return EdgeZAssocMetadata(userId, userName, userPublicKey)
+        return EdgeZAssocMetadata(userIdHigh, userIdLow, userName, userPublicKey)
     }
 
     private fun encodeNetworkPacket(
-        userId: Long,
+        userIdHigh: Long,
+        userIdLow: Long,
         writeBody: (ByteArrayOutputStream) -> Unit,
     ): ByteArray {
         val out = ByteArrayOutputStream()
         val packetId = System.currentTimeMillis() and 0xffffffffL
         writeVarintField(out, 1, packetId)
-        writeVarintField(out, 2, userId)
         writeVarintField(out, 4, NETWORK_OPERATION_REQUEST.toLong())
         writeVarintField(out, 5, NETWORK_INTERFACE_HALOW.toLong())
-        writeVarintField(out, 7, userId)
+        writeVarintField(out, 7, userIdHigh)
+        writeVarintField(out, 8, userIdLow)
         writeBody(out)
         return out.toByteArray()
     }
 
     private fun encodeBeacon(
-        userId: Long,
+        userIdHigh: Long,
+        userIdLow: Long,
         userName: String,
         userPublicKey: ByteArray,
     ): String {
         val out = ByteArrayOutputStream()
-        writeVarintField(out, 1, userId)
-        writeStringField(out, 2, userName.take(64))
-        writeBytesField(out, 3, userPublicKey.copyOf(minOf(userPublicKey.size, 32)))
+        writeVarintField(out, 1, userIdHigh)
+        writeVarintField(out, 2, userIdLow)
+        writeStringField(out, 3, userName.take(64))
+        writeBytesField(out, 4, userPublicKey.copyOf(minOf(userPublicKey.size, 32)))
         return Base64.getEncoder().encodeToString(out.toByteArray())
     }
 
@@ -1007,7 +1033,8 @@ class EdgezUsbClient(private val context: Context) {
         countryCode: String,
         meshId: String,
         passphrase: String,
-        userId: Long,
+        userIdHigh: Long,
+        userIdLow: Long,
         userName: String,
         userPublicKey: ByteArray,
         maxHop: Int,
@@ -1015,20 +1042,21 @@ class EdgezUsbClient(private val context: Context) {
     ): Result<String> {
         return sendFrame(
             EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
-            EdgezUsbControlProto.encodeHaLowInit(countryCode, meshId, passphrase, userId, userName, userPublicKey, maxHop),
+            EdgezUsbControlProto.encodeHaLowInit(countryCode, meshId, passphrase, userIdHigh, userIdLow, userName, userPublicKey, maxHop),
             timeoutMs,
         )
     }
 
     fun sendHaLowBeacon(
-        userId: Long,
+        userIdHigh: Long,
+        userIdLow: Long,
         userName: String,
         userPublicKey: ByteArray,
         timeoutMs: Int = 1500,
     ): Result<String> {
         return sendFrame(
             EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
-            EdgezUsbControlProto.encodeHaLowBeacon(userId, userName, userPublicKey),
+            EdgezUsbControlProto.encodeHaLowBeacon(userIdHigh, userIdLow, userName, userPublicKey),
             timeoutMs,
         )
     }

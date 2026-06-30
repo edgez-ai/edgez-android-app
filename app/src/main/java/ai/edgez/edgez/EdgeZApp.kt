@@ -164,7 +164,7 @@ fun EdgeZApp() {
             val passphrase = lastConnectionPreferences.getMeshPassphrase()
             val maxHop = lastConnectionPreferences.getMeshMaxHop()
             val userIdentity = lastConnectionPreferences.getOrCreateUserIdentity()
-            val initKey = "${source.name}|$country|$meshId|$passphrase|$maxHop|${userIdentity.userId}|${userIdentity.name}|${userIdentity.publicKey.contentHashCode()}"
+            val initKey = "${source.name}|$country|$meshId|$passphrase|$maxHop|${userIdentity.userUuid}|${userIdentity.name}|${userIdentity.publicKey.contentHashCode()}"
             while (true) {
                 val previousKey = pendingHaLowInitKey.get()
                 if (previousKey == initKey) return
@@ -177,7 +177,8 @@ fun EdgeZApp() {
                         country,
                         meshId,
                         passphrase,
-                        userIdentity.userId,
+                        userIdentity.userIdHigh,
+                        userIdentity.userIdLow,
                         userIdentity.name,
                         userIdentity.publicKey,
                         maxHop,
@@ -186,7 +187,8 @@ fun EdgeZApp() {
                         country,
                         meshId,
                         passphrase,
-                        userIdentity.userId,
+                        userIdentity.userIdHigh,
+                        userIdentity.userIdLow,
                         userIdentity.name,
                         userIdentity.publicKey,
                         maxHop,
@@ -226,7 +228,7 @@ fun EdgeZApp() {
                             selectedConversationUser = senderUser
                         }
                         val identity = lastConnectionPreferences.getOrCreateUserIdentity()
-                        if (conversationMessage.recipientUserId == (identity.userId and 0xffffffffL)) {
+                        if (conversationMessage.recipientUserId == (identity.userIdLow and 0xffffffffL)) {
                             val entry = runCatching {
                                 ConversationEntry(
                                     text = decryptConversationText(identity, conversationMessage),
@@ -261,12 +263,14 @@ fun EdgeZApp() {
                     beaconExecutor.execute {
                         when (source) {
                             ActiveConnection.USB -> usbClient.sendHaLowBeacon(
-                                userIdentity.userId,
+                                userIdentity.userIdHigh,
+                                userIdentity.userIdLow,
                                 userIdentity.name,
                                 userIdentity.publicKey,
                             )
                             ActiveConnection.BLE -> bleClient.sendHaLowBeacon(
-                                userIdentity.userId,
+                                userIdentity.userIdHigh,
+                                userIdentity.userIdLow,
                                 userIdentity.name,
                                 userIdentity.publicKey,
                             )
