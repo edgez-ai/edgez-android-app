@@ -25,9 +25,9 @@ fun encryptConversationText(
     identity: UserIdentity,
     recipient: HaLowUser,
     text: String,
+    senderNode: Long,
 ): ConversationMessage {
     require(recipient.publicKey.size == 32) { "Remote user public key is missing" }
-    val senderNode = identity.userIdLow
     val nonce = ByteArray(CONVERSATION_NONCE_SIZE)
     CONVERSATION_RANDOM.nextBytes(nonce)
     val plaintext = text.toByteArray(Charsets.UTF_8)
@@ -38,7 +38,11 @@ fun encryptConversationText(
     )
 
     val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-    cipher.init(Cipher.ENCRYPT_MODE, conversationKey(identity, senderNode, recipient.nodeNum, recipient.publicKey), GCMParameterSpec(AES_GCM_TAG_BITS, nonce))
+    cipher.init(
+        Cipher.ENCRYPT_MODE,
+        conversationKey(identity, senderNode, recipient.nodeNum, recipient.publicKey),
+        GCMParameterSpec(AES_GCM_TAG_BITS, nonce),
+    )
     cipher.updateAAD(aad)
     return ConversationMessage(
         nonce = nonce,
@@ -61,7 +65,7 @@ fun decryptConversationText(
     val cipher = Cipher.getInstance("AES/GCM/NoPadding")
     cipher.init(
         Cipher.DECRYPT_MODE,
-        conversationKey(identity, identity.userIdLow, sender.nodeNum, sender.publicKey),
+        conversationKey(identity, packet.to, sender.nodeNum, sender.publicKey),
         GCMParameterSpec(AES_GCM_TAG_BITS, message.nonce),
     )
     cipher.updateAAD(aad)

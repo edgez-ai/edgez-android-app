@@ -244,7 +244,7 @@ fun EdgeZApp() {
                     }
                     if (message != null && conversationMessage != null) {
                         val identity = lastConnectionPreferences.getOrCreateUserIdentity()
-                        val localNode = identity.userIdLow
+                        val localNode = haLowStatus?.macAddress?.takeIf { it != 0L }
                         if (message.to == localNode) {
                             val senderNodeNum = message.from
                             val senderUser = haLowUsers[senderNodeNum] ?: user?.takeIf { it.nodeNum == senderNodeNum }
@@ -417,33 +417,37 @@ fun EdgeZApp() {
                         onBack = { selectedConversationUser = null },
                         onSendMessage = { text ->
                             val identity = lastConnectionPreferences.getOrCreateUserIdentity()
-                            runCatching {
-                                encryptConversationText(identity, conversationUser, text)
-                            }.fold(
-                                onSuccess = { encryptedMessage ->
-                                    val maxHop = lastConnectionPreferences.getMeshMaxHop()
-                                    val fromNode = identity.userIdLow
-                                    val toNode = conversationUser.nodeNum
-                                    val result = when (activeConnection) {
-                                        ActiveConnection.USB -> usbClient.sendConversationMessage(encryptedMessage, fromNode, toNode, PacketMime.TEXT, maxHop)
-                                        ActiveConnection.BLE -> bleClient.sendConversationMessage(encryptedMessage, fromNode, toNode, PacketMime.TEXT, maxHop)
-                                        ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
-                                    }
-                                    result.onSuccess {
-                                        val entry = ConversationEntry(
-                                            text = text,
-                                            mine = true,
-                                            timestampMs = System.currentTimeMillis(),
-                                            status = "Sent via ${activeConnection.name}",
-                                        )
-                                        edgeZDatabase.insertMessage(conversationUser.nodeNum, entry)
-                                        conversations = conversations + (
-                                            conversationUser.nodeNum to ((conversations[conversationUser.nodeNum] ?: emptyList()) + entry)
+                            val fromNode = haLowStatus?.macAddress?.takeIf { it != 0L }
+                            if (fromNode == null) {
+                                Result.failure(IllegalStateException("Local HaLow node id unavailable"))
+                            } else {
+                                val toNode = conversationUser.nodeNum
+                                runCatching {
+                                    encryptConversationText(identity, conversationUser, text, fromNode)
+                                }.fold(
+                                    onSuccess = { encryptedMessage ->
+                                        val maxHop = lastConnectionPreferences.getMeshMaxHop()
+                                        val result = when (activeConnection) {
+                                            ActiveConnection.USB -> usbClient.sendConversationMessage(encryptedMessage, fromNode, toNode, PacketMime.TEXT, maxHop)
+                                            ActiveConnection.BLE -> bleClient.sendConversationMessage(encryptedMessage, fromNode, toNode, PacketMime.TEXT, maxHop)
+                                            ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+                                        }
+                                        result.onSuccess {
+                                            val entry = ConversationEntry(
+                                                text = text,
+                                                mine = true,
+                                                timestampMs = System.currentTimeMillis(),
+                                                status = "Sent via ${activeConnection.name}",
                                             )
-                                    }
-                                },
-                                onFailure = { Result.failure(it) },
-                            )
+                                            edgeZDatabase.insertMessage(conversationUser.nodeNum, entry)
+                                            conversations = conversations + (
+                                                conversationUser.nodeNum to ((conversations[conversationUser.nodeNum] ?: emptyList()) + entry)
+                                                )
+                                        }
+                                    },
+                                    onFailure = { Result.failure(it) },
+                                )
+                            }
                         },
                     )
                 } else {
