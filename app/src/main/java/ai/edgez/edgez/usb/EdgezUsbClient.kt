@@ -341,6 +341,9 @@ object EdgezUsbControlProto {
         writeStringField(init, 2, meshId.take(32))
         writeStringField(init, 3, passphrase.take(64))
         writeVarintField(init, 4, maxHop.coerceIn(0, 255).toLong())
+        writeVarintField(init, 5, userId)
+        writeStringField(init, 6, userName.take(64))
+        writeBytesField(init, 7, userPublicKey.copyOf(minOf(userPublicKey.size, 32)))
 
         return encodeNetworkPacket(
             userId = userId,
