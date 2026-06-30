@@ -723,6 +723,15 @@ object EdgezUsbControlProto {
                     }
                     offset += len
                 }
+                5 -> {
+                    if (offset + 4 > payload.size) return null
+                    val value = readFixed32Float(payload, offset).toDouble()
+                    when (field) {
+                        5 -> latitude = value
+                        6 -> longitude = value
+                    }
+                    offset += 4
+                }
                 else -> return null
             }
         }
@@ -773,8 +782,8 @@ object EdgezUsbControlProto {
         writeStringField(out, 3, userName.take(64))
         writeBytesField(out, 4, userPublicKey.copyOf(minOf(userPublicKey.size, 32)))
         if (latitude != null && longitude != null) {
-            writeStringField(out, 5, latitude.toString())
-            writeStringField(out, 6, longitude.toString())
+            writeFloatField(out, 5, latitude.toFloat())
+            writeFloatField(out, 6, longitude.toFloat())
             writeVarintField(out, 7, locationTimestampMs.coerceAtLeast(0L))
         }
         return Base64.getEncoder().encodeToString(out.toByteArray())
@@ -804,6 +813,15 @@ object EdgezUsbControlProto {
         out.write(bytes)
     }
 
+    private fun writeFloatField(out: ByteArrayOutputStream, fieldNumber: Int, value: Float) {
+        writeVarint(out, ((fieldNumber shl 3) or 5).toLong())
+        val bits = value.toRawBits()
+        out.write(bits and 0xff)
+        out.write((bits ushr 8) and 0xff)
+        out.write((bits ushr 16) and 0xff)
+        out.write((bits ushr 24) and 0xff)
+    }
+
     private fun writeVarint(out: ByteArrayOutputStream, rawValue: Long) {
         var value = rawValue
         while ((value and 0x7f.inv().toLong()) != 0L) {
@@ -827,6 +845,14 @@ object EdgezUsbControlProto {
             shift += 7
         }
         return null
+    }
+
+    private fun readFixed32Float(data: ByteArray, offset: Int): Float {
+        val bits = (data[offset].toInt() and 0xff) or
+            ((data[offset + 1].toInt() and 0xff) shl 8) or
+            ((data[offset + 2].toInt() and 0xff) shl 16) or
+            ((data[offset + 3].toInt() and 0xff) shl 24)
+        return Float.fromBits(bits)
     }
 
     private data class VarintRead(val value: Long, val nextOffset: Int)
