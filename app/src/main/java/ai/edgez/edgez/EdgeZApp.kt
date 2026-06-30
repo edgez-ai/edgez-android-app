@@ -242,13 +242,16 @@ fun EdgeZApp() {
                             Log.d(TAG_USERS, "refreshed selected conversation user node=${updatedUser.nodeId}")
                         }
                     }
-                    if (conversationMessage != null) {
-                        val senderNodeNum = conversationMessage.senderUserId and 0xffffffffL
+                    if (message != null && conversationMessage != null) {
                         val identity = lastConnectionPreferences.getOrCreateUserIdentity()
-                        if (conversationMessage.recipientUserId == (identity.userIdLow and 0xffffffffL)) {
+                        val localNode = identity.userIdLow
+                        if (message.to == localNode) {
+                            val senderNodeNum = message.from
+                            val senderUser = haLowUsers[senderNodeNum] ?: user?.takeIf { it.nodeNum == senderNodeNum }
                             val entry = runCatching {
+                                requireNotNull(senderUser) { "Sender user is missing" }
                                 ConversationEntry(
-                                    text = decryptConversationText(identity, conversationMessage),
+                                    text = decryptConversationText(identity, senderUser, message),
                                     mine = false,
                                     timestampMs = System.currentTimeMillis(),
                                 )
@@ -419,9 +422,11 @@ fun EdgeZApp() {
                             }.fold(
                                 onSuccess = { encryptedMessage ->
                                     val maxHop = lastConnectionPreferences.getMeshMaxHop()
+                                    val fromNode = identity.userIdLow
+                                    val toNode = conversationUser.nodeNum
                                     val result = when (activeConnection) {
-                                        ActiveConnection.USB -> usbClient.sendConversationMessage(encryptedMessage, PacketMime.TEXT, maxHop)
-                                        ActiveConnection.BLE -> bleClient.sendConversationMessage(encryptedMessage, PacketMime.TEXT, maxHop)
+                                        ActiveConnection.USB -> usbClient.sendConversationMessage(encryptedMessage, fromNode, toNode, PacketMime.TEXT, maxHop)
+                                        ActiveConnection.BLE -> bleClient.sendConversationMessage(encryptedMessage, fromNode, toNode, PacketMime.TEXT, maxHop)
                                         ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
                                     }
                                     result.onSuccess {

@@ -140,10 +140,10 @@ fun NetworkPacket.summary(): String {
         return "NetworkPacket beacon user=${it.userName.ifBlank { "unknown" }} node=${formatMacAddress(from)} userId=${formatUuid(it.userIdHigh, it.userIdLow)} id=$id"
     }
     conversationMessage?.let { message ->
-        return "Conversation mime=$mime maxHop=$maxHop from=${message.senderUserId} name=${message.senderName} to=${message.recipientUserId} bytes=${message.ciphertext.size}"
+        return "Conversation id=$id mime=$mime seq=$sequence from=0x%012x to=0x%012x bytes=${message.ciphertext.size}".format(from, to)
     }
-    if (rawRadioBuffer.isNotEmpty()) {
-        return "NetworkPacket payload mime=$mime maxHop=$maxHop bytes=${rawRadioBuffer.size} from=0x%012x id=$id".format(from)
+    if (payload.isNotEmpty()) {
+        return "NetworkPacket payload mime=$mime maxHop=$maxHop bytes=${payload.size} from=0x%012x id=$id".format(from)
     }
     halowStatus?.let { return it.summary() }
     init?.let {

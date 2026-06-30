@@ -231,11 +231,14 @@ class EdgezBleClient(private val context: Context) {
 
     fun sendConversationMessage(
         message: ConversationMessage,
+        from: Long,
+        to: Long,
         mime: PacketMime = PacketMime.TEXT,
         maxHop: Int = 0,
+        sequence: Int = 0,
     ): Result<String> {
         val packet = runCatching {
-            EdgezUsbControlProto.encodeConversationMessage(message, mime, maxHop)
+            EdgezUsbControlProto.encodeConversationMessage(message, from, to, mime, maxHop, sequence)
         }.getOrElse { error ->
             return Result.failure(error)
         }

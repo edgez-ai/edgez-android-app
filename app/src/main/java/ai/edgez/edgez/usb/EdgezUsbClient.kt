@@ -185,9 +185,12 @@ data class NetworkPacket(
     val halowStatus: HaLowInterfaceStatus? = null,
     val init: HaLowInitConfig? = null,
 ) {
-    val rawRadioBuffer: ByteArray get() = payload
     val conversationMessage: ConversationMessage?
-        get() = payload.takeIf { it.isNotEmpty() }?.let { EdgezUsbControlProto.decodeConversationMessage(it) }
+        get() = if (mime != PacketMime.UNSPECIFIED) {
+            EdgezUsbControlProto.decodeConversationMessage(payload)
+        } else {
+            null
+        }
 
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -247,10 +250,6 @@ enum class PacketMime(val wireValue: Int) {
 }
 
 data class ConversationMessage(
-    val senderUserId: Long = 0,
-    val senderName: String = "",
-    val senderPublicKey: ByteArray = ByteArray(0),
-    val recipientUserId: Long = 0,
     val nonce: ByteArray = ByteArray(0),
     val ciphertext: ByteArray = ByteArray(0),
 ) {
@@ -259,20 +258,12 @@ data class ConversationMessage(
         if (javaClass != other?.javaClass) return false
 
         other as ConversationMessage
-        return senderUserId == other.senderUserId &&
-            senderName == other.senderName &&
-            senderPublicKey.contentEquals(other.senderPublicKey) &&
-            recipientUserId == other.recipientUserId &&
-            nonce.contentEquals(other.nonce) &&
+        return nonce.contentEquals(other.nonce) &&
             ciphertext.contentEquals(other.ciphertext)
     }
 
     override fun hashCode(): Int {
-        var result = senderUserId.hashCode()
-        result = 31 * result + senderName.hashCode()
-        result = 31 * result + senderPublicKey.contentHashCode()
-        result = 31 * result + recipientUserId.hashCode()
-        result = 31 * result + nonce.contentHashCode()
+        var result = nonce.contentHashCode()
         result = 31 * result + ciphertext.contentHashCode()
         return result
     }
@@ -420,26 +411,26 @@ object EdgezUsbControlProto {
 
     fun encodeConversationMessage(
         message: ConversationMessage,
+        from: Long,
+        to: Long,
         mime: PacketMime = PacketMime.TEXT,
         maxHop: Int = 0,
+        sequence: Int = 0,
     ): ByteArray {
         val conversation = ByteArrayOutputStream()
-        writeVarintField(conversation, 1, message.senderUserId)
-        writeStringField(conversation, 2, message.senderName.take(64))
-        writeBytesField(conversation, 3, message.senderPublicKey.copyOf(minOf(message.senderPublicKey.size, 32)))
-        writeVarintField(conversation, 4, message.recipientUserId)
-        writeBytesField(conversation, 5, message.nonce)
-        writeBytesField(conversation, 6, message.ciphertext)
+        writeBytesField(conversation, 1, message.nonce)
+        writeBytesField(conversation, 2, message.ciphertext)
         val conversationPayload = conversation.toByteArray()
         require(conversationPayload.size <= EDGEZ_NETWORK_PACKET_MAX_PAYLOAD) {
             "NetworkPacket payload too large: ${conversationPayload.size}/$EDGEZ_NETWORK_PACKET_MAX_PAYLOAD"
         }
 
         return encodeNetworkPacket(
-            userIdHigh = 0,
-            userIdLow = message.senderUserId,
+            from = from,
+            to = to,
             mime = mime,
             maxHop = maxHop,
+            sequence = sequence,
         ) { out ->
             writeBytesField(out, NETWORK_PACKET_PAYLOAD_TAG, conversationPayload)
         }
@@ -536,10 +527,6 @@ object EdgezUsbControlProto {
 
     fun decodeConversationMessage(payload: ByteArray): ConversationMessage? {
         var offset = 0
-        var senderUserId = 0L
-        var senderName = ""
-        var senderPublicKey = ByteArray(0)
-        var recipientUserId = 0L
         var nonce = ByteArray(0)
         var ciphertext = ByteArray(0)
 
@@ -553,10 +540,7 @@ object EdgezUsbControlProto {
                 0 -> {
                     val valueRead = readVarint(payload, offset) ?: return null
                     offset = valueRead.nextOffset
-                    when (field) {
-                        1 -> senderUserId = valueRead.value
-                        4 -> recipientUserId = valueRead.value
-                    }
+                    if (valueRead.value < 0) return null
                 }
                 2 -> {
                     val lenRead = readVarint(payload, offset) ?: return null
@@ -565,10 +549,8 @@ object EdgezUsbControlProto {
                     if (len < 0 || offset + len > payload.size) return null
                     val bytes = payload.copyOfRange(offset, offset + len)
                     when (field) {
-                        2 -> senderName = String(bytes, StandardCharsets.UTF_8)
-                        3 -> senderPublicKey = bytes
-                        5 -> nonce = bytes
-                        6 -> ciphertext = bytes
+                        1 -> nonce = bytes
+                        2 -> ciphertext = bytes
                     }
                     offset += len
                 }
@@ -576,21 +558,13 @@ object EdgezUsbControlProto {
             }
         }
 
-        if (senderUserId == 0L &&
-            senderName.isBlank() &&
-            senderPublicKey.isEmpty() &&
-            recipientUserId == 0L &&
-            nonce.isEmpty() &&
+        if (nonce.isEmpty() &&
             ciphertext.isEmpty()
         ) {
             return null
         }
 
         return ConversationMessage(
-            senderUserId = senderUserId,
-            senderName = senderName,
-            senderPublicKey = senderPublicKey,
-            recipientUserId = recipientUserId,
             nonce = nonce,
             ciphertext = ciphertext,
         )
@@ -790,17 +764,29 @@ object EdgezUsbControlProto {
     }
 
     private fun encodeNetworkPacket(
-        userIdHigh: Long,
-        userIdLow: Long,
+        from: Long = 0,
+        to: Long = 0,
+        userIdHigh: Long = 0,
+        userIdLow: Long = 0,
         mime: PacketMime = PacketMime.UNSPECIFIED,
         maxHop: Int = 0,
+        sequence: Int = 0,
         writeBody: (ByteArrayOutputStream) -> Unit,
     ): ByteArray {
         val out = ByteArrayOutputStream()
         val packetId = System.currentTimeMillis() and 0xffffffffL
         writeVarintField(out, 1, packetId)
+        if (from != 0L) {
+            writeVarintField(out, 2, from)
+        }
+        if (to != 0L) {
+            writeVarintField(out, 3, to)
+        }
         writeVarintField(out, 4, NETWORK_OPERATION_REQUEST.toLong())
         writeVarintField(out, 5, NETWORK_INTERFACE_HALOW.toLong())
+        if (sequence > 0) {
+            writeVarintField(out, 6, sequence.toLong())
+        }
         writeVarintField(out, 7, userIdHigh)
         writeVarintField(out, 8, userIdLow)
         if (mime != PacketMime.UNSPECIFIED) {
@@ -1082,12 +1068,15 @@ class EdgezUsbClient(private val context: Context) {
 
     fun sendConversationMessage(
         message: ConversationMessage,
+        from: Long,
+        to: Long,
         mime: PacketMime = PacketMime.TEXT,
         maxHop: Int = 0,
+        sequence: Int = 0,
         timeoutMs: Int = 1500,
     ): Result<String> {
         val packet = runCatching {
-            EdgezUsbControlProto.encodeConversationMessage(message, mime, maxHop)
+            EdgezUsbControlProto.encodeConversationMessage(message, from, to, mime, maxHop, sequence)
         }.getOrElse { error ->
             return Result.failure(error)
         }

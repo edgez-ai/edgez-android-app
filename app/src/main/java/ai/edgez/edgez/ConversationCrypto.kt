@@ -1,6 +1,7 @@
 package ai.edgez.edgez
 
 import ai.edgez.edgez.usb.ConversationMessage
+import ai.edgez.edgez.usb.NetworkPacket
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.MessageDigest
@@ -26,26 +27,20 @@ fun encryptConversationText(
     text: String,
 ): ConversationMessage {
     require(recipient.publicKey.size == 32) { "Remote user public key is missing" }
-    val senderUserId = identity.userIdLow and 0xffffffffL
+    val senderNode = identity.userIdLow
     val nonce = ByteArray(CONVERSATION_NONCE_SIZE)
     CONVERSATION_RANDOM.nextBytes(nonce)
     val plaintext = text.toByteArray(Charsets.UTF_8)
     val aad = conversationAad(
-        senderUserId = senderUserId,
-        senderName = identity.name,
-        senderPublicKey = identity.publicKey,
-        recipientUserId = recipient.nodeNum,
+        senderNode = senderNode,
+        recipientNode = recipient.nodeNum,
         nonce = nonce,
     )
 
     val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-    cipher.init(Cipher.ENCRYPT_MODE, conversationKey(identity, senderUserId, recipient.nodeNum, recipient.publicKey), GCMParameterSpec(AES_GCM_TAG_BITS, nonce))
+    cipher.init(Cipher.ENCRYPT_MODE, conversationKey(identity, senderNode, recipient.nodeNum, recipient.publicKey), GCMParameterSpec(AES_GCM_TAG_BITS, nonce))
     cipher.updateAAD(aad)
     return ConversationMessage(
-        senderUserId = senderUserId,
-        senderName = identity.name,
-        senderPublicKey = identity.publicKey,
-        recipientUserId = recipient.nodeNum,
         nonce = nonce,
         ciphertext = cipher.doFinal(plaintext),
     )
@@ -53,20 +48,20 @@ fun encryptConversationText(
 
 fun decryptConversationText(
     identity: UserIdentity,
-    message: ConversationMessage,
+    sender: HaLowUser,
+    packet: NetworkPacket,
 ): String {
-    require(message.senderPublicKey.size == 32) { "Sender public key is missing" }
+    val message = packet.conversationMessage ?: error("Conversation payload is missing")
+    require(sender.publicKey.size == 32) { "Sender public key is missing" }
     val aad = conversationAad(
-        senderUserId = message.senderUserId,
-        senderName = message.senderName,
-        senderPublicKey = message.senderPublicKey,
-        recipientUserId = message.recipientUserId,
+        senderNode = packet.from,
+        recipientNode = packet.to,
         nonce = message.nonce,
     )
     val cipher = Cipher.getInstance("AES/GCM/NoPadding")
     cipher.init(
         Cipher.DECRYPT_MODE,
-        conversationKey(identity, identity.userIdLow and 0xffffffffL, message.senderUserId, message.senderPublicKey),
+        conversationKey(identity, identity.userIdLow, sender.nodeNum, sender.publicKey),
         GCMParameterSpec(AES_GCM_TAG_BITS, message.nonce),
     )
     cipher.updateAAD(aad)
@@ -95,21 +90,14 @@ private fun conversationKey(
 }
 
 private fun conversationAad(
-    senderUserId: Long,
-    senderName: String,
-    senderPublicKey: ByteArray,
-    recipientUserId: Long,
+    senderNode: Long,
+    recipientNode: Long,
     nonce: ByteArray,
 ): ByteArray {
-    val senderNameBytes = senderName.toByteArray(Charsets.UTF_8)
-    return ByteBuffer.allocate(8 + 2 + senderNameBytes.size + 2 + senderPublicKey.size + 8 + 2 + nonce.size)
+    return ByteBuffer.allocate(8 + 8 + 2 + nonce.size)
         .order(ByteOrder.LITTLE_ENDIAN)
-        .putLong(senderUserId)
-        .putShort(senderNameBytes.size.toShort())
-        .put(senderNameBytes)
-        .putShort(senderPublicKey.size.toShort())
-        .put(senderPublicKey)
-        .putLong(recipientUserId)
+        .putLong(senderNode)
+        .putLong(recipientNode)
         .putShort(nonce.size.toShort())
         .put(nonce)
         .array()
