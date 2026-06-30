@@ -205,7 +205,8 @@ data class NetworkPacket(
     val init: HaLowInitConfig? = null,
 ) {
     val rawRadioBuffer: ByteArray get() = payload
-    val conversationMessage: ConversationMessage? get() = EdgezUsbControlProto.decodeConversationMessage(payload)
+    val conversationMessage: ConversationMessage?
+        get() = payload.takeIf { it.isNotEmpty() }?.let { EdgezUsbControlProto.decodeConversationMessage(it) }
 
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -547,6 +548,16 @@ object EdgezUsbControlProto {
             }
         }
 
+        if (senderUserId == 0L &&
+            senderName.isBlank() &&
+            senderPublicKey.isEmpty() &&
+            recipientUserId == 0L &&
+            nonce.isEmpty() &&
+            ciphertext.isEmpty()
+        ) {
+            return null
+        }
+
         return ConversationMessage(
             senderUserId = senderUserId,
             senderName = senderName,
@@ -771,6 +782,10 @@ object EdgezUsbControlProto {
                 }
                 else -> return null
             }
+        }
+
+        if (userId == 0L && userName.isBlank() && userPublicKey.isEmpty()) {
+            return null
         }
 
         return EdgeZAssocMetadata(userId, userName, userPublicKey)
