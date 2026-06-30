@@ -6,7 +6,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
 private const val DATABASE_NAME = "edgez_local.db"
-private const val DATABASE_VERSION = 2
+private const val DATABASE_VERSION = 1
 private const val TABLE_USERS = "halow_users"
 private const val TABLE_MESSAGES = "conversation_messages"
 
@@ -49,13 +49,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
         db.execSQL("CREATE INDEX idx_messages_peer_time ON $TABLE_MESSAGES(peer_node_num, timestamp_ms)")
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        if (oldVersion < 2) {
-            db.execSQL("ALTER TABLE $TABLE_USERS ADD COLUMN latitude REAL")
-            db.execSQL("ALTER TABLE $TABLE_USERS ADD COLUMN longitude REAL")
-            db.execSQL("ALTER TABLE $TABLE_USERS ADD COLUMN location_timestamp_ms INTEGER NOT NULL DEFAULT 0")
-        }
-    }
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
 
     override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         db.setVersion(newVersion)
