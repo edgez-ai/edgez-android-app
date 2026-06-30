@@ -40,6 +40,7 @@ fun EdgeZApp() {
     val usbClient = remember { EdgezUsbClient(context.applicationContext) }
     val bleClient = remember { EdgezBleClient(context.applicationContext) }
     val lastConnectionPreferences = remember { LastConnectionPreferences(context.applicationContext) }
+    val edgeZDatabase = remember { EdgeZDatabase(context.applicationContext) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val haLowInitExecutor = remember { Executors.newSingleThreadExecutor() }
     val reconnectExecutor = remember { Executors.newSingleThreadExecutor() }
@@ -51,9 +52,9 @@ fun EdgeZApp() {
     var currentDestination by rememberSaveable { mutableStateOf(AppDestination.HOME) }
     var activeConnection by rememberSaveable { mutableStateOf(ActiveConnection.NONE) }
     var haLowStatus by remember { mutableStateOf<HaLowInterfaceStatus?>(null) }
-    var haLowUsers by remember { mutableStateOf<Map<Long, HaLowUser>>(emptyMap()) }
+    var haLowUsers by remember { mutableStateOf(edgeZDatabase.getUsers()) }
     var selectedConversationUser by remember { mutableStateOf<HaLowUser?>(null) }
-    var conversations by remember { mutableStateOf<Map<Long, List<ConversationEntry>>>(emptyMap()) }
+    var conversations by remember { mutableStateOf(edgeZDatabase.getMessages()) }
 
     fun resetHaLowInitTrigger() {
         pendingHaLowInitKey.set(null)
@@ -68,7 +69,6 @@ fun EdgeZApp() {
         clearReconnect()
         activeConnection = connection
         haLowStatus = null
-        haLowUsers = emptyMap()
         selectedConversationUser = null
         resetHaLowInitTrigger()
         lastConnectionPreferences.setLastSuccessfulConnection(connection)
@@ -139,7 +139,6 @@ fun EdgeZApp() {
         } else if (activeConnection == connection) {
             activeConnection = ActiveConnection.NONE
             haLowStatus = null
-            haLowUsers = emptyMap()
             selectedConversationUser = null
             resetHaLowInitTrigger()
             scheduleReconnect(connection)
@@ -216,10 +215,12 @@ fun EdgeZApp() {
                         haLowStatus = status
                     }
                     if (user != null) {
+                        edgeZDatabase.upsertUser(user)
                         haLowUsers = haLowUsers + (user.nodeNum to user)
                     }
                     if (conversationMessage != null) {
                         val senderUser = conversationMessage.toHaLowUser(source.name)
+                        edgeZDatabase.upsertUser(senderUser)
                         haLowUsers = haLowUsers + (senderUser.nodeNum to senderUser)
                         if (selectedConversationUser?.nodeNum == senderUser.nodeNum) {
                             selectedConversationUser = senderUser
@@ -240,6 +241,7 @@ fun EdgeZApp() {
                                     status = it.message.orEmpty(),
                                 )
                             }
+                            edgeZDatabase.insertMessage(senderUser.nodeNum, entry)
                             conversations = conversations + (
                                 senderUser.nodeNum to ((conversations[senderUser.nodeNum] ?: emptyList()) + entry)
                                 )
@@ -314,6 +316,7 @@ fun EdgeZApp() {
             mainHandler.removeCallbacks(beaconRunnable)
             usbClient.close()
             bleClient.close()
+            edgeZDatabase.close()
             haLowInitExecutor.shutdownNow()
             reconnectExecutor.shutdownNow()
             beaconExecutor.shutdownNow()
@@ -390,6 +393,7 @@ fun EdgeZApp() {
                                             timestampMs = System.currentTimeMillis(),
                                             status = "Sent via ${activeConnection.name}",
                                         )
+                                        edgeZDatabase.insertMessage(conversationUser.nodeNum, entry)
                                         conversations = conversations + (
                                             conversationUser.nodeNum to ((conversations[conversationUser.nodeNum] ?: emptyList()) + entry)
                                             )
@@ -405,7 +409,9 @@ fun EdgeZApp() {
                         haLowStatus = haLowStatus,
                         users = haLowUsers.values.sortedByDescending { it.lastSeenMs },
                         onRemoveNode = { user ->
+                            edgeZDatabase.deleteUser(user.nodeNum)
                             haLowUsers = haLowUsers - user.nodeNum
+                            conversations = conversations - user.nodeNum
                             if (selectedConversationUser?.nodeNum == user.nodeNum) {
                                 selectedConversationUser = null
                             }
