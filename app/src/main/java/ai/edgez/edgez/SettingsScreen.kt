@@ -74,6 +74,9 @@ fun SettingsScreen(
     var meshId by rememberSaveable { mutableStateOf(connectionPreferences.getMeshId()) }
     var passphrase by rememberSaveable { mutableStateOf(connectionPreferences.getMeshPassphrase()) }
     var maxHop by rememberSaveable { mutableStateOf(connectionPreferences.getMeshMaxHop().toString()) }
+    var beaconIntervalSeconds by rememberSaveable {
+        mutableStateOf(connectionPreferences.getBeaconIntervalSeconds().toString())
+    }
     var userIdentity by remember { mutableStateOf(connectionPreferences.getOrCreateUserIdentity()) }
     var userName by rememberSaveable { mutableStateOf(userIdentity.name) }
     var showDebugPopup by rememberSaveable { mutableStateOf(false) }
@@ -121,9 +124,11 @@ fun SettingsScreen(
         id: String = meshId,
         password: String = passphrase,
         hopLimit: Int = maxHop.toIntOrNull() ?: 2,
+        beaconInterval: Int = beaconIntervalSeconds.toIntOrNull() ?: DEFAULT_BEACON_INTERVAL_SECONDS,
     ) {
-        connectionPreferences.setMeshCredentials(country, id, password, hopLimit)
+        connectionPreferences.setMeshCredentials(country, id, password, hopLimit, beaconInterval)
         maxHop = connectionPreferences.getMeshMaxHop().toString()
+        beaconIntervalSeconds = connectionPreferences.getBeaconIntervalSeconds().toString()
         connectionPreferences.setUserName(userName)
         connectionPreferences.setShareLocation(shareLocation)
         userIdentity = connectionPreferences.getOrCreateUserIdentity()
@@ -403,6 +408,17 @@ fun SettingsScreen(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Max hop") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = beaconIntervalSeconds,
+                        onValueChange = { value ->
+                            beaconIntervalSeconds = value.filter { it.isDigit() }.take(4)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Beacon interval (seconds)") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     )

@@ -10,6 +10,7 @@ private const val KEY_MESH_COUNTRY = "mesh_country"
 private const val KEY_MESH_ID = "mesh_id"
 private const val KEY_MESH_PASSPHRASE = "mesh_passphrase"
 private const val KEY_MESH_MAX_HOP = "mesh_max_hop"
+private const val KEY_BEACON_INTERVAL_SECONDS = "beacon_interval_seconds"
 private const val KEY_USER_UUID = "user_uuid"
 private const val KEY_USER_NAME = "user_name"
 private const val KEY_USER_PRIVATE_KEY = "user_private_key"
@@ -17,6 +18,7 @@ private const val KEY_USER_PUBLIC_KEY = "user_public_key"
 private const val KEY_SHARE_LOCATION = "share_location"
 private const val DEFAULT_MESH_ID = "edgez"
 private const val DEFAULT_MESH_MAX_HOP = 2
+const val DEFAULT_BEACON_INTERVAL_SECONDS = 30
 private const val DEFAULT_USER_NAME = "EdgeZ User"
 private val SUPPORTED_MESH_COUNTRIES = setOf("US", "JP", "EU")
 
@@ -47,17 +49,25 @@ class LastConnectionPreferences(context: Context) {
 
     fun getMeshMaxHop(): Int = normalizeMeshMaxHop(prefs.getInt(KEY_MESH_MAX_HOP, DEFAULT_MESH_MAX_HOP))
 
+    fun getBeaconIntervalSeconds(): Int {
+        return normalizeBeaconIntervalSeconds(
+            prefs.getInt(KEY_BEACON_INTERVAL_SECONDS, DEFAULT_BEACON_INTERVAL_SECONDS),
+        )
+    }
+
     fun setMeshCredentials(
         country: String,
         meshId: String,
         passphrase: String,
         maxHop: Int = DEFAULT_MESH_MAX_HOP,
+        beaconIntervalSeconds: Int = DEFAULT_BEACON_INTERVAL_SECONDS,
     ) {
         prefs.edit()
             .putString(KEY_MESH_COUNTRY, normalizeMeshCountry(country))
             .putString(KEY_MESH_ID, meshId)
             .putString(KEY_MESH_PASSPHRASE, passphrase)
             .putInt(KEY_MESH_MAX_HOP, normalizeMeshMaxHop(maxHop))
+            .putInt(KEY_BEACON_INTERVAL_SECONDS, normalizeBeaconIntervalSeconds(beaconIntervalSeconds))
             .apply()
     }
 
@@ -124,6 +134,8 @@ class LastConnectionPreferences(context: Context) {
     }
 
     private fun normalizeMeshMaxHop(maxHop: Int): Int = maxHop.coerceIn(0, 255)
+
+    private fun normalizeBeaconIntervalSeconds(seconds: Int): Int = seconds.coerceIn(5, 3600)
 
     private fun saveUserIdentity(identity: UserIdentity) {
         prefs.edit()

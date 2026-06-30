@@ -38,7 +38,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 private const val RECONNECT_DELAY_MS = 2_000L
-private const val HALOW_BEACON_INTERVAL_MS = 30_000L
 private const val TAG_USERS = "EdgeZUsers"
 
 @PreviewScreenSizes
@@ -276,6 +275,7 @@ fun EdgeZApp() {
         val beaconRunnable = object : Runnable {
             override fun run() {
                 if (shuttingDown.get()) return
+                val beaconIntervalMs = lastConnectionPreferences.getBeaconIntervalSeconds() * 1_000L
                 val source = currentActiveConnection
                 val status = currentHaLowStatus
                 if (source != ActiveConnection.NONE && status != null && status.supported && status.stackInitialized && status.meshMode) {
@@ -314,10 +314,13 @@ fun EdgeZApp() {
                         }
                     }
                 }
-                mainHandler.postDelayed(this, HALOW_BEACON_INTERVAL_MS)
+                mainHandler.postDelayed(this, beaconIntervalMs)
             }
         }
-        mainHandler.postDelayed(beaconRunnable, HALOW_BEACON_INTERVAL_MS)
+        mainHandler.postDelayed(
+            beaconRunnable,
+            lastConnectionPreferences.getBeaconIntervalSeconds() * 1_000L,
+        )
 
         val removeUsbFrameListener = usbClient.addFrameListener { frame ->
             handleTransportFrame(ActiveConnection.USB, frame)
