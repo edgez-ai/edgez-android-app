@@ -1,5 +1,10 @@
 package ai.edgez.edgez
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationManager
 import android.os.Handler
 import android.os.Looper
 import androidx.compose.foundation.layout.fillMaxSize
@@ -255,6 +260,11 @@ fun EdgeZApp() {
                 val status = currentHaLowStatus
                 if (source != ActiveConnection.NONE && status != null && status.supported && status.stackInitialized && status.meshMode) {
                     val userIdentity = lastConnectionPreferences.getOrCreateUserIdentity()
+                    val location = if (lastConnectionPreferences.getShareLocation()) {
+                        context.applicationContext.getBestKnownLocation()
+                    } else {
+                        null
+                    }
                     beaconExecutor.execute {
                         when (source) {
                             ActiveConnection.USB -> usbClient.sendHaLowBeacon(
@@ -262,12 +272,18 @@ fun EdgeZApp() {
                                 userIdentity.userIdLow,
                                 userIdentity.name,
                                 userIdentity.publicKey,
+                                location?.latitude,
+                                location?.longitude,
+                                location?.time ?: 0L,
                             )
                             ActiveConnection.BLE -> bleClient.sendHaLowBeacon(
                                 userIdentity.userIdHigh,
                                 userIdentity.userIdLow,
                                 userIdentity.name,
                                 userIdentity.publicKey,
+                                location?.latitude,
+                                location?.longitude,
+                                location?.time ?: 0L,
                             )
                             ActiveConnection.NONE -> Unit
                         }
@@ -433,6 +449,27 @@ fun EdgeZApp() {
             )
         }
     }
+}
+
+private fun Context.getBestKnownLocation(): Location? {
+    val hasFine = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    val hasCoarse = checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    if (!hasFine && !hasCoarse) return null
+    val locationManager = getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
+    val providers = if (hasFine) {
+        listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER)
+    } else {
+        listOf(LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER)
+    }
+    return providers.mapNotNull { provider ->
+        runCatching {
+            if (locationManager.isProviderEnabled(provider)) {
+                locationManager.getLastKnownLocation(provider)
+            } else {
+                null
+            }
+        }.getOrNull()
+    }.maxByOrNull { it.time }
 }
 
 private enum class AppDestination(

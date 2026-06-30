@@ -20,6 +20,9 @@ data class HaLowUser(
     val route: String,
     val lastSeenMs: Long,
     val publicKey: ByteArray = ByteArray(0),
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val locationTimestampMs: Long = 0,
 ) {
     val nodeId: String get() = formatMacAddress(nodeNum)
     val userIdText: String get() = displayUserId(userUuid, userId)
@@ -37,7 +40,10 @@ data class HaLowUser(
             longName == other.longName &&
             route == other.route &&
             lastSeenMs == other.lastSeenMs &&
-            publicKey.contentEquals(other.publicKey)
+            publicKey.contentEquals(other.publicKey) &&
+            latitude == other.latitude &&
+            longitude == other.longitude &&
+            locationTimestampMs == other.locationTimestampMs
     }
 
     override fun hashCode(): Int {
@@ -49,6 +55,9 @@ data class HaLowUser(
         result = 31 * result + route.hashCode()
         result = 31 * result + lastSeenMs.hashCode()
         result = 31 * result + publicKey.contentHashCode()
+        result = 31 * result + (latitude?.hashCode() ?: 0)
+        result = 31 * result + (longitude?.hashCode() ?: 0)
+        result = 31 * result + locationTimestampMs.hashCode()
         return result
     }
 }
@@ -152,6 +161,9 @@ fun NetworkPacket.toHaLowUser(route: String): HaLowUser? {
             route = route,
             lastSeenMs = System.currentTimeMillis(),
             publicKey = metadata.userPublicKey,
+            latitude = metadata.latitude,
+            longitude = metadata.longitude,
+            locationTimestampMs = metadata.locationTimestampMs,
         )
     }
 

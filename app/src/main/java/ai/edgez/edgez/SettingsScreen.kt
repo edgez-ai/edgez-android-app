@@ -1,14 +1,17 @@
 package ai.edgez.edgez
 
+import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.hardware.usb.UsbManager
 import android.os.Build
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -34,6 +38,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
@@ -69,6 +74,7 @@ fun SettingsScreen(
     var maxHop by rememberSaveable { mutableStateOf(connectionPreferences.getMeshMaxHop().toString()) }
     var userIdentity by remember { mutableStateOf(connectionPreferences.getOrCreateUserIdentity()) }
     var userName by rememberSaveable { mutableStateOf(userIdentity.name) }
+    var shareLocation by rememberSaveable { mutableStateOf(connectionPreferences.getShareLocation()) }
     var showDebugPopup by rememberSaveable { mutableStateOf(false) }
     var status by remember { mutableStateOf("Connect the ESP32-S3 USB port, then scan.") }
     val activity = context as? ComponentActivity
@@ -93,6 +99,22 @@ fun SettingsScreen(
         status = "Requesting BLE permission"
     }
 
+    fun hasLocationPermission(): Boolean {
+        return context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    }
+
+    fun requestLocationPermissions() {
+        activity?.requestPermissions(
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+            ),
+            2002,
+        )
+        status = "Requesting location permission"
+    }
+
     fun saveMeshPreferences(
         country: String = meshCountry,
         id: String = meshId,
@@ -102,6 +124,7 @@ fun SettingsScreen(
         connectionPreferences.setMeshCredentials(country, id, password, hopLimit)
         maxHop = connectionPreferences.getMeshMaxHop().toString()
         connectionPreferences.setUserName(userName)
+        connectionPreferences.setShareLocation(shareLocation)
         userIdentity = connectionPreferences.getOrCreateUserIdentity()
         status = "Settings saved"
     }
@@ -298,11 +321,32 @@ fun SettingsScreen(
                     Spacer(Modifier.height(10.dp))
                     Button(onClick = {
                         connectionPreferences.setUserName(userName)
+                        connectionPreferences.setShareLocation(shareLocation)
                         userIdentity = connectionPreferences.regenerateUserKeyPair()
                         userName = userIdentity.name
                         status = "X25519 key pair regenerated"
                     }) {
                         Text("Generate key pair")
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Share location", style = MaterialTheme.typography.titleSmall)
+                            Text("Include location in HaLow beacon", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Switch(
+                            checked = shareLocation,
+                            onCheckedChange = { enabled ->
+                                shareLocation = enabled
+                                if (enabled && !hasLocationPermission()) {
+                                    requestLocationPermissions()
+                                }
+                            },
+                        )
                     }
                 }
             }

@@ -210,10 +210,21 @@ class EdgezBleClient(private val context: Context) {
         userIdLow: Long,
         userName: String,
         userPublicKey: ByteArray,
+        latitude: Double? = null,
+        longitude: Double? = null,
+        locationTimestampMs: Long = 0,
     ): Result<String> {
         return sendFrame(
             EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
-            EdgezUsbControlProto.encodeHaLowBeacon(userIdHigh, userIdLow, userName, userPublicKey),
+            EdgezUsbControlProto.encodeHaLowBeacon(
+                userIdHigh,
+                userIdLow,
+                userName,
+                userPublicKey,
+                latitude,
+                longitude,
+                locationTimestampMs,
+            ),
         )
     }
 

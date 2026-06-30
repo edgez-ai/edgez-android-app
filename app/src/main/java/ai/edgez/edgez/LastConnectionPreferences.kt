@@ -14,6 +14,7 @@ private const val KEY_USER_UUID = "user_uuid"
 private const val KEY_USER_NAME = "user_name"
 private const val KEY_USER_PRIVATE_KEY = "user_private_key"
 private const val KEY_USER_PUBLIC_KEY = "user_public_key"
+private const val KEY_SHARE_LOCATION = "share_location"
 private const val DEFAULT_MESH_ID = "edgez"
 private const val DEFAULT_MESH_MAX_HOP = 2
 private const val DEFAULT_USER_NAME = "EdgeZ User"
@@ -91,6 +92,14 @@ class LastConnectionPreferences(context: Context) {
     }
 
     fun getUserName(): String = prefs.getString(KEY_USER_NAME, DEFAULT_USER_NAME) ?: DEFAULT_USER_NAME
+
+    fun getShareLocation(): Boolean = prefs.getBoolean(KEY_SHARE_LOCATION, false)
+
+    fun setShareLocation(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(KEY_SHARE_LOCATION, enabled)
+            .apply()
+    }
 
     fun setUserName(name: String) {
         prefs.edit()

@@ -99,6 +99,9 @@ data class EdgeZAssocMetadata(
     val userIdLow: Long = 0,
     val userName: String = "",
     val userPublicKey: ByteArray = ByteArray(0),
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val locationTimestampMs: Long = 0,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -108,7 +111,10 @@ data class EdgeZAssocMetadata(
         return userIdHigh == other.userIdHigh &&
             userIdLow == other.userIdLow &&
             userName == other.userName &&
-            userPublicKey.contentEquals(other.userPublicKey)
+            userPublicKey.contentEquals(other.userPublicKey) &&
+            latitude == other.latitude &&
+            longitude == other.longitude &&
+            locationTimestampMs == other.locationTimestampMs
     }
 
     override fun hashCode(): Int {
@@ -116,6 +122,9 @@ data class EdgeZAssocMetadata(
         result = 31 * result + userIdLow.hashCode()
         result = 31 * result + userName.hashCode()
         result = 31 * result + userPublicKey.contentHashCode()
+        result = 31 * result + (latitude?.hashCode() ?: 0)
+        result = 31 * result + (longitude?.hashCode() ?: 0)
+        result = 31 * result + locationTimestampMs.hashCode()
         return result
     }
 }
@@ -374,8 +383,11 @@ object EdgezUsbControlProto {
         userIdLow: Long,
         userName: String,
         userPublicKey: ByteArray,
+        latitude: Double? = null,
+        longitude: Double? = null,
+        locationTimestampMs: Long = 0,
     ): ByteArray {
-        val beacon = encodeBeacon(userIdHigh, userIdLow, userName, userPublicKey)
+        val beacon = encodeBeacon(userIdHigh, userIdLow, userName, userPublicKey, latitude, longitude, locationTimestampMs)
         return encodeNetworkPacket(
             userIdHigh = userIdHigh,
             userIdLow = userIdLow,
@@ -677,6 +689,9 @@ object EdgezUsbControlProto {
         var userIdLow = 0L
         var userName = ""
         var userPublicKey = ByteArray(0)
+        var latitude: Double? = null
+        var longitude: Double? = null
+        var locationTimestampMs = 0L
 
         while (offset < payload.size) {
             val tagRead = readVarint(payload, offset) ?: return null
@@ -691,6 +706,7 @@ object EdgezUsbControlProto {
                     when (field) {
                         1 -> userIdHigh = valueRead.value
                         2 -> userIdLow = valueRead.value
+                        7 -> locationTimestampMs = valueRead.value
                     }
                 }
                 2 -> {
@@ -702,6 +718,8 @@ object EdgezUsbControlProto {
                     when (field) {
                         3 -> userName = String(bytes, StandardCharsets.UTF_8)
                         4 -> userPublicKey = bytes
+                        5 -> latitude = String(bytes, StandardCharsets.UTF_8).toDoubleOrNull()
+                        6 -> longitude = String(bytes, StandardCharsets.UTF_8).toDoubleOrNull()
                     }
                     offset += len
                 }
@@ -713,7 +731,15 @@ object EdgezUsbControlProto {
             return null
         }
 
-        return EdgeZAssocMetadata(userIdHigh, userIdLow, userName, userPublicKey)
+        return EdgeZAssocMetadata(
+            userIdHigh = userIdHigh,
+            userIdLow = userIdLow,
+            userName = userName,
+            userPublicKey = userPublicKey,
+            latitude = latitude,
+            longitude = longitude,
+            locationTimestampMs = locationTimestampMs,
+        )
     }
 
     private fun encodeNetworkPacket(
@@ -737,12 +763,20 @@ object EdgezUsbControlProto {
         userIdLow: Long,
         userName: String,
         userPublicKey: ByteArray,
+        latitude: Double?,
+        longitude: Double?,
+        locationTimestampMs: Long,
     ): String {
         val out = ByteArrayOutputStream()
         writeVarintField(out, 1, userIdHigh)
         writeVarintField(out, 2, userIdLow)
         writeStringField(out, 3, userName.take(64))
         writeBytesField(out, 4, userPublicKey.copyOf(minOf(userPublicKey.size, 32)))
+        if (latitude != null && longitude != null) {
+            writeStringField(out, 5, latitude.toString())
+            writeStringField(out, 6, longitude.toString())
+            writeVarintField(out, 7, locationTimestampMs.coerceAtLeast(0L))
+        }
         return Base64.getEncoder().encodeToString(out.toByteArray())
     }
 
@@ -954,11 +988,22 @@ class EdgezUsbClient(private val context: Context) {
         userIdLow: Long,
         userName: String,
         userPublicKey: ByteArray,
+        latitude: Double? = null,
+        longitude: Double? = null,
+        locationTimestampMs: Long = 0,
         timeoutMs: Int = 1500,
     ): Result<String> {
         return sendFrame(
             EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
-            EdgezUsbControlProto.encodeHaLowBeacon(userIdHigh, userIdLow, userName, userPublicKey),
+            EdgezUsbControlProto.encodeHaLowBeacon(
+                userIdHigh,
+                userIdLow,
+                userName,
+                userPublicKey,
+                latitude,
+                longitude,
+                locationTimestampMs,
+            ),
             timeoutMs,
         )
     }

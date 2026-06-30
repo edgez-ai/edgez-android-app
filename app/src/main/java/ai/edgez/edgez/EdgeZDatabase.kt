@@ -6,7 +6,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
 private const val DATABASE_NAME = "edgez_local.db"
-private const val DATABASE_VERSION = 1
+private const val DATABASE_VERSION = 2
 private const val TABLE_USERS = "halow_users"
 private const val TABLE_MESSAGES = "conversation_messages"
 
@@ -26,7 +26,10 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 long_name TEXT NOT NULL,
                 route TEXT NOT NULL,
                 last_seen_ms INTEGER NOT NULL,
-                public_key BLOB NOT NULL
+                public_key BLOB NOT NULL,
+                latitude REAL,
+                longitude REAL,
+                location_timestamp_ms INTEGER NOT NULL DEFAULT 0
             )
             """.trimIndent(),
         )
@@ -46,7 +49,13 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
         db.execSQL("CREATE INDEX idx_messages_peer_time ON $TABLE_MESSAGES(peer_node_num, timestamp_ms)")
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE $TABLE_USERS ADD COLUMN latitude REAL")
+            db.execSQL("ALTER TABLE $TABLE_USERS ADD COLUMN longitude REAL")
+            db.execSQL("ALTER TABLE $TABLE_USERS ADD COLUMN location_timestamp_ms INTEGER NOT NULL DEFAULT 0")
+        }
+    }
 
     override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         db.setVersion(newVersion)
@@ -56,7 +65,18 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
         val users = linkedMapOf<Long, HaLowUser>()
         readableDatabase.query(
             TABLE_USERS,
-            arrayOf("node_num", "user_uuid", "short_name", "long_name", "route", "last_seen_ms", "public_key"),
+            arrayOf(
+                "node_num",
+                "user_uuid",
+                "short_name",
+                "long_name",
+                "route",
+                "last_seen_ms",
+                "public_key",
+                "latitude",
+                "longitude",
+                "location_timestamp_ms",
+            ),
             null,
             null,
             null,
@@ -70,6 +90,9 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
             val routeIndex = cursor.getColumnIndexOrThrow("route")
             val lastSeenIndex = cursor.getColumnIndexOrThrow("last_seen_ms")
             val publicKeyIndex = cursor.getColumnIndexOrThrow("public_key")
+            val latitudeIndex = cursor.getColumnIndexOrThrow("latitude")
+            val longitudeIndex = cursor.getColumnIndexOrThrow("longitude")
+            val locationTimestampIndex = cursor.getColumnIndexOrThrow("location_timestamp_ms")
             while (cursor.moveToNext()) {
                 val userUuid = cursor.getString(userUuidIndex)
                 val user = HaLowUser(
@@ -81,6 +104,9 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                     route = cursor.getString(routeIndex),
                     lastSeenMs = cursor.getLong(lastSeenIndex),
                     publicKey = cursor.getBlob(publicKeyIndex) ?: ByteArray(0),
+                    latitude = cursor.getNullableDouble(latitudeIndex),
+                    longitude = cursor.getNullableDouble(longitudeIndex),
+                    locationTimestampMs = cursor.getLong(locationTimestampIndex),
                 )
                 users[user.nodeNum] = user
             }
@@ -130,6 +156,9 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 put("route", user.route)
                 put("last_seen_ms", user.lastSeenMs)
                 put("public_key", user.publicKey)
+                putNullableDouble("latitude", user.latitude)
+                putNullableDouble("longitude", user.longitude)
+                put("location_timestamp_ms", user.locationTimestampMs)
             },
             SQLiteDatabase.CONFLICT_REPLACE,
         )
@@ -160,5 +189,17 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
         val lowHex = parts[3] + parts[4]
         if (lowHex.length != 16) return 0L
         return lowHex.toULongOrNull(16)?.toLong() ?: 0L
+    }
+}
+
+private fun android.database.Cursor.getNullableDouble(columnIndex: Int): Double? {
+    return if (isNull(columnIndex)) null else getDouble(columnIndex)
+}
+
+private fun ContentValues.putNullableDouble(key: String, value: Double?) {
+    if (value == null) {
+        putNull(key)
+    } else {
+        put(key, value)
     }
 }
