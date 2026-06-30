@@ -204,6 +204,17 @@ class EdgezBleClient(private val context: Context) {
         )
     }
 
+    fun sendHaLowDiscover(
+        userId: Long,
+        userName: String,
+        userPublicKey: ByteArray,
+    ): Result<String> {
+        return sendFrame(
+            EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
+            EdgezUsbControlProto.encodeHaLowDiscover(userId, userName, userPublicKey),
+        )
+    }
+
     fun sendConversationMessage(message: ConversationMessage): Result<String> {
         return sendFrame(
             EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),

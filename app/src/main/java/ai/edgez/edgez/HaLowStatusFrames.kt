@@ -11,7 +11,6 @@ import ai.edgez.edgez.usb.ConversationMessage
 import ai.edgez.edgez.usb.EdgezUsbControlProto
 import ai.edgez.edgez.usb.HaLowInterfaceStatus
 import ai.edgez.edgez.usb.MobileFromRadio
-import ai.edgez.edgez.usb.MOBILE_RADIO_VARIANT_RAW_RADIO_BUFFER
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
@@ -88,11 +87,15 @@ fun decodeHaLowSyncFrame(frame: ByteArray): MobileFromRadio? {
 }
 
 fun HaLowInterfaceStatus.summary(): String {
-    return "HaLow supported=$supported initialized=$stackInitialized mesh=$meshMode link=$linkUp route=$routeReady ready=$readyForReport meshId=$meshId ip=$ipAddr gateway=$gateway"
+    val mac = if (macAddress != 0L) " mac=%012x".format(macAddress) else ""
+    return "HaLow supported=$supported initialized=$stackInitialized mesh=$meshMode link=$linkUp route=$routeReady ready=$readyForReport meshId=$meshId ip=$ipAddr gateway=$gateway$mac"
 }
 
 fun MobileFromRadio.summary(): String {
-    if (variant == MOBILE_RADIO_VARIANT_RAW_RADIO_BUFFER && rawRadioBuffer.isNotEmpty()) {
+    user?.let {
+        return "NetworkPacket user=${it.userName.ifBlank { "unknown" }} id=${"!%08x".format(it.userId and 0xffffffffL)} bytes=${rawRadioBuffer.size}"
+    }
+    if (rawRadioBuffer.isNotEmpty()) {
         parseEdgeZUserFromRawRadioBuffer(rawRadioBuffer, "HaLow")?.let { user ->
             return "RadioBuffer user=${user.displayName} node=${user.nodeId} short=${user.shortName}"
         }
@@ -111,7 +114,19 @@ fun MobileFromRadio.summary(): String {
 }
 
 fun MobileFromRadio.toHaLowUser(route: String): HaLowUser? {
-    if (variant == MOBILE_RADIO_VARIANT_RAW_RADIO_BUFFER && rawRadioBuffer.isNotEmpty()) {
+    user?.let { metadata ->
+        if (metadata.userId == 0L && metadata.userName.isBlank()) return null
+        return HaLowUser(
+            nodeNum = metadata.userId and 0xffffffffL,
+            shortName = metadata.userName.take(4),
+            longName = metadata.userName,
+            route = route,
+            lastSeenMs = System.currentTimeMillis(),
+            publicKey = metadata.userPublicKey,
+        )
+    }
+
+    if (rawRadioBuffer.isNotEmpty()) {
         return parseEdgeZUserFromRawRadioBuffer(rawRadioBuffer, route)
     }
 
@@ -146,6 +161,19 @@ fun parseEdgeZUserFromRawRadioBuffer(rawRadioBuffer: ByteArray, route: String): 
     }
 
     val payloadOffset = RADIO_PACKET_HEADER_LEN
+    EdgezUsbControlProto.decodeEdgeZAssocMetadata(rawRadioBuffer.copyOfRange(payloadOffset, rawRadioBuffer.size))?.let { user ->
+        if (user.userId != 0L || user.userName.isNotBlank()) {
+            return HaLowUser(
+                nodeNum = user.userId and 0xffffffffL,
+                shortName = user.userName.take(4),
+                longName = user.userName,
+                route = route,
+                lastSeenMs = System.currentTimeMillis(),
+                publicKey = user.userPublicKey,
+            )
+        }
+    }
+
     for (i in EDGEZ_NODE_INFO_MAGIC.indices) {
         if (rawRadioBuffer[payloadOffset + i] != EDGEZ_NODE_INFO_MAGIC[i]) {
             return null

@@ -49,6 +49,12 @@ const val MOBILE_RADIO_VARIANT_HALOW_STATUS = 8
 const val MOBILE_RADIO_VARIANT_NODE_INFO = 9
 const val MOBILE_RADIO_VARIANT_INIT_HALOW = 10
 const val MOBILE_RADIO_VARIANT_CONVERSATION_MESSAGE = 11
+private const val NETWORK_OPERATION_REQUEST = 1
+private const val NETWORK_INTERFACE_HALOW = 5
+private const val NETWORK_PACKET_PAYLOAD_TAG = 100
+private const val NETWORK_PACKET_DISCOVER_TAG = 101
+private const val NETWORK_PACKET_STATUS_TAG = 102
+private const val NETWORK_PACKET_INIT_TAG = 103
 
 private const val ESPRESSIF_VID = 0x303A
 private const val EDGEZ_TYPE_CONTROL_REQ = 3.toByte()
@@ -93,6 +99,7 @@ data class HaLowInterfaceStatus(
     val meshId: String = "",
     val ipAddr: String = "",
     val gateway: String = "",
+    val macAddress: Long = 0,
 ) {
     val isUsable: Boolean get() = supported && stackInitialized && linkUp && routeReady
 }
@@ -165,6 +172,7 @@ data class MobileFromRadio(
     val halowStatus: HaLowInterfaceStatus? = null,
     val discoveredNode: DiscoveredNodeInfo? = null,
     val conversationMessage: ConversationMessage? = null,
+    val user: EdgeZAssocMetadata? = null,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -176,7 +184,8 @@ data class MobileFromRadio(
             rawRadioBuffer.contentEquals(other.rawRadioBuffer) &&
             halowStatus == other.halowStatus &&
             discoveredNode == other.discoveredNode &&
-            conversationMessage == other.conversationMessage
+            conversationMessage == other.conversationMessage &&
+            user == other.user
     }
 
     override fun hashCode(): Int {
@@ -186,6 +195,7 @@ data class MobileFromRadio(
         result = 31 * result + (halowStatus?.hashCode() ?: 0)
         result = 31 * result + (discoveredNode?.hashCode() ?: 0)
         result = 31 * result + (conversationMessage?.hashCode() ?: 0)
+        result = 31 * result + (user?.hashCode() ?: 0)
         return result
     }
 }
@@ -329,16 +339,30 @@ object EdgezUsbControlProto {
         writeStringField(init, 1, countryCode.take(2).uppercase())
         writeStringField(init, 2, meshId.take(32))
         writeStringField(init, 3, passphrase.take(64))
-        writeVarintField(init, 4, userId)
-        writeStringField(init, 5, userName.take(64))
-        writeBytesField(init, 6, userPublicKey.copyOf(minOf(userPublicKey.size, 32)))
-        writeVarintField(init, 7, maxHop.coerceIn(0, 255).toLong())
+        writeVarintField(init, 4, maxHop.coerceIn(0, 255).toLong())
 
-        val out = ByteArrayOutputStream()
-        writeVarintField(out, 1, MOBILE_RADIO_VARIANT_INIT_HALOW.toLong())
-        writeVarintField(out, 2, System.currentTimeMillis() and 0xffffffffL)
-        writeBytesField(out, 6, init.toByteArray())
-        return out.toByteArray()
+        return encodeNetworkPacket(
+            userId = userId,
+            userName = userName,
+            userPublicKey = userPublicKey,
+        ) { out ->
+            writeBytesField(out, NETWORK_PACKET_INIT_TAG, init.toByteArray())
+        }
+    }
+
+    fun encodeHaLowDiscover(
+        userId: Long,
+        userName: String,
+        userPublicKey: ByteArray,
+        discover: Int = 1,
+    ): ByteArray {
+        return encodeNetworkPacket(
+            userId = userId,
+            userName = userName,
+            userPublicKey = userPublicKey,
+        ) { out ->
+            writeVarintField(out, NETWORK_PACKET_DISCOVER_TAG, discover.coerceAtLeast(0).toLong())
+        }
     }
 
     fun encodeConversationMessage(message: ConversationMessage): ByteArray {
@@ -350,11 +374,13 @@ object EdgezUsbControlProto {
         writeBytesField(conversation, 5, message.nonce)
         writeBytesField(conversation, 6, message.ciphertext)
 
-        val out = ByteArrayOutputStream()
-        writeVarintField(out, 1, MOBILE_RADIO_VARIANT_CONVERSATION_MESSAGE.toLong())
-        writeVarintField(out, 2, System.currentTimeMillis() and 0xffffffffL)
-        writeBytesField(out, 9, conversation.toByteArray())
-        return out.toByteArray()
+        return encodeNetworkPacket(
+            userId = message.senderUserId,
+            userName = message.senderName,
+            userPublicKey = message.senderPublicKey,
+        ) { out ->
+            writeBytesField(out, NETWORK_PACKET_PAYLOAD_TAG, conversation.toByteArray())
+        }
     }
 
     fun decodeMobileFromRadio(payload: ByteArray): HaLowInterfaceStatus? {
@@ -363,12 +389,10 @@ object EdgezUsbControlProto {
 
     fun decodeMobileFromRadioMessage(payload: ByteArray): MobileFromRadio? {
         var offset = 0
-        var variant = 0
-        var id = 0
+        var id = 0L
         var rawRadioBuffer = ByteArray(0)
         var halowStatus: HaLowInterfaceStatus? = null
-        var discoveredNode: DiscoveredNodeInfo? = null
-        var conversationMessage: ConversationMessage? = null
+        var user: EdgeZAssocMetadata? = null
 
         while (offset < payload.size) {
             val tagRead = readVarint(payload, offset) ?: return null
@@ -380,9 +404,8 @@ object EdgezUsbControlProto {
                 0 -> {
                     val valueRead = readVarint(payload, offset) ?: return null
                     offset = valueRead.nextOffset
-                    when (field) {
-                        1 -> variant = valueRead.value.toInt()
-                        2 -> id = valueRead.value.toInt()
+                    if (field == 1) {
+                        id = valueRead.value
                     }
                 }
                 2 -> {
@@ -390,11 +413,11 @@ object EdgezUsbControlProto {
                     offset = lenRead.nextOffset
                     val len = lenRead.value.toInt()
                     if (len < 0 || offset + len > payload.size) return null
+                    val bytes = payload.copyOfRange(offset, offset + len)
                     when (field) {
-                        3 -> rawRadioBuffer = payload.copyOfRange(offset, offset + len)
-                        7 -> halowStatus = decodeHaLowInterfaceStatus(payload.copyOfRange(offset, offset + len))
-                        8 -> discoveredNode = decodeDiscoveredNodeInfo(payload.copyOfRange(offset, offset + len))
-                        9 -> conversationMessage = decodeConversationMessage(payload.copyOfRange(offset, offset + len))
+                        7 -> user = decodeEdgeZAssocMetadata(bytes)
+                        NETWORK_PACKET_PAYLOAD_TAG -> rawRadioBuffer = bytes
+                        NETWORK_PACKET_STATUS_TAG -> halowStatus = decodeHaLowInterfaceStatus(bytes)
                     }
                     offset += len
                 }
@@ -402,13 +425,19 @@ object EdgezUsbControlProto {
             }
         }
 
+        val variant = when {
+            halowStatus != null -> MOBILE_RADIO_VARIANT_HALOW_STATUS
+            rawRadioBuffer.isNotEmpty() -> MOBILE_RADIO_VARIANT_RAW_RADIO_BUFFER
+            user != null -> MOBILE_RADIO_VARIANT_NODE_INFO
+            else -> 0
+        }
+
         return MobileFromRadio(
             variant = variant,
-            id = id,
-            rawRadioBuffer = if (variant == MOBILE_RADIO_VARIANT_RAW_RADIO_BUFFER) rawRadioBuffer else ByteArray(0),
-            halowStatus = if (variant == MOBILE_RADIO_VARIANT_HALOW_STATUS) halowStatus else null,
-            discoveredNode = if (variant == MOBILE_RADIO_VARIANT_NODE_INFO) discoveredNode else null,
-            conversationMessage = if (variant == MOBILE_RADIO_VARIANT_CONVERSATION_MESSAGE) conversationMessage else null,
+            id = (id and 0xffffffffL).toInt(),
+            rawRadioBuffer = rawRadioBuffer,
+            halowStatus = halowStatus,
+            user = user,
         )
     }
 
@@ -476,6 +505,7 @@ object EdgezUsbControlProto {
         var meshId = ""
         var ipAddr = ""
         var gateway = ""
+        var macAddress = 0L
 
         while (offset < payload.size) {
             val tagRead = readVarint(payload, offset) ?: return null
@@ -495,6 +525,7 @@ object EdgezUsbControlProto {
                         5 -> routeReady = valueRead.value != 0L
                         6 -> readyForReport = valueRead.value != 0L
                         7 -> ethertype = valueRead.value.toInt()
+                        11 -> macAddress = valueRead.value
                     }
                 }
                 2 -> {
@@ -525,6 +556,7 @@ object EdgezUsbControlProto {
             meshId = meshId,
             ipAddr = ipAddr,
             gateway = gateway,
+            macAddress = macAddress,
         )
     }
 
@@ -623,6 +655,35 @@ object EdgezUsbControlProto {
         }
 
         return EdgeZAssocMetadata(userId, userName, userPublicKey)
+    }
+
+    private fun encodeNetworkPacket(
+        userId: Long,
+        userName: String,
+        userPublicKey: ByteArray,
+        writeBody: (ByteArrayOutputStream) -> Unit,
+    ): ByteArray {
+        val out = ByteArrayOutputStream()
+        val packetId = System.currentTimeMillis() and 0xffffffffL
+        writeVarintField(out, 1, packetId)
+        writeVarintField(out, 2, userId)
+        writeVarintField(out, 4, NETWORK_OPERATION_REQUEST.toLong())
+        writeVarintField(out, 5, NETWORK_INTERFACE_HALOW.toLong())
+        writeBytesField(out, 7, encodeUser(userId, userName, userPublicKey))
+        writeBody(out)
+        return out.toByteArray()
+    }
+
+    private fun encodeUser(
+        userId: Long,
+        userName: String,
+        userPublicKey: ByteArray,
+    ): ByteArray {
+        val out = ByteArrayOutputStream()
+        writeVarintField(out, 1, userId)
+        writeStringField(out, 2, userName.take(64))
+        writeBytesField(out, 3, userPublicKey.copyOf(minOf(userPublicKey.size, 32)))
+        return out.toByteArray()
     }
 
     private fun writeVarintField(out: ByteArrayOutputStream, fieldNumber: Int, value: Long) {
@@ -815,6 +876,19 @@ class EdgezUsbClient(private val context: Context) {
         return sendFrame(
             EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
             EdgezUsbControlProto.encodeHaLowInit(countryCode, meshId, passphrase, userId, userName, userPublicKey, maxHop),
+            timeoutMs,
+        )
+    }
+
+    fun sendHaLowDiscover(
+        userId: Long,
+        userName: String,
+        userPublicKey: ByteArray,
+        timeoutMs: Int = 1500,
+    ): Result<String> {
+        return sendFrame(
+            EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
+            EdgezUsbControlProto.encodeHaLowDiscover(userId, userName, userPublicKey),
             timeoutMs,
         )
     }
