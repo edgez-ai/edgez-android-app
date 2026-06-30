@@ -157,8 +157,6 @@ fun EdgeZApp() {
     }
     val currentActiveConnection by rememberUpdatedState(activeConnection)
     val currentHaLowStatus by rememberUpdatedState(haLowStatus)
-    val currentShareLocation by rememberUpdatedState(shareLocation)
-
     DisposableEffect(Unit) {
         fun triggerHaLowInitIfNeeded(source: ActiveConnection, status: HaLowInterfaceStatus) {
             if (status.stackInitialized) {
@@ -278,11 +276,16 @@ fun EdgeZApp() {
                 val status = currentHaLowStatus
                 if (source != ActiveConnection.NONE && status != null && status.supported && status.stackInitialized && status.meshMode) {
                     val userIdentity = lastConnectionPreferences.getOrCreateUserIdentity()
-                    val location = if (currentShareLocation) {
+                    val shareLocationEnabled = lastConnectionPreferences.getShareLocation()
+                    val location = if (shareLocationEnabled) {
                         context.applicationContext.getBestKnownLocation()
                     } else {
                         null
                     }
+                    Log.d(
+                        TAG_USERS,
+                        "beacon location share=$shareLocationEnabled hasLocation=${location != null} lat=${location?.latitude} lon=${location?.longitude}",
+                    )
                     beaconExecutor.execute {
                         when (source) {
                             ActiveConnection.USB -> usbClient.sendHaLowBeacon(
