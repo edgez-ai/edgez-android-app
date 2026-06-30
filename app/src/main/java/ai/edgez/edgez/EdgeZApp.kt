@@ -31,7 +31,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 private const val RECONNECT_DELAY_MS = 2_000L
-private const val HALOW_DISCOVER_INTERVAL_MS = 30_000L
+private const val HALOW_BEACON_INTERVAL_MS = 30_000L
 
 @PreviewScreenSizes
 @Composable
@@ -43,7 +43,7 @@ fun EdgeZApp() {
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val haLowInitExecutor = remember { Executors.newSingleThreadExecutor() }
     val reconnectExecutor = remember { Executors.newSingleThreadExecutor() }
-    val discoverExecutor = remember { Executors.newSingleThreadExecutor() }
+    val beaconExecutor = remember { Executors.newSingleThreadExecutor() }
     val pendingHaLowInitKey = remember { AtomicReference<String?>(null) }
     val reconnectRequested = remember { AtomicReference<ActiveConnection?>(null) }
     val reconnectAttemptRunning = remember { AtomicBoolean(false) }
@@ -249,21 +249,21 @@ fun EdgeZApp() {
             }
         }
 
-        val discoverRunnable = object : Runnable {
+        val beaconRunnable = object : Runnable {
             override fun run() {
                 if (shuttingDown.get()) return
                 val source = currentActiveConnection
                 val status = currentHaLowStatus
                 if (source != ActiveConnection.NONE && status != null && status.supported && status.stackInitialized && status.meshMode) {
                     val userIdentity = lastConnectionPreferences.getOrCreateUserIdentity()
-                    discoverExecutor.execute {
+                    beaconExecutor.execute {
                         when (source) {
-                            ActiveConnection.USB -> usbClient.sendHaLowDiscover(
+                            ActiveConnection.USB -> usbClient.sendHaLowBeacon(
                                 userIdentity.userId,
                                 userIdentity.name,
                                 userIdentity.publicKey,
                             )
-                            ActiveConnection.BLE -> bleClient.sendHaLowDiscover(
+                            ActiveConnection.BLE -> bleClient.sendHaLowBeacon(
                                 userIdentity.userId,
                                 userIdentity.name,
                                 userIdentity.publicKey,
@@ -272,10 +272,10 @@ fun EdgeZApp() {
                         }
                     }
                 }
-                mainHandler.postDelayed(this, HALOW_DISCOVER_INTERVAL_MS)
+                mainHandler.postDelayed(this, HALOW_BEACON_INTERVAL_MS)
             }
         }
-        mainHandler.postDelayed(discoverRunnable, HALOW_DISCOVER_INTERVAL_MS)
+        mainHandler.postDelayed(beaconRunnable, HALOW_BEACON_INTERVAL_MS)
 
         val removeUsbFrameListener = usbClient.addFrameListener { frame ->
             handleTransportFrame(ActiveConnection.USB, frame)
@@ -311,12 +311,12 @@ fun EdgeZApp() {
             removeBleFrameListener()
             removeUsbDebugListener()
             removeBleDebugListener()
-            mainHandler.removeCallbacks(discoverRunnable)
+            mainHandler.removeCallbacks(beaconRunnable)
             usbClient.close()
             bleClient.close()
             haLowInitExecutor.shutdownNow()
             reconnectExecutor.shutdownNow()
-            discoverExecutor.shutdownNow()
+            beaconExecutor.shutdownNow()
         }
     }
 

@@ -204,14 +204,14 @@ class EdgezBleClient(private val context: Context) {
         )
     }
 
-    fun sendHaLowDiscover(
+    fun sendHaLowBeacon(
         userId: Long,
         userName: String,
         userPublicKey: ByteArray,
     ): Result<String> {
         return sendFrame(
             EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
-            EdgezUsbControlProto.encodeHaLowDiscover(userId, userName, userPublicKey),
+            EdgezUsbControlProto.encodeHaLowBeacon(userId, userName, userPublicKey),
         )
     }
 

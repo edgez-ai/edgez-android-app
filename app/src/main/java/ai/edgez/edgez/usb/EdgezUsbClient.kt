@@ -15,6 +15,7 @@ import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
+import java.util.Base64
 import java.util.Arrays
 import java.util.concurrent.CopyOnWriteArraySet
 
@@ -52,7 +53,7 @@ const val MOBILE_RADIO_VARIANT_CONVERSATION_MESSAGE = 11
 private const val NETWORK_OPERATION_REQUEST = 1
 private const val NETWORK_INTERFACE_HALOW = 5
 private const val NETWORK_PACKET_PAYLOAD_TAG = 100
-private const val NETWORK_PACKET_DISCOVER_TAG = 101
+private const val NETWORK_PACKET_BEACON_TAG = 101
 private const val NETWORK_PACKET_STATUS_TAG = 102
 private const val NETWORK_PACKET_INIT_TAG = 103
 
@@ -348,16 +349,16 @@ object EdgezUsbControlProto {
         }
     }
 
-    fun encodeHaLowDiscover(
+    fun encodeHaLowBeacon(
         userId: Long,
         userName: String,
         userPublicKey: ByteArray,
     ): ByteArray {
-        val discover = encodeDiscover(userId, userName, userPublicKey)
+        val beacon = encodeBeacon(userId, userName, userPublicKey)
         return encodeNetworkPacket(
             userId = userId,
         ) { out ->
-            writeBytesField(out, NETWORK_PACKET_DISCOVER_TAG, discover)
+            writeStringField(out, NETWORK_PACKET_BEACON_TAG, beacon)
         }
     }
 
@@ -410,7 +411,7 @@ object EdgezUsbControlProto {
                     val bytes = payload.copyOfRange(offset, offset + len)
                     when (field) {
                         NETWORK_PACKET_PAYLOAD_TAG -> rawRadioBuffer = bytes
-                        NETWORK_PACKET_DISCOVER_TAG -> user = decodeEdgeZAssocMetadata(bytes)
+                        NETWORK_PACKET_BEACON_TAG -> user = decodeBeaconString(bytes)
                         NETWORK_PACKET_STATUS_TAG -> halowStatus = decodeHaLowInterfaceStatus(bytes)
                     }
                     offset += len
@@ -666,16 +667,24 @@ object EdgezUsbControlProto {
         return out.toByteArray()
     }
 
-    private fun encodeDiscover(
+    private fun encodeBeacon(
         userId: Long,
         userName: String,
         userPublicKey: ByteArray,
-    ): ByteArray {
+    ): String {
         val out = ByteArrayOutputStream()
         writeVarintField(out, 1, userId)
         writeStringField(out, 2, userName.take(64))
         writeBytesField(out, 3, userPublicKey.copyOf(minOf(userPublicKey.size, 32)))
-        return out.toByteArray()
+        return Base64.getEncoder().encodeToString(out.toByteArray())
+    }
+
+    private fun decodeBeaconString(payload: ByteArray): EdgeZAssocMetadata? {
+        return try {
+            decodeEdgeZAssocMetadata(Base64.getDecoder().decode(payload))
+        } catch (_: IllegalArgumentException) {
+            decodeEdgeZAssocMetadata(payload)
+        }
     }
 
     private fun writeVarintField(out: ByteArrayOutputStream, fieldNumber: Int, value: Long) {
@@ -872,7 +881,7 @@ class EdgezUsbClient(private val context: Context) {
         )
     }
 
-    fun sendHaLowDiscover(
+    fun sendHaLowBeacon(
         userId: Long,
         userName: String,
         userPublicKey: ByteArray,
@@ -880,7 +889,7 @@ class EdgezUsbClient(private val context: Context) {
     ): Result<String> {
         return sendFrame(
             EDGEZ_TYPE_HALOW_SYNC_TO_RADIO.toByte(),
-            EdgezUsbControlProto.encodeHaLowDiscover(userId, userName, userPublicKey),
+            EdgezUsbControlProto.encodeHaLowBeacon(userId, userName, userPublicKey),
             timeoutMs,
         )
     }
