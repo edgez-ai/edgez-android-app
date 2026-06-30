@@ -7,6 +7,7 @@ import android.location.Location
 import android.location.LocationManager
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
@@ -37,6 +38,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 private const val RECONNECT_DELAY_MS = 2_000L
 private const val HALOW_BEACON_INTERVAL_MS = 30_000L
+private const val TAG_USERS = "EdgeZUsers"
 
 @PreviewScreenSizes
 @Composable
@@ -224,8 +226,22 @@ fun EdgeZApp() {
                         haLowStatus = status
                     }
                     if (user != null) {
-                        edgeZDatabase.upsertUser(user)
-                        haLowUsers = haLowUsers + (user.nodeNum to user)
+                        val previousUser = haLowUsers[user.nodeNum]
+                        val updatedUser = user.withFallbackLocation(previousUser)
+                        Log.d(
+                            TAG_USERS,
+                            "update user source=$source node=${updatedUser.nodeId} " +
+                                "previousLastSeen=${previousUser?.lastSeenMs} newLastSeen=${updatedUser.lastSeenMs} " +
+                                "previousLat=${previousUser?.latitude} previousLon=${previousUser?.longitude} " +
+                                "newLat=${updatedUser.latitude} newLon=${updatedUser.longitude} locTs=${updatedUser.locationTimestampMs} " +
+                                "selected=${selectedConversationUser?.nodeNum == updatedUser.nodeNum}",
+                        )
+                        edgeZDatabase.upsertUser(updatedUser)
+                        haLowUsers = haLowUsers + (updatedUser.nodeNum to updatedUser)
+                        if (selectedConversationUser?.nodeNum == updatedUser.nodeNum) {
+                            selectedConversationUser = updatedUser
+                            Log.d(TAG_USERS, "refreshed selected conversation user node=${updatedUser.nodeId}")
+                        }
                     }
                     if (conversationMessage != null) {
                         val senderNodeNum = conversationMessage.senderUserId and 0xffffffffL

@@ -1,5 +1,6 @@
 package ai.edgez.edgez
 
+import android.util.Log
 import ai.edgez.edgez.usb.EDGEZ_HEADER_LEN
 import ai.edgez.edgez.usb.EDGEZ_MAGIC_0
 import ai.edgez.edgez.usb.EDGEZ_MAGIC_1
@@ -10,6 +11,8 @@ import ai.edgez.edgez.usb.EDGEZ_VERSION
 import ai.edgez.edgez.usb.EdgezUsbControlProto
 import ai.edgez.edgez.usb.HaLowInterfaceStatus
 import ai.edgez.edgez.usb.NetworkPacket
+
+private const val TAG_USERS = "EdgeZUsers"
 
 data class HaLowUser(
     val nodeNum: Long,
@@ -152,7 +155,7 @@ fun NetworkPacket.summary(): String {
 fun NetworkPacket.toHaLowUser(route: String): HaLowUser? {
     beacon?.let { metadata ->
         if (metadata.userIdHigh == 0L && metadata.userIdLow == 0L && metadata.userName.isBlank()) return null
-        return HaLowUser(
+        val user = HaLowUser(
             nodeNum = from,
             userId = metadata.userIdLow,
             userUuid = formatUuid(metadata.userIdHigh, metadata.userIdLow),
@@ -165,7 +168,29 @@ fun NetworkPacket.toHaLowUser(route: String): HaLowUser? {
             longitude = metadata.longitude,
             locationTimestampMs = metadata.locationTimestampMs,
         )
+        Log.d(
+            TAG_USERS,
+            "decoded beacon node=${user.nodeId} uuid=${user.userUuid} name=${user.displayName} " +
+                "lastSeen=${user.lastSeenMs} lat=${user.latitude} lon=${user.longitude} locTs=${user.locationTimestampMs} " +
+                "publicKeyBytes=${user.publicKey.size} route=$route",
+        )
+        return user
     }
 
     return null
+}
+
+fun HaLowUser.withFallbackLocation(previous: HaLowUser?): HaLowUser {
+    if (latitude != null && longitude != null) return this
+    if (previous?.latitude == null || previous.longitude == null) return this
+    val updated = copy(
+        latitude = previous.latitude,
+        longitude = previous.longitude,
+        locationTimestampMs = previous.locationTimestampMs,
+    )
+    Log.d(
+        TAG_USERS,
+        "kept previous location node=${updated.nodeId} lat=${updated.latitude} lon=${updated.longitude} locTs=${updated.locationTimestampMs}",
+    )
+    return updated
 }

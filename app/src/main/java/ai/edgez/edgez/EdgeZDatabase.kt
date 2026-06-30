@@ -4,11 +4,13 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import android.util.Log
 
 private const val DATABASE_NAME = "edgez_local.db"
 private const val DATABASE_VERSION = 1
 private const val TABLE_USERS = "halow_users"
 private const val TABLE_MESSAGES = "conversation_messages"
+private const val TAG_USERS = "EdgeZUsers"
 
 class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
     context.applicationContext,
@@ -102,6 +104,11 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                     longitude = cursor.getNullableDouble(longitudeIndex),
                     locationTimestampMs = cursor.getLong(locationTimestampIndex),
                 )
+                Log.d(
+                    TAG_USERS,
+                    "loaded user node=${user.nodeId} uuid=${user.userUuid} name=${user.displayName} " +
+                        "lastSeen=${user.lastSeenMs} lat=${user.latitude} lon=${user.longitude} locTs=${user.locationTimestampMs}",
+                )
                 users[user.nodeNum] = user
             }
         }
@@ -139,7 +146,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
     }
 
     fun upsertUser(user: HaLowUser) {
-        writableDatabase.insertWithOnConflict(
+        val rowId = writableDatabase.insertWithOnConflict(
             TABLE_USERS,
             null,
             ContentValues().apply {
@@ -155,6 +162,11 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 put("location_timestamp_ms", user.locationTimestampMs)
             },
             SQLiteDatabase.CONFLICT_REPLACE,
+        )
+        Log.d(
+            TAG_USERS,
+            "upsert user rowId=$rowId node=${user.nodeId} uuid=${user.userUuid} name=${user.displayName} " +
+                "lastSeen=${user.lastSeenMs} lat=${user.latitude} lon=${user.longitude} locTs=${user.locationTimestampMs}",
         )
     }
 
@@ -184,6 +196,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
         if (lowHex.length != 16) return 0L
         return lowHex.toULongOrNull(16)?.toLong() ?: 0L
     }
+
 }
 
 private fun android.database.Cursor.getNullableDouble(columnIndex: Int): Double? {
