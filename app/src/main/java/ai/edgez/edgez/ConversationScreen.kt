@@ -58,7 +58,8 @@ fun ConversationScreen(
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text(user.displayName, style = MaterialTheme.typography.titleLarge)
-                    Text(user.nodeId, style = MaterialTheme.typography.bodySmall)
+                    Text("Node ${user.nodeId}", style = MaterialTheme.typography.bodySmall)
+                    Text("User ${user.userIdText}", style = MaterialTheme.typography.bodySmall)
                 }
             }
 

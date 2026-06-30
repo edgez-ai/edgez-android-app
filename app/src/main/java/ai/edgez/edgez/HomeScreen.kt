@@ -193,7 +193,8 @@ private fun NodeCard(user: HaLowUser) {
             ) {
                 Column {
                     Text(user.displayName, style = MaterialTheme.typography.titleMedium)
-                    Text(user.nodeId, style = MaterialTheme.typography.bodyMedium)
+                    Text("Node ${user.nodeId}", style = MaterialTheme.typography.bodyMedium)
+                    Text("User ${user.userIdText}", style = MaterialTheme.typography.bodySmall)
                 }
                 Text(
                     text = "Last seen ${formatLastSeenAge(user.lastSeenMs, nowMs)}",

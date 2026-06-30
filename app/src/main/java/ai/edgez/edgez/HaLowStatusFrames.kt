@@ -14,19 +14,22 @@ import ai.edgez.edgez.usb.MobileFromRadio
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
+import java.util.UUID
 
 private const val RADIO_PACKET_HEADER_LEN = 16
 private val EDGEZ_NODE_INFO_MAGIC = byteArrayOf('E'.code.toByte(), 'D'.code.toByte(), 'G'.code.toByte(), 'E'.code.toByte(), 'Z'.code.toByte())
 
 data class HaLowUser(
     val nodeNum: Long,
+    val userId: Long = 0,
     val shortName: String,
     val longName: String,
     val route: String,
     val lastSeenMs: Long,
     val publicKey: ByteArray = ByteArray(0),
 ) {
-    val nodeId: String get() = "!%08x".format(nodeNum)
+    val nodeId: String get() = formatMacAddress(nodeNum)
+    val userIdText: String get() = UUID(0L, userId).toString()
     val displayName: String get() = longName.ifBlank { shortName.ifBlank { nodeId } }
 
     override fun equals(other: Any?): Boolean {
@@ -35,6 +38,7 @@ data class HaLowUser(
 
         other as HaLowUser
         return nodeNum == other.nodeNum &&
+            userId == other.userId &&
             shortName == other.shortName &&
             longName == other.longName &&
             route == other.route &&
@@ -44,6 +48,7 @@ data class HaLowUser(
 
     override fun hashCode(): Int {
         var result = nodeNum.hashCode()
+        result = 31 * result + userId.hashCode()
         result = 31 * result + shortName.hashCode()
         result = 31 * result + longName.hashCode()
         result = 31 * result + route.hashCode()
@@ -51,6 +56,17 @@ data class HaLowUser(
         result = 31 * result + publicKey.contentHashCode()
         return result
     }
+}
+
+private fun formatMacAddress(value: Long): String {
+    return "%02x:%02x:%02x:%02x:%02x:%02x".format(
+        (value ushr 40) and 0xff,
+        (value ushr 32) and 0xff,
+        (value ushr 24) and 0xff,
+        (value ushr 16) and 0xff,
+        (value ushr 8) and 0xff,
+        value and 0xff,
+    )
 }
 
 private fun decodeHaLowSyncPayload(frame: ByteArray): ByteArray? {
@@ -93,8 +109,7 @@ fun HaLowInterfaceStatus.summary(): String {
 
 fun MobileFromRadio.summary(): String {
     beacon?.let {
-        val node = from.takeIf { value -> value != 0L } ?: (it.userId and 0xffffffffL)
-        return "NetworkPacket beacon user=${it.userName.ifBlank { "unknown" }} node=0x%012x userId=${"!%08x".format(it.userId and 0xffffffffL)} id=$id".format(node)
+        return "NetworkPacket beacon user=${it.userName.ifBlank { "unknown" }} node=${formatMacAddress(from)} userId=${UUID(0L, it.userId)} id=$id"
     }
     conversationMessage?.let { message ->
         return "Conversation from=${message.senderUserId} name=${message.senderName} to=${message.recipientUserId} bytes=${message.ciphertext.size}"
@@ -116,7 +131,8 @@ fun MobileFromRadio.toHaLowUser(route: String): HaLowUser? {
     beacon?.let { metadata ->
         if (metadata.userId == 0L && metadata.userName.isBlank()) return null
         return HaLowUser(
-            nodeNum = from.takeIf { it != 0L } ?: (metadata.userId and 0xffffffffL),
+            nodeNum = from,
+            userId = metadata.userId,
             shortName = metadata.userName.take(4),
             longName = metadata.userName,
             route = route,
@@ -135,6 +151,7 @@ fun ConversationMessage.toHaLowUser(route: String): HaLowUser {
     val name = senderName.ifBlank { "!%08x".format(senderUserId and 0xffffffffL) }
     return HaLowUser(
         nodeNum = senderUserId and 0xffffffffL,
+        userId = senderUserId,
         shortName = name.take(4),
         longName = name,
         route = route,
@@ -153,6 +170,7 @@ fun parseEdgeZUserFromRawRadioBuffer(rawRadioBuffer: ByteArray, route: String): 
         if (user.userId != 0L || user.userName.isNotBlank()) {
             return HaLowUser(
                 nodeNum = user.userId and 0xffffffffL,
+                userId = user.userId,
                 shortName = user.userName.take(4),
                 longName = user.userName,
                 route = route,
@@ -191,6 +209,7 @@ fun parseEdgeZUserFromRawRadioBuffer(rawRadioBuffer: ByteArray, route: String): 
 
     return HaLowUser(
         nodeNum = fromNode,
+        userId = 0,
         shortName = shortRead.value,
         longName = longRead.value,
         route = route,
