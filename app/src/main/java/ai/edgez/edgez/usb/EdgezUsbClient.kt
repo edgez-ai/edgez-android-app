@@ -343,8 +343,6 @@ object EdgezUsbControlProto {
 
         return encodeNetworkPacket(
             userId = userId,
-            userName = userName,
-            userPublicKey = userPublicKey,
         ) { out ->
             writeBytesField(out, NETWORK_PACKET_INIT_TAG, init.toByteArray())
         }
@@ -354,14 +352,12 @@ object EdgezUsbControlProto {
         userId: Long,
         userName: String,
         userPublicKey: ByteArray,
-        discover: Int = 1,
     ): ByteArray {
+        val discover = encodeDiscover(userId, userName, userPublicKey)
         return encodeNetworkPacket(
             userId = userId,
-            userName = userName,
-            userPublicKey = userPublicKey,
         ) { out ->
-            writeVarintField(out, NETWORK_PACKET_DISCOVER_TAG, discover.coerceAtLeast(0).toLong())
+            writeBytesField(out, NETWORK_PACKET_DISCOVER_TAG, discover)
         }
     }
 
@@ -376,8 +372,6 @@ object EdgezUsbControlProto {
 
         return encodeNetworkPacket(
             userId = message.senderUserId,
-            userName = message.senderName,
-            userPublicKey = message.senderPublicKey,
         ) { out ->
             writeBytesField(out, NETWORK_PACKET_PAYLOAD_TAG, conversation.toByteArray())
         }
@@ -404,8 +398,8 @@ object EdgezUsbControlProto {
                 0 -> {
                     val valueRead = readVarint(payload, offset) ?: return null
                     offset = valueRead.nextOffset
-                    if (field == 1) {
-                        id = valueRead.value
+                    when (field) {
+                        1 -> id = valueRead.value
                     }
                 }
                 2 -> {
@@ -415,8 +409,8 @@ object EdgezUsbControlProto {
                     if (len < 0 || offset + len > payload.size) return null
                     val bytes = payload.copyOfRange(offset, offset + len)
                     when (field) {
-                        7 -> user = decodeEdgeZAssocMetadata(bytes)
                         NETWORK_PACKET_PAYLOAD_TAG -> rawRadioBuffer = bytes
+                        NETWORK_PACKET_DISCOVER_TAG -> user = decodeEdgeZAssocMetadata(bytes)
                         NETWORK_PACKET_STATUS_TAG -> halowStatus = decodeHaLowInterfaceStatus(bytes)
                     }
                     offset += len
@@ -659,8 +653,6 @@ object EdgezUsbControlProto {
 
     private fun encodeNetworkPacket(
         userId: Long,
-        userName: String,
-        userPublicKey: ByteArray,
         writeBody: (ByteArrayOutputStream) -> Unit,
     ): ByteArray {
         val out = ByteArrayOutputStream()
@@ -669,12 +661,12 @@ object EdgezUsbControlProto {
         writeVarintField(out, 2, userId)
         writeVarintField(out, 4, NETWORK_OPERATION_REQUEST.toLong())
         writeVarintField(out, 5, NETWORK_INTERFACE_HALOW.toLong())
-        writeBytesField(out, 7, encodeUser(userId, userName, userPublicKey))
+        writeVarintField(out, 7, userId)
         writeBody(out)
         return out.toByteArray()
     }
 
-    private fun encodeUser(
+    private fun encodeDiscover(
         userId: Long,
         userName: String,
         userPublicKey: ByteArray,
