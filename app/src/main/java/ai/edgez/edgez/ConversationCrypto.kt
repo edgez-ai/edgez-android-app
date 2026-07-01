@@ -102,8 +102,17 @@ data class VoiceChunk(
     val audio: ByteArray,
 )
 
+data class MediaChunk(
+    val groupId: Long,
+    val totalChunks: Int,
+    val index: Int,
+    val bytes: ByteArray,
+)
+
 private val VOICE_CHUNK_MAGIC = byteArrayOf('E'.code.toByte(), 'V'.code.toByte(), '2'.code.toByte())
+private val MEDIA_CHUNK_MAGIC = byteArrayOf('E'.code.toByte(), 'M'.code.toByte(), '1'.code.toByte())
 const val VOICE_CHUNK_AUDIO_BYTES = 290
+const val IMAGE_CHUNK_BYTES = VOICE_CHUNK_AUDIO_BYTES
 
 fun encodeVoiceChunk(chunk: VoiceChunk): ByteArray {
     return ByteBuffer.allocate(VOICE_CHUNK_MAGIC.size + 8 + 4 + 2 + 2 + 1 + chunk.audio.size)
@@ -132,6 +141,31 @@ fun decodeVoiceChunk(payload: ByteArray): VoiceChunk? {
     buffer.get(audio)
     if (totalChunks <= 0 || index >= totalChunks || audio.isEmpty()) return null
     return VoiceChunk(groupId, durationMs, totalChunks, index, codec, audio)
+}
+
+fun encodeMediaChunk(chunk: MediaChunk): ByteArray {
+    return ByteBuffer.allocate(MEDIA_CHUNK_MAGIC.size + 8 + 2 + 2 + chunk.bytes.size)
+        .order(ByteOrder.LITTLE_ENDIAN)
+        .put(MEDIA_CHUNK_MAGIC)
+        .putLong(chunk.groupId)
+        .putShort(chunk.totalChunks.coerceIn(0, 0xffff).toShort())
+        .putShort(chunk.index.coerceIn(0, 0xffff).toShort())
+        .put(chunk.bytes)
+        .array()
+}
+
+fun decodeMediaChunk(payload: ByteArray): MediaChunk? {
+    if (payload.size < MEDIA_CHUNK_MAGIC.size + 8 + 2 + 2) return null
+    if (!payload.take(MEDIA_CHUNK_MAGIC.size).toByteArray().contentEquals(MEDIA_CHUNK_MAGIC)) return null
+    val buffer = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
+    buffer.position(MEDIA_CHUNK_MAGIC.size)
+    val groupId = buffer.long
+    val totalChunks = buffer.short.toInt() and 0xffff
+    val index = buffer.short.toInt() and 0xffff
+    val bytes = ByteArray(buffer.remaining())
+    buffer.get(bytes)
+    if (totalChunks <= 0 || index >= totalChunks || bytes.isEmpty()) return null
+    return MediaChunk(groupId, totalChunks, index, bytes)
 }
 
 private fun conversationKey(

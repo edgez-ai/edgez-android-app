@@ -77,6 +77,9 @@ fun SettingsScreen(
     var beaconIntervalSeconds by rememberSaveable {
         mutableStateOf(connectionPreferences.getBeaconIntervalSeconds().toString())
     }
+    var imageLimitMb by rememberSaveable {
+        mutableStateOf((connectionPreferences.getImageLimitBytes() / (1024 * 1024)).coerceAtLeast(1).toString())
+    }
     var userIdentity by remember { mutableStateOf(connectionPreferences.getOrCreateUserIdentity()) }
     var userName by rememberSaveable { mutableStateOf(userIdentity.name) }
     var showDebugPopup by rememberSaveable { mutableStateOf(false) }
@@ -133,6 +136,13 @@ fun SettingsScreen(
         connectionPreferences.setShareLocation(shareLocation)
         userIdentity = connectionPreferences.getOrCreateUserIdentity()
         status = "Settings saved"
+    }
+
+    fun saveMediaPreferences() {
+        val limitBytes = (imageLimitMb.toIntOrNull() ?: 1).coerceIn(1, 10) * 1024 * 1024
+        connectionPreferences.setImageLimitBytes(limitBytes)
+        imageLimitMb = (connectionPreferences.getImageLimitBytes() / (1024 * 1024)).coerceAtLeast(1).toString()
+        status = "Media settings saved"
     }
 
     fun sendControl(
@@ -425,6 +435,25 @@ fun SettingsScreen(
                     Spacer(Modifier.height(10.dp))
                     Button(onClick = { saveMeshPreferences() }) {
                         Text("Save settings")
+                    }
+                }
+            }
+
+            item {
+                SettingsCard(title = "Chat media") {
+                    OutlinedTextField(
+                        value = imageLimitMb,
+                        onValueChange = { value ->
+                            imageLimitMb = value.filter { it.isDigit() }.take(2)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Image limit (MB)") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Button(onClick = { saveMediaPreferences() }) {
+                        Text("Save media settings")
                     }
                 }
             }
