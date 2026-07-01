@@ -33,6 +33,8 @@ import ai.edgez.edgez.ble.EdgezBleClient
 import ai.edgez.edgez.usb.EdgezUsbClient
 import ai.edgez.edgez.usb.HaLowInterfaceStatus
 import ai.edgez.edgez.usb.PacketMime
+import java.io.ByteArrayOutputStream
+import java.io.File
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -41,6 +43,26 @@ private const val RECONNECT_DELAY_MS = 2_000L
 private const val TAG_USERS = "EdgeZUsers"
 private const val HALOW_BROADCAST_NODE_48 = 0xffffffffffffL
 private const val HALOW_BROADCAST_NODE_32 = 0xffffffffL
+
+private data class PendingVoiceMessage(
+    val durationMs: Long,
+    val codec: Int,
+    val chunks: Array<ByteArray?>,
+) {
+    fun put(index: Int, bytes: ByteArray) {
+        if (index in chunks.indices) {
+            chunks[index] = bytes
+        }
+    }
+
+    fun complete(): Boolean = chunks.all { it != null }
+
+    fun bytes(): ByteArray {
+        val out = ByteArrayOutputStream()
+        chunks.forEach { out.write(it ?: ByteArray(0)) }
+        return out.toByteArray()
+    }
+}
 
 @PreviewScreenSizes
 @Composable
@@ -55,6 +77,7 @@ fun EdgeZApp() {
     val reconnectExecutor = remember { Executors.newSingleThreadExecutor() }
     val beaconExecutor = remember { Executors.newSingleThreadExecutor() }
     val pendingHaLowInitKey = remember { AtomicReference<String?>(null) }
+    val pendingVoiceMessages = remember { mutableMapOf<String, PendingVoiceMessage>() }
     val reconnectRequested = remember { AtomicReference<ActiveConnection?>(null) }
     val reconnectAttemptRunning = remember { AtomicBoolean(false) }
     val shuttingDown = remember { AtomicBoolean(false) }
@@ -256,11 +279,40 @@ fun EdgeZApp() {
                             val senderUser = haLowUsers[senderNodeNum] ?: user?.takeIf { it.nodeNum == senderNodeNum }
                             val entry = runCatching {
                                 requireNotNull(senderUser) { "Sender user is missing" }
-                                ConversationEntry(
-                                    text = decryptConversationText(identity, senderUser, message),
-                                    mine = false,
-                                    timestampMs = System.currentTimeMillis(),
-                                )
+                                when (message.mime) {
+                                    PacketMime.VOICE -> {
+                                        val payload = decryptConversationPayload(identity, senderUser, message)
+                                        val chunk = requireNotNull(decodeVoiceChunk(payload)) { "Voice chunk is malformed" }
+                                        val key = "${senderNodeNum}:${chunk.groupId}"
+                                        val pending = pendingVoiceMessages.getOrPut(key) {
+                                            PendingVoiceMessage(
+                                                durationMs = chunk.durationMs,
+                                                codec = chunk.codec,
+                                                chunks = arrayOfNulls(chunk.totalChunks),
+                                            )
+                                        }
+                                        pending.put(chunk.index, chunk.audio)
+                                        if (!pending.complete()) {
+                                            null
+                                        } else {
+                                            pendingVoiceMessages.remove(key)
+                                            val path = saveVoiceMessage(context.applicationContext, pending.bytes(), pending.codec)
+                                            ConversationEntry(
+                                                text = "Voice message",
+                                                mine = false,
+                                                timestampMs = System.currentTimeMillis(),
+                                                mime = PacketMime.VOICE,
+                                                audioPath = path,
+                                                durationMs = pending.durationMs,
+                                            )
+                                        }
+                                    }
+                                    else -> ConversationEntry(
+                                        text = decryptConversationText(identity, senderUser, message),
+                                        mine = false,
+                                        timestampMs = System.currentTimeMillis(),
+                                    )
+                                }
                             }.getOrElse {
                                 ConversationEntry(
                                     text = "Unable to decrypt message",
@@ -269,10 +321,12 @@ fun EdgeZApp() {
                                     status = it.message.orEmpty(),
                                 )
                             }
-                            edgeZDatabase.insertMessage(senderNodeNum, entry)
-                            conversations = conversations + (
-                                senderNodeNum to ((conversations[senderNodeNum] ?: emptyList()) + entry)
-                                )
+                            if (entry != null) {
+                                edgeZDatabase.insertMessage(senderNodeNum, entry)
+                                conversations = conversations + (
+                                    senderNodeNum to ((conversations[senderNodeNum] ?: emptyList()) + entry)
+                                    )
+                            }
                         }
                     }
                 }
@@ -456,6 +510,147 @@ fun EdgeZApp() {
                                         }
                                     },
                                     onFailure = { Result.failure(it) },
+                                )
+                            }
+                        },
+                        onSendVoiceMessage = { voiceBytes, durationMs, localPath, codec ->
+                            val identity = lastConnectionPreferences.getOrCreateUserIdentity()
+                            val fromNode = haLowStatus?.macAddress?.takeIf { it != 0L }
+                            val timestampMs = System.currentTimeMillis()
+                            val entry = ConversationEntry(
+                                text = "Voice message",
+                                mine = true,
+                                timestampMs = timestampMs,
+                                status = "Sending voice...",
+                                mime = PacketMime.VOICE,
+                                audioPath = localPath,
+                                durationMs = durationMs,
+                            )
+                            edgeZDatabase.insertMessage(conversationUser.nodeNum, entry)
+                            conversations = conversations + (
+                                conversationUser.nodeNum to ((conversations[conversationUser.nodeNum] ?: emptyList()) + entry)
+                                )
+
+                            fun updateVoiceStatus(nextStatus: String) {
+                                edgeZDatabase.updateMessageStatus(conversationUser.nodeNum, timestampMs, localPath, nextStatus)
+                                conversations = conversations + (
+                                    conversationUser.nodeNum to ((conversations[conversationUser.nodeNum] ?: emptyList()).map {
+                                        if (it.timestampMs == timestampMs && it.audioPath == localPath) {
+                                            it.copy(status = nextStatus)
+                                        } else {
+                                            it
+                                        }
+                                    })
+                                    )
+                            }
+
+                            if (fromNode == null) {
+                                val error = "Voice failed: local HaLow node id unavailable"
+                                updateVoiceStatus(error)
+                                Result.failure(IllegalStateException(error))
+                            } else {
+                                val result = runCatching {
+                                    val toNode = conversationUser.nodeNum
+                                    val maxHop = lastConnectionPreferences.getMeshMaxHop()
+                                    val groupId = timestampMs
+                                    val chunks = voiceBytes.asList().chunked(VOICE_CHUNK_AUDIO_BYTES)
+                                    chunks.forEachIndexed { index, chunkBytes ->
+                                            val voicePayload = encodeVoiceChunk(
+                                                VoiceChunk(
+                                                    groupId = groupId,
+                                                    durationMs = durationMs,
+                                                    totalChunks = chunks.size,
+                                                    index = index,
+                                                    codec = codec,
+                                                    audio = chunkBytes.toByteArray(),
+                                                ),
+                                            )
+                                            val encrypted = encryptConversationPayload(identity, conversationUser, voicePayload, fromNode)
+                                            val sendResult = when (activeConnection) {
+                                                ActiveConnection.USB -> usbClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, index + 1)
+                                                ActiveConnection.BLE -> bleClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, index + 1)
+                                                ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+                                            }
+                                            sendResult.getOrThrow()
+                                    }
+                                }
+                                result.fold(
+                                    onSuccess = {
+                                        updateVoiceStatus("Voice sent via ${activeConnection.name}")
+                                        Result.success("Voice sent")
+                                    },
+                                    onFailure = {
+                                        val error = "Voice failed: ${it.message ?: "send timeout"}"
+                                        updateVoiceStatus(error)
+                                        Result.failure(IllegalStateException(error, it))
+                                    },
+                                )
+                            }
+                        },
+                        onResendVoiceMessage = { entry ->
+                            val identity = lastConnectionPreferences.getOrCreateUserIdentity()
+                            val fromNode = haLowStatus?.macAddress?.takeIf { it != 0L }
+
+                            fun updateVoiceStatus(nextStatus: String) {
+                                edgeZDatabase.updateMessageStatus(conversationUser.nodeNum, entry.timestampMs, entry.audioPath, nextStatus)
+                                conversations = conversations + (
+                                    conversationUser.nodeNum to ((conversations[conversationUser.nodeNum] ?: emptyList()).map {
+                                        if (it.timestampMs == entry.timestampMs && it.audioPath == entry.audioPath) {
+                                            it.copy(status = nextStatus)
+                                        } else {
+                                            it
+                                        }
+                                    })
+                                    )
+                            }
+
+                            val voiceFile = File(entry.audioPath)
+                            if (!voiceFile.exists()) {
+                                val error = "Voice failed: local audio file missing"
+                                updateVoiceStatus(error)
+                                Result.failure(IllegalStateException(error))
+                            } else if (fromNode == null) {
+                                val error = "Voice failed: local HaLow node id unavailable"
+                                updateVoiceStatus(error)
+                                Result.failure(IllegalStateException(error))
+                            } else {
+                                updateVoiceStatus("Resending voice...")
+                                val result = runCatching {
+                                    val toNode = conversationUser.nodeNum
+                                    val maxHop = lastConnectionPreferences.getMeshMaxHop()
+                                    val voiceBytes = voiceFile.readBytes()
+                                    val codec = voiceCodecFromPath(entry.audioPath)
+                                    val chunks = voiceBytes.asList().chunked(VOICE_CHUNK_AUDIO_BYTES)
+                                    chunks.forEachIndexed { index, chunkBytes ->
+                                        val voicePayload = encodeVoiceChunk(
+                                            VoiceChunk(
+                                                groupId = entry.timestampMs,
+                                                durationMs = entry.durationMs,
+                                                totalChunks = chunks.size,
+                                                index = index,
+                                                codec = codec,
+                                                audio = chunkBytes.toByteArray(),
+                                            ),
+                                        )
+                                        val encrypted = encryptConversationPayload(identity, conversationUser, voicePayload, fromNode)
+                                        val sendResult = when (activeConnection) {
+                                            ActiveConnection.USB -> usbClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, index + 1)
+                                            ActiveConnection.BLE -> bleClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, index + 1)
+                                            ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+                                        }
+                                        sendResult.getOrThrow()
+                                    }
+                                }
+                                result.fold(
+                                    onSuccess = {
+                                        updateVoiceStatus("Voice sent via ${activeConnection.name}")
+                                        Result.success("Voice resent")
+                                    },
+                                    onFailure = {
+                                        val error = "Voice failed: ${it.message ?: "send timeout"}"
+                                        updateVoiceStatus(error)
+                                        Result.failure(IllegalStateException(error, it))
+                                    },
                                 )
                             }
                         },

@@ -5,9 +5,10 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import android.util.Log
+import ai.edgez.edgez.usb.PacketMime
 
 private const val DATABASE_NAME = "edgez_local.db"
-private const val DATABASE_VERSION = 1
+private const val DATABASE_VERSION = 2
 private const val TABLE_USERS = "halow_users"
 private const val TABLE_MESSAGES = "conversation_messages"
 private const val TAG_USERS = "EdgeZUsers"
@@ -44,6 +45,9 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 mine INTEGER NOT NULL,
                 timestamp_ms INTEGER NOT NULL,
                 status TEXT NOT NULL,
+                mime INTEGER NOT NULL DEFAULT 1,
+                audio_path TEXT NOT NULL DEFAULT '',
+                duration_ms INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY(peer_node_num) REFERENCES $TABLE_USERS(node_num) ON DELETE CASCADE
             )
             """.trimIndent(),
@@ -51,7 +55,13 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
         db.execSQL("CREATE INDEX idx_messages_peer_time ON $TABLE_MESSAGES(peer_node_num, timestamp_ms)")
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN mime INTEGER NOT NULL DEFAULT 1")
+            db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN audio_path TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0")
+        }
+    }
 
     override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         db.setVersion(newVersion)
@@ -119,7 +129,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
         val messages = linkedMapOf<Long, MutableList<ConversationEntry>>()
         readableDatabase.query(
             TABLE_MESSAGES,
-            arrayOf("peer_node_num", "text", "mine", "timestamp_ms", "status"),
+            arrayOf("peer_node_num", "text", "mine", "timestamp_ms", "status", "mime", "audio_path", "duration_ms"),
             null,
             null,
             null,
@@ -131,6 +141,9 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
             val mineIndex = cursor.getColumnIndexOrThrow("mine")
             val timestampIndex = cursor.getColumnIndexOrThrow("timestamp_ms")
             val statusIndex = cursor.getColumnIndexOrThrow("status")
+            val mimeIndex = cursor.getColumnIndexOrThrow("mime")
+            val audioPathIndex = cursor.getColumnIndexOrThrow("audio_path")
+            val durationIndex = cursor.getColumnIndexOrThrow("duration_ms")
             while (cursor.moveToNext()) {
                 val peerNodeNum = cursor.getLong(peerIndex)
                 val entry = ConversationEntry(
@@ -138,6 +151,9 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                     mine = cursor.getInt(mineIndex) != 0,
                     timestampMs = cursor.getLong(timestampIndex),
                     status = cursor.getString(statusIndex),
+                    mime = PacketMime.fromWireValue(cursor.getInt(mimeIndex)),
+                    audioPath = cursor.getString(audioPathIndex),
+                    durationMs = cursor.getLong(durationIndex),
                 )
                 messages.getOrPut(peerNodeNum) { mutableListOf() }.add(entry)
             }
@@ -185,7 +201,26 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 put("mine", if (entry.mine) 1 else 0)
                 put("timestamp_ms", entry.timestampMs)
                 put("status", entry.status)
+                put("mime", entry.mime.wireValue)
+                put("audio_path", entry.audioPath)
+                put("duration_ms", entry.durationMs)
             },
+        )
+    }
+
+    fun updateMessageStatus(
+        peerNodeNum: Long,
+        timestampMs: Long,
+        audioPath: String,
+        status: String,
+    ) {
+        writableDatabase.update(
+            TABLE_MESSAGES,
+            ContentValues().apply {
+                put("status", status)
+            },
+            "peer_node_num = ? AND timestamp_ms = ? AND audio_path = ?",
+            arrayOf(peerNodeNum.toString(), timestampMs.toString(), audioPath),
         )
     }
 

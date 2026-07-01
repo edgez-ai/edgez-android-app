@@ -2,6 +2,7 @@ package ai.edgez.edgez
 
 import ai.edgez.edgez.usb.ConversationMessage
 import ai.edgez.edgez.usb.NetworkPacket
+import ai.edgez.edgez.usb.PacketMime
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.MessageDigest
@@ -19,6 +20,9 @@ data class ConversationEntry(
     val mine: Boolean,
     val timestampMs: Long,
     val status: String = "",
+    val mime: PacketMime = PacketMime.TEXT,
+    val audioPath: String = "",
+    val durationMs: Long = 0,
 )
 
 fun encryptConversationText(
@@ -27,10 +31,19 @@ fun encryptConversationText(
     text: String,
     senderNode: Long,
 ): ConversationMessage {
+    val plaintext = text.toByteArray(Charsets.UTF_8)
+    return encryptConversationPayload(identity, recipient, plaintext, senderNode)
+}
+
+fun encryptConversationPayload(
+    identity: UserIdentity,
+    recipient: HaLowUser,
+    plaintext: ByteArray,
+    senderNode: Long,
+): ConversationMessage {
     require(recipient.publicKey.size == 32) { "Remote user public key is missing" }
     val nonce = ByteArray(CONVERSATION_NONCE_SIZE)
     CONVERSATION_RANDOM.nextBytes(nonce)
-    val plaintext = text.toByteArray(Charsets.UTF_8)
     val aad = conversationAad(
         senderNode = senderNode,
         recipientNode = recipient.nodeNum,
@@ -55,6 +68,14 @@ fun decryptConversationText(
     sender: HaLowUser,
     packet: NetworkPacket,
 ): String {
+    return String(decryptConversationPayload(identity, sender, packet), Charsets.UTF_8)
+}
+
+fun decryptConversationPayload(
+    identity: UserIdentity,
+    sender: HaLowUser,
+    packet: NetworkPacket,
+): ByteArray {
     val message = packet.conversationMessage ?: error("Conversation payload is missing")
     require(sender.publicKey.size == 32) { "Sender public key is missing" }
     val aad = conversationAad(
@@ -69,7 +90,48 @@ fun decryptConversationText(
         GCMParameterSpec(AES_GCM_TAG_BITS, message.nonce),
     )
     cipher.updateAAD(aad)
-    return String(cipher.doFinal(message.ciphertext), Charsets.UTF_8)
+    return cipher.doFinal(message.ciphertext)
+}
+
+data class VoiceChunk(
+    val groupId: Long,
+    val durationMs: Long,
+    val totalChunks: Int,
+    val index: Int,
+    val codec: Int,
+    val audio: ByteArray,
+)
+
+private val VOICE_CHUNK_MAGIC = byteArrayOf('E'.code.toByte(), 'V'.code.toByte(), '2'.code.toByte())
+const val VOICE_CHUNK_AUDIO_BYTES = 280
+
+fun encodeVoiceChunk(chunk: VoiceChunk): ByteArray {
+    return ByteBuffer.allocate(VOICE_CHUNK_MAGIC.size + 8 + 4 + 2 + 2 + 1 + chunk.audio.size)
+        .order(ByteOrder.LITTLE_ENDIAN)
+        .put(VOICE_CHUNK_MAGIC)
+        .putLong(chunk.groupId)
+        .putInt(chunk.durationMs.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt())
+        .putShort(chunk.totalChunks.coerceIn(0, 0xffff).toShort())
+        .putShort(chunk.index.coerceIn(0, 0xffff).toShort())
+        .put(chunk.codec.coerceIn(0, 0xff).toByte())
+        .put(chunk.audio)
+        .array()
+}
+
+fun decodeVoiceChunk(payload: ByteArray): VoiceChunk? {
+    if (payload.size < VOICE_CHUNK_MAGIC.size + 8 + 4 + 2 + 2 + 1) return null
+    if (!payload.take(VOICE_CHUNK_MAGIC.size).toByteArray().contentEquals(VOICE_CHUNK_MAGIC)) return null
+    val buffer = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
+    buffer.position(VOICE_CHUNK_MAGIC.size)
+    val groupId = buffer.long
+    val durationMs = buffer.int.toLong().coerceAtLeast(0L)
+    val totalChunks = buffer.short.toInt() and 0xffff
+    val index = buffer.short.toInt() and 0xffff
+    val codec = buffer.get().toInt() and 0xff
+    val audio = ByteArray(buffer.remaining())
+    buffer.get(audio)
+    if (totalChunks <= 0 || index >= totalChunks || audio.isEmpty()) return null
+    return VoiceChunk(groupId, durationMs, totalChunks, index, codec, audio)
 }
 
 private fun conversationKey(
