@@ -239,6 +239,18 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
         )
     }
 
+    fun updateMessageStatusByUuid(peerUserUuid: String, messageUuid: String, status: String) {
+        if (messageUuid.isBlank()) return
+        writableDatabase.update(
+            TABLE_MESSAGES,
+            ContentValues().apply {
+                put("status", status)
+            },
+            "peer_user_uuid = ? AND message_uuid = ?",
+            arrayOf(peerUserUuid, messageUuid),
+        )
+    }
+
     private fun userIdLowFromUuid(userUuid: String): Long {
         val parts = userUuid.split('-')
         if (parts.size != 5) return 0L

@@ -32,6 +32,7 @@ const val USB_CONTROL_ACTION_SET_PAIRING_ENABLED = 2
 const val USB_CONTROL_ACTION_SET_WIFI_CREDENTIALS = 3
 const val USB_CONTROL_ACTION_GET_STATUS = 4
 private const val NETWORK_OPERATION_REQUEST = 1
+const val NETWORK_OPERATION_ACK = 2
 private const val NETWORK_INTERFACE_HALOW = 5
 private const val NETWORK_PACKET_PAYLOAD_TAG = 100
 private const val NETWORK_PACKET_BEACON_TAG = 101
@@ -445,6 +446,36 @@ object EdgezUsbControlProto {
         }
     }
 
+    fun encodeConversationAck(
+        messageIdHigh: Long,
+        messageIdLow: Long,
+        from: Long,
+        to: Long,
+        maxHop: Int = 0,
+        userIdHigh: Long,
+        userIdLow: Long,
+    ): ByteArray {
+        require(messageIdHigh != 0L || messageIdLow != 0L) {
+            "NetworkPacket ACK requires a message UUID"
+        }
+        require(userIdHigh != 0L || userIdLow != 0L) {
+            "NetworkPacket ACK requires a user UUID"
+        }
+        return encodeNetworkPacket(
+            operation = NETWORK_OPERATION_ACK,
+            messageIdHigh = messageIdHigh,
+            messageIdLow = messageIdLow,
+            from = from,
+            to = to,
+            userIdHigh = userIdHigh,
+            userIdLow = userIdLow,
+            mime = PacketMime.TEXT,
+            maxHop = maxHop,
+        ) { out ->
+            writeBytesField(out, NETWORK_PACKET_PAYLOAD_TAG, ByteArray(0))
+        }
+    }
+
     fun decodeMobileFromRadio(payload: ByteArray): HaLowInterfaceStatus? {
         return decodeNetworkPacket(payload)?.halowStatus
     }
@@ -776,6 +807,7 @@ object EdgezUsbControlProto {
     }
 
     private fun encodeNetworkPacket(
+        operation: Int = NETWORK_OPERATION_REQUEST,
         messageIdHigh: Long = 0,
         messageIdLow: Long = 0,
         from: Long = 0,
@@ -797,7 +829,7 @@ object EdgezUsbControlProto {
         if (to != 0L) {
             writeVarintField(out, 4, to)
         }
-        writeVarintField(out, 5, NETWORK_OPERATION_REQUEST.toLong())
+        writeVarintField(out, 5, operation.toLong())
         writeVarintField(out, 6, NETWORK_INTERFACE_HALOW.toLong())
         if (sequence > 0) {
             writeVarintField(out, 7, sequence.toLong())
@@ -1095,6 +1127,32 @@ class EdgezUsbClient(private val context: Context) {
                 sequence = sequence,
                 messageIdHigh = messageIdHigh,
                 messageIdLow = messageIdLow,
+                userIdHigh = userIdHigh,
+                userIdLow = userIdLow,
+            )
+        }.getOrElse { error ->
+            return Result.failure(error)
+        }
+        return sendFrame(packet, timeoutMs)
+    }
+
+    fun sendConversationAck(
+        messageIdHigh: Long,
+        messageIdLow: Long,
+        from: Long,
+        to: Long,
+        maxHop: Int = 0,
+        userIdHigh: Long,
+        userIdLow: Long,
+        timeoutMs: Int = 1500,
+    ): Result<String> {
+        val packet = runCatching {
+            EdgezUsbControlProto.encodeConversationAck(
+                messageIdHigh = messageIdHigh,
+                messageIdLow = messageIdLow,
+                from = from,
+                to = to,
+                maxHop = maxHop,
                 userIdHigh = userIdHigh,
                 userIdLow = userIdLow,
             )

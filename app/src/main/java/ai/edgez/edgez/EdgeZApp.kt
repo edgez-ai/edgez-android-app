@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import ai.edgez.edgez.ble.EdgezBleClient
 import ai.edgez.edgez.usb.EdgezUsbClient
 import ai.edgez.edgez.usb.HaLowInterfaceStatus
+import ai.edgez.edgez.usb.NETWORK_OPERATION_ACK
 import ai.edgez.edgez.usb.PacketMime
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -276,7 +277,9 @@ fun EdgeZApp() {
             val status = message?.halowStatus ?: decodeHaLowStatusFrame(frame)
             val user = message?.toHaLowUser(source.name)
             val conversationMessage = message?.conversationMessage
-            if (status == null && user == null && conversationMessage == null) return
+            val isConversationAck = message?.operation == NETWORK_OPERATION_ACK &&
+                (message.messageIdHigh != 0L || message.messageIdLow != 0L)
+            if (status == null && user == null && conversationMessage == null && !isConversationAck) return
             if (status != null) {
                 triggerHaLowInitIfNeeded(source, status)
             }
@@ -309,7 +312,36 @@ fun EdgeZApp() {
                             Log.d(TAG_USERS, "refreshed selected conversation user node=${updatedUser.nodeId}")
                         }
                     }
-                    if (message != null && conversationMessage != null) {
+                    if (message != null && isConversationAck) {
+                        val ackUserUuid = packetUserUuid(message.userHigh, message.userLow)
+                        val ackUser = if (ackUserUuid.isNotBlank()) {
+                            haLowUsers.values.firstOrNull { it.userUuid == ackUserUuid }
+                                ?: user?.takeIf { it.userUuid == ackUserUuid }
+                        } else {
+                            haLowUsers[message.from] ?: user?.takeIf { it.nodeNum == message.from }
+                        }
+                        if (ackUser == null) {
+                            Log.w(
+                                TAG_USERS,
+                                "conversation ack sender missing user=$ackUserUuid from=0x%012x messageId=%s"
+                                    .format(message.from, formatMessageUuid(message.messageIdHigh, message.messageIdLow)),
+                            )
+                        } else {
+                            val senderKey = conversationKey(ackUser)
+                            val messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow)
+                            edgeZDatabase.updateMessageStatusByUuid(senderKey, messageUuid, "Delivered")
+                            conversations = conversations + (
+                                senderKey to ((conversations[senderKey] ?: emptyList()).map {
+                                    if (it.mine && it.messageUuid == messageUuid) {
+                                        it.copy(status = "Delivered")
+                                    } else {
+                                        it
+                                    }
+                                })
+                                )
+                        }
+                    }
+                    if (message != null && conversationMessage != null && !isConversationAck) {
                         val identity = lastConnectionPreferences.getOrCreateUserIdentity()
                         val senderUserUuid = packetUserUuid(message.userHigh, message.userLow)
                         val senderUser = if (senderUserUuid.isNotBlank()) {
@@ -383,6 +415,41 @@ fun EdgeZApp() {
                                 conversations = conversations + (
                                     senderKey to ((conversations[senderKey] ?: emptyList()) + entry)
                                     )
+                                val localNode = haLowStatus?.macAddress?.takeIf { it != 0L }
+                                val directToLocal = message.to != 0L &&
+                                    message.to != HALOW_BROADCAST_NODE_48 &&
+                                    message.to != HALOW_BROADCAST_NODE_32
+                                if (localNode != null &&
+                                    directToLocal &&
+                                    (message.messageIdHigh != 0L || message.messageIdLow != 0L)
+                                ) {
+                                    val maxHop = lastConnectionPreferences.getMeshMaxHop()
+                                    beaconExecutor.execute {
+                                        when (source) {
+                                            ActiveConnection.USB -> usbClient.sendConversationAck(
+                                                message.messageIdHigh,
+                                                message.messageIdLow,
+                                                localNode,
+                                                message.from,
+                                                maxHop,
+                                                identity.userIdHigh,
+                                                identity.userIdLow,
+                                            )
+                                            ActiveConnection.BLE -> bleClient.sendConversationAck(
+                                                message.messageIdHigh,
+                                                message.messageIdLow,
+                                                localNode,
+                                                message.from,
+                                                maxHop,
+                                                identity.userIdHigh,
+                                                identity.userIdLow,
+                                            )
+                                            ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+                                        }.onFailure {
+                                            Log.w(TAG_USERS, "conversation ack send failed messageId=${entry.messageUuid}", it)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

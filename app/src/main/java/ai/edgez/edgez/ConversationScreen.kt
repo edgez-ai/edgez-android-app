@@ -31,6 +31,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -292,7 +293,15 @@ private fun ConversationBubble(
                     Text(message.text, style = MaterialTheme.typography.bodyMedium)
                 }
                 if (message.status.isNotBlank()) {
-                    Text(message.status, style = MaterialTheme.typography.labelSmall)
+                    Text(
+                        if (message.status == "Delivered") "Delivered" else message.status,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (message.status == "Delivered") {
+                            Color(0xFF16803C)
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
                 }
                 if (canResend) {
                     TextButton(onClick = onResendVoiceMessage) {

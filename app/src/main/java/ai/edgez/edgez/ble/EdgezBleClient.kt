@@ -244,6 +244,31 @@ class EdgezBleClient(private val context: Context) {
         return sendFrame(packet)
     }
 
+    fun sendConversationAck(
+        messageIdHigh: Long,
+        messageIdLow: Long,
+        from: Long,
+        to: Long,
+        maxHop: Int = 0,
+        userIdHigh: Long,
+        userIdLow: Long,
+    ): Result<String> {
+        val packet = runCatching {
+            EdgezUsbControlProto.encodeConversationAck(
+                messageIdHigh = messageIdHigh,
+                messageIdLow = messageIdLow,
+                from = from,
+                to = to,
+                maxHop = maxHop,
+                userIdHigh = userIdHigh,
+                userIdLow = userIdLow,
+            )
+        }.getOrElse { error ->
+            return Result.failure(error)
+        }
+        return sendFrame(packet)
+    }
+
     @SuppressLint("MissingPermission")
     private fun sendFrame(payload: ByteArray): Result<String> {
         val gatt = gatt ?: return Result.failure(IllegalStateException("BLE is not connected"))
