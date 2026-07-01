@@ -39,6 +39,8 @@ import java.util.concurrent.atomic.AtomicReference
 
 private const val RECONNECT_DELAY_MS = 2_000L
 private const val TAG_USERS = "EdgeZUsers"
+private const val HALOW_BROADCAST_NODE_48 = 0xffffffffffffL
+private const val HALOW_BROADCAST_NODE_32 = 0xffffffffL
 
 @PreviewScreenSizes
 @Composable
@@ -244,7 +246,12 @@ fun EdgeZApp() {
                     if (message != null && conversationMessage != null) {
                         val identity = lastConnectionPreferences.getOrCreateUserIdentity()
                         val localNode = haLowStatus?.macAddress?.takeIf { it != 0L }
-                        if (message.to == localNode) {
+                        val isForThisDevice = localNode == null ||
+                            message.to == localNode ||
+                            message.to == 0L ||
+                            message.to == HALOW_BROADCAST_NODE_48 ||
+                            message.to == HALOW_BROADCAST_NODE_32
+                        if (isForThisDevice) {
                             val senderNodeNum = message.from
                             val senderUser = haLowUsers[senderNodeNum] ?: user?.takeIf { it.nodeNum == senderNodeNum }
                             val entry = runCatching {

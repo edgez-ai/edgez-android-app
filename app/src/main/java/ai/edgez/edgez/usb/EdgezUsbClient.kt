@@ -24,7 +24,7 @@ const val EDGEZ_MAGIC_0 = 'E'.code.toByte()
 const val EDGEZ_MAGIC_1 = 'Z'.code.toByte()
 const val EDGEZ_HEADER_LEN = 4
 const val EDGEZ_MAX_PAYLOAD = 512
-const val EDGEZ_NETWORK_PACKET_MAX_PAYLOAD = 400
+const val EDGEZ_NETWORK_PACKET_MAX_PAYLOAD = 350
 
 const val USB_CONTROL_ACTION_SET_BLE_ENABLED = 1
 const val USB_CONTROL_ACTION_SET_PAIRING_ENABLED = 2
@@ -810,7 +810,6 @@ object EdgezUsbControlProto {
         if (latitude != null && longitude != null) {
             writeFloatField(out, 5, latitude.toFloat())
             writeFloatField(out, 6, longitude.toFloat())
-            writeVarintField(out, 7, locationTimestampMs.coerceAtLeast(0L))
         }
         return Base64.getEncoder().encodeToString(out.toByteArray())
     }
