@@ -416,6 +416,8 @@ object EdgezUsbControlProto {
         sequence: Int = 0,
         messageIdHigh: Long = 0,
         messageIdLow: Long = 0,
+        userIdHigh: Long = 0,
+        userIdLow: Long = 0,
     ): ByteArray {
         val conversation = ByteArrayOutputStream()
         writeBytesField(conversation, 1, message.nonce)
@@ -430,6 +432,8 @@ object EdgezUsbControlProto {
             messageIdLow = messageIdLow,
             from = from,
             to = to,
+            userIdHigh = userIdHigh,
+            userIdLow = userIdLow,
             mime = mime,
             maxHop = maxHop,
             sequence = sequence,
@@ -1074,6 +1078,8 @@ class EdgezUsbClient(private val context: Context) {
         sequence: Int = 0,
         messageIdHigh: Long = 0,
         messageIdLow: Long = 0,
+        userIdHigh: Long = 0,
+        userIdLow: Long = 0,
         timeoutMs: Int = 1500,
     ): Result<String> {
         val packet = runCatching {
@@ -1086,6 +1092,8 @@ class EdgezUsbClient(private val context: Context) {
                 sequence = sequence,
                 messageIdHigh = messageIdHigh,
                 messageIdLow = messageIdLow,
+                userIdHigh = userIdHigh,
+                userIdLow = userIdLow,
             )
         }.getOrElse { error ->
             return Result.failure(error)

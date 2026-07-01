@@ -222,6 +222,8 @@ class EdgezBleClient(private val context: Context) {
         sequence: Int = 0,
         messageIdHigh: Long = 0,
         messageIdLow: Long = 0,
+        userIdHigh: Long = 0,
+        userIdLow: Long = 0,
     ): Result<String> {
         val packet = runCatching {
             EdgezUsbControlProto.encodeConversationMessage(
@@ -233,6 +235,8 @@ class EdgezBleClient(private val context: Context) {
                 sequence = sequence,
                 messageIdHigh = messageIdHigh,
                 messageIdLow = messageIdLow,
+                userIdHigh = userIdHigh,
+                userIdLow = userIdLow,
             )
         }.getOrElse { error ->
             return Result.failure(error)
