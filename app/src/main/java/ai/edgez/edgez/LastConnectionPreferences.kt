@@ -16,11 +16,9 @@ private const val KEY_USER_NAME = "user_name"
 private const val KEY_USER_PRIVATE_KEY = "user_private_key"
 private const val KEY_USER_PUBLIC_KEY = "user_public_key"
 private const val KEY_SHARE_LOCATION = "share_location"
-private const val KEY_IMAGE_LIMIT_BYTES = "image_limit_bytes"
 private const val DEFAULT_MESH_ID = "edgez"
 private const val DEFAULT_MESH_MAX_HOP = 2
 const val DEFAULT_BEACON_INTERVAL_SECONDS = 30
-const val DEFAULT_IMAGE_LIMIT_BYTES = 1024 * 1024
 private const val DEFAULT_USER_NAME = "EdgeZ User"
 private val SUPPORTED_MESH_COUNTRIES = setOf("US", "JP", "EU")
 
@@ -55,18 +53,6 @@ class LastConnectionPreferences(context: Context) {
         return normalizeBeaconIntervalSeconds(
             prefs.getInt(KEY_BEACON_INTERVAL_SECONDS, DEFAULT_BEACON_INTERVAL_SECONDS),
         )
-    }
-
-    fun getImageLimitBytes(): Int {
-        return normalizeImageLimitBytes(
-            prefs.getInt(KEY_IMAGE_LIMIT_BYTES, DEFAULT_IMAGE_LIMIT_BYTES),
-        )
-    }
-
-    fun setImageLimitBytes(limitBytes: Int) {
-        prefs.edit()
-            .putInt(KEY_IMAGE_LIMIT_BYTES, normalizeImageLimitBytes(limitBytes))
-            .apply()
     }
 
     fun setMeshCredentials(
@@ -150,8 +136,6 @@ class LastConnectionPreferences(context: Context) {
     private fun normalizeMeshMaxHop(maxHop: Int): Int = maxHop.coerceIn(0, 255)
 
     private fun normalizeBeaconIntervalSeconds(seconds: Int): Int = seconds.coerceIn(5, 3600)
-
-    private fun normalizeImageLimitBytes(limitBytes: Int): Int = limitBytes.coerceIn(64 * 1024, 10 * 1024 * 1024)
 
     private fun saveUserIdentity(identity: UserIdentity) {
         prefs.edit()

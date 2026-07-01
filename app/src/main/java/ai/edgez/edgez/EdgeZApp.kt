@@ -64,24 +64,6 @@ private data class PendingVoiceMessage(
     }
 }
 
-private data class PendingImageMessage(
-    val chunks: Array<ByteArray?>,
-) {
-    fun put(index: Int, bytes: ByteArray) {
-        if (index in chunks.indices) {
-            chunks[index] = bytes
-        }
-    }
-
-    fun complete(): Boolean = chunks.all { it != null }
-
-    fun bytes(): ByteArray {
-        val out = ByteArrayOutputStream()
-        chunks.forEach { out.write(it ?: ByteArray(0)) }
-        return out.toByteArray()
-    }
-}
-
 @PreviewScreenSizes
 @Composable
 fun EdgeZApp() {
@@ -96,7 +78,6 @@ fun EdgeZApp() {
     val beaconExecutor = remember { Executors.newSingleThreadExecutor() }
     val pendingHaLowInitKey = remember { AtomicReference<String?>(null) }
     val pendingVoiceMessages = remember { mutableMapOf<String, PendingVoiceMessage>() }
-    val pendingImageMessages = remember { mutableMapOf<String, PendingImageMessage>() }
     val reconnectRequested = remember { AtomicReference<ActiveConnection?>(null) }
     val reconnectAttemptRunning = remember { AtomicBoolean(false) }
     val shuttingDown = remember { AtomicBoolean(false) }
@@ -323,30 +304,6 @@ fun EdgeZApp() {
                                                 mime = PacketMime.VOICE,
                                                 audioPath = path,
                                                 durationMs = pending.durationMs,
-                                            )
-                                        }
-                                    }
-                                    PacketMime.IMAGE -> {
-                                        val payload = decryptConversationPayload(identity, senderUser, message)
-                                        val chunk = requireNotNull(decodeMediaChunk(payload)) { "Image chunk is malformed" }
-                                        val key = "${senderNodeNum}:${chunk.groupId}"
-                                        val pending = pendingImageMessages.getOrPut(key) {
-                                            PendingImageMessage(
-                                                chunks = arrayOfNulls(chunk.totalChunks),
-                                            )
-                                        }
-                                        pending.put(chunk.index, chunk.bytes)
-                                        if (!pending.complete()) {
-                                            null
-                                        } else {
-                                            pendingImageMessages.remove(key)
-                                            val path = saveImageMessage(context.applicationContext, pending.bytes())
-                                            ConversationEntry(
-                                                text = "Image message",
-                                                mine = false,
-                                                timestampMs = System.currentTimeMillis(),
-                                                mime = PacketMime.IMAGE,
-                                                audioPath = path,
                                             )
                                         }
                                     }
@@ -635,77 +592,6 @@ fun EdgeZApp() {
                                 )
                             }
                         },
-                        onSendImageMessage = { imageBytes, localPath ->
-                            val identity = lastConnectionPreferences.getOrCreateUserIdentity()
-                            val fromNode = haLowStatus?.macAddress?.takeIf { it != 0L }
-                            val timestampMs = System.currentTimeMillis()
-                            val entry = ConversationEntry(
-                                text = "Image message",
-                                mine = true,
-                                timestampMs = timestampMs,
-                                status = "Sending image...",
-                                mime = PacketMime.IMAGE,
-                                audioPath = localPath,
-                            )
-                            edgeZDatabase.insertMessage(conversationUser.nodeNum, entry)
-                            conversations = conversations + (
-                                conversationUser.nodeNum to ((conversations[conversationUser.nodeNum] ?: emptyList()) + entry)
-                                )
-
-                            fun updateImageStatus(nextStatus: String) {
-                                edgeZDatabase.updateMessageStatus(conversationUser.nodeNum, timestampMs, localPath, nextStatus)
-                                conversations = conversations + (
-                                    conversationUser.nodeNum to ((conversations[conversationUser.nodeNum] ?: emptyList()).map {
-                                        if (it.timestampMs == timestampMs && it.audioPath == localPath) {
-                                            it.copy(status = nextStatus)
-                                        } else {
-                                            it
-                                        }
-                                    })
-                                    )
-                            }
-
-                            if (fromNode == null) {
-                                val error = "Image failed: local HaLow node id unavailable"
-                                updateImageStatus(error)
-                                Result.failure(IllegalStateException(error))
-                            } else {
-                                val result = runCatching {
-                                    val toNode = conversationUser.nodeNum
-                                    val maxHop = lastConnectionPreferences.getMeshMaxHop()
-                                    val groupId = timestampMs
-                                    val chunks = imageBytes.asList().chunked(IMAGE_CHUNK_BYTES)
-                                    chunks.forEachIndexed { index, chunkBytes ->
-                                        val imagePayload = encodeMediaChunk(
-                                            MediaChunk(
-                                                groupId = groupId,
-                                                totalChunks = chunks.size,
-                                                index = index,
-                                                bytes = chunkBytes.toByteArray(),
-                                            ),
-                                        )
-                                        val encrypted = encryptConversationPayload(identity, conversationUser, imagePayload, fromNode)
-                                        val sendResult = when (activeConnection) {
-                                            ActiveConnection.USB -> usbClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.IMAGE, maxHop, index + 1)
-                                            ActiveConnection.BLE -> bleClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.IMAGE, maxHop, index + 1)
-                                            ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
-                                        }
-                                        sendResult.getOrThrow()
-                                    }
-                                }
-                                result.fold(
-                                    onSuccess = {
-                                        updateImageStatus("Image sent via ${activeConnection.name}")
-                                        Result.success("Image sent")
-                                    },
-                                    onFailure = {
-                                        val error = "Image failed: ${it.message ?: "send timeout"}"
-                                        updateImageStatus(error)
-                                        Result.failure(IllegalStateException(error, it))
-                                    },
-                                )
-                            }
-                        },
                         onResendVoiceMessage = { entry ->
                             val identity = lastConnectionPreferences.getOrCreateUserIdentity()
                             val fromNode = haLowStatus?.macAddress?.takeIf { it != 0L }
@@ -768,70 +654,6 @@ fun EdgeZApp() {
                                     onFailure = {
                                         val error = "Voice failed: ${it.message ?: "send timeout"}"
                                         updateVoiceStatus(error)
-                                        Result.failure(IllegalStateException(error, it))
-                                    },
-                                )
-                            }
-                        },
-                        onResendImageMessage = { entry ->
-                            val identity = lastConnectionPreferences.getOrCreateUserIdentity()
-                            val fromNode = haLowStatus?.macAddress?.takeIf { it != 0L }
-
-                            fun updateImageStatus(nextStatus: String) {
-                                edgeZDatabase.updateMessageStatus(conversationUser.nodeNum, entry.timestampMs, entry.audioPath, nextStatus)
-                                conversations = conversations + (
-                                    conversationUser.nodeNum to ((conversations[conversationUser.nodeNum] ?: emptyList()).map {
-                                        if (it.timestampMs == entry.timestampMs && it.audioPath == entry.audioPath) {
-                                            it.copy(status = nextStatus)
-                                        } else {
-                                            it
-                                        }
-                                    })
-                                    )
-                            }
-
-                            val imageFile = File(entry.audioPath)
-                            if (!imageFile.exists()) {
-                                val error = "Image failed: local image file missing"
-                                updateImageStatus(error)
-                                Result.failure(IllegalStateException(error))
-                            } else if (fromNode == null) {
-                                val error = "Image failed: local HaLow node id unavailable"
-                                updateImageStatus(error)
-                                Result.failure(IllegalStateException(error))
-                            } else {
-                                updateImageStatus("Resending image...")
-                                val result = runCatching {
-                                    val toNode = conversationUser.nodeNum
-                                    val maxHop = lastConnectionPreferences.getMeshMaxHop()
-                                    val imageBytes = imageFile.readBytes()
-                                    val chunks = imageBytes.asList().chunked(IMAGE_CHUNK_BYTES)
-                                    chunks.forEachIndexed { index, chunkBytes ->
-                                        val imagePayload = encodeMediaChunk(
-                                            MediaChunk(
-                                                groupId = entry.timestampMs,
-                                                totalChunks = chunks.size,
-                                                index = index,
-                                                bytes = chunkBytes.toByteArray(),
-                                            ),
-                                        )
-                                        val encrypted = encryptConversationPayload(identity, conversationUser, imagePayload, fromNode)
-                                        val sendResult = when (activeConnection) {
-                                            ActiveConnection.USB -> usbClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.IMAGE, maxHop, index + 1)
-                                            ActiveConnection.BLE -> bleClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.IMAGE, maxHop, index + 1)
-                                            ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
-                                        }
-                                        sendResult.getOrThrow()
-                                    }
-                                }
-                                result.fold(
-                                    onSuccess = {
-                                        updateImageStatus("Image sent via ${activeConnection.name}")
-                                        Result.success("Image resent")
-                                    },
-                                    onFailure = {
-                                        val error = "Image failed: ${it.message ?: "send timeout"}"
-                                        updateImageStatus(error)
                                         Result.failure(IllegalStateException(error, it))
                                     },
                                 )

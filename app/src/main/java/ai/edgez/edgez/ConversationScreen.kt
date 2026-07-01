@@ -2,10 +2,8 @@ package ai.edgez.edgez
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -13,9 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
@@ -32,13 +28,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -48,7 +41,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import ai.edgez.edgez.ui.theme.EdgeZTheme
 import ai.edgez.edgez.usb.PacketMime
-import java.io.File
 
 @Composable
 fun ConversationScreen(
@@ -58,44 +50,20 @@ fun ConversationScreen(
     onBack: () -> Unit,
     onSendMessage: (String) -> Result<String>,
     onSendVoiceMessage: (ByteArray, Long, String, Int) -> Result<String>,
-    onSendImageMessage: (ByteArray, String) -> Result<String>,
     onResendVoiceMessage: (ConversationEntry) -> Result<String>,
-    onResendImageMessage: (ConversationEntry) -> Result<String>,
 ) {
     var draft by rememberSaveable(user.nodeNum) { mutableStateOf("") }
     var status by rememberSaveable(user.nodeNum) { mutableStateOf("") }
     var recording by rememberSaveable(user.nodeNum) { mutableStateOf(false) }
     val context = LocalContext.current
-    val connectionPreferences = remember { LastConnectionPreferences(context.applicationContext) }
-    val recorder = remember(user.nodeNum) { VoiceMessageRecorder(context.applicationContext) }
+    val recorder = androidx.compose.runtime.remember(user.nodeNum) { VoiceMessageRecorder(context.applicationContext) }
     val audioPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         status = if (granted) "Hold voice to record" else "Microphone permission denied"
     }
-    val imagePickerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent(),
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        val result = runCatching {
-            saveSelectedImageMessage(
-                context.applicationContext,
-                uri,
-                connectionPreferences.getImageLimitBytes(),
-            )
-        }.fold(
-            onSuccess = { image ->
-                onSendImageMessage(image.bytes, image.path)
-            },
-            onFailure = { error ->
-                Result.failure(error)
-            },
-        )
-        status = result.exceptionOrNull()?.message ?: result.getOrNull().orEmpty()
-    }
     val canSend = activeConnection != ActiveConnection.NONE && user.publicKey.size == 32 && draft.isNotBlank()
     val canSendVoice = activeConnection != ActiveConnection.NONE
-    val canSendImage = activeConnection != ActiveConnection.NONE
 
     Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
         Column(
@@ -170,10 +138,6 @@ fun ConversationScreen(
                             val result = onResendVoiceMessage(message)
                             status = result.exceptionOrNull()?.message ?: result.getOrNull().orEmpty()
                         },
-                        onResendImageMessage = {
-                            val result = onResendImageMessage(message)
-                            status = result.exceptionOrNull()?.message ?: result.getOrNull().orEmpty()
-                        },
                     )
                 }
             }
@@ -228,14 +192,6 @@ fun ConversationScreen(
                     },
                 ) {
                     Text("Send")
-                }
-                Button(
-                    enabled = canSendImage,
-                    onClick = {
-                        imagePickerLauncher.launch("image/*")
-                    },
-                ) {
-                    Text("Image")
                 }
             }
             Surface(
@@ -305,12 +261,9 @@ fun ConversationScreen(
 private fun ConversationBubble(
     message: ConversationEntry,
     onResendVoiceMessage: () -> Unit,
-    onResendImageMessage: () -> Unit,
 ) {
     val isVoice = message.mime == PacketMime.VOICE
-    val isImage = message.mime == PacketMime.IMAGE
-    val canResendVoice = message.mine && isVoice && message.status.startsWith("Voice failed")
-    val canResendImage = message.mine && isImage && message.status.startsWith("Image failed")
+    val canResend = message.mine && isVoice && message.status.startsWith("Voice failed")
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (message.mine) Arrangement.End else Arrangement.Start,
@@ -332,54 +285,21 @@ private fun ConversationBubble(
                 modifier = Modifier.padding(10.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                when {
-                    isVoice -> {
-                        Text("Voice message ${formatDuration(message.durationMs)}", style = MaterialTheme.typography.bodyMedium)
-                    }
-                    isImage -> {
-                        ImageMessagePreview(message.audioPath)
-                    }
-                    else -> {
-                        Text(message.text, style = MaterialTheme.typography.bodyMedium)
-                    }
+                if (isVoice) {
+                    Text("Voice message ${formatDuration(message.durationMs)}", style = MaterialTheme.typography.bodyMedium)
+                } else {
+                    Text(message.text, style = MaterialTheme.typography.bodyMedium)
                 }
                 if (message.status.isNotBlank()) {
                     Text(message.status, style = MaterialTheme.typography.labelSmall)
                 }
-                if (canResendVoice) {
+                if (canResend) {
                     TextButton(onClick = onResendVoiceMessage) {
-                        Text("Resend")
-                    }
-                }
-                if (canResendImage) {
-                    TextButton(onClick = onResendImageMessage) {
                         Text("Resend")
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun ImageMessagePreview(path: String) {
-    val bitmap = remember(path) {
-        path.takeIf { it.isNotBlank() }
-            ?.let { File(it) }
-            ?.takeIf { it.exists() }
-            ?.let { BitmapFactory.decodeFile(it.absolutePath) }
-    }
-    if (bitmap != null) {
-        Image(
-            bitmap = bitmap.asImageBitmap(),
-            contentDescription = "Image message",
-            modifier = Modifier
-                .widthIn(max = 220.dp)
-                .heightIn(max = 220.dp),
-            contentScale = ContentScale.Fit,
-        )
-    } else {
-        Text("Image message", style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -406,14 +326,11 @@ private fun ConversationPreview() {
                 ConversationEntry("Hello", mine = false, timestampMs = 0),
                 ConversationEntry("Hi", mine = true, timestampMs = 0, status = "Sent"),
                 ConversationEntry("Voice", mine = true, timestampMs = 0, status = "Sent", mime = PacketMime.VOICE, durationMs = 1800),
-                ConversationEntry("Image", mine = true, timestampMs = 0, status = "Sent", mime = PacketMime.IMAGE),
             ),
             onBack = {},
             onSendMessage = { Result.success("Sent") },
             onSendVoiceMessage = { _, _, _, _ -> Result.success("Voice sent") },
-            onSendImageMessage = { _, _ -> Result.success("Image sent") },
             onResendVoiceMessage = { Result.success("Voice resent") },
-            onResendImageMessage = { Result.success("Image resent") },
         )
     }
 }
