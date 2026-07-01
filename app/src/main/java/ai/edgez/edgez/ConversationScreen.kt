@@ -63,7 +63,7 @@ fun ConversationScreen(
         status = if (granted) "Hold voice to record" else "Microphone permission denied"
     }
     val canSend = activeConnection != ActiveConnection.NONE && user.publicKey.size == 32 && draft.isNotBlank()
-    val canSendVoice = activeConnection != ActiveConnection.NONE && user.publicKey.size == 32
+    val canSendVoice = activeConnection != ActiveConnection.NONE
 
     Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
         Column(
@@ -241,7 +241,11 @@ fun ConversationScreen(
                 },
             ) {
                 Text(
-                    text = if (recording) "Recording" else "Hold to Talk",
+                    text = when {
+                        recording -> "Recording"
+                        canSendVoice -> "Hold to Talk"
+                        else -> "Connect to send voice"
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(14.dp),
