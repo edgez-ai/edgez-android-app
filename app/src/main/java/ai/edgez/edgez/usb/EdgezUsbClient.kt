@@ -416,9 +416,12 @@ object EdgezUsbControlProto {
         sequence: Int = 0,
         messageIdHigh: Long = 0,
         messageIdLow: Long = 0,
-        userIdHigh: Long = 0,
-        userIdLow: Long = 0,
+        userIdHigh: Long,
+        userIdLow: Long,
     ): ByteArray {
+        require(userIdHigh != 0L || userIdLow != 0L) {
+            "NetworkPacket conversation message requires a user UUID"
+        }
         val conversation = ByteArrayOutputStream()
         writeBytesField(conversation, 1, message.nonce)
         writeBytesField(conversation, 2, message.ciphertext)
@@ -1078,8 +1081,8 @@ class EdgezUsbClient(private val context: Context) {
         sequence: Int = 0,
         messageIdHigh: Long = 0,
         messageIdLow: Long = 0,
-        userIdHigh: Long = 0,
-        userIdLow: Long = 0,
+        userIdHigh: Long,
+        userIdLow: Long,
         timeoutMs: Int = 1500,
     ): Result<String> {
         val packet = runCatching {
