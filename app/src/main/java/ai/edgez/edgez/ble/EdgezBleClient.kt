@@ -29,6 +29,7 @@ import ai.edgez.edgez.usb.EdgezUsbControlProto
 import ai.edgez.edgez.usb.PacketMime
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.ArrayDeque
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArraySet
 
@@ -57,6 +58,8 @@ class EdgezBleClient(private val context: Context) {
     private var scanCallback: ScanCallback? = null
     private var gatt: BluetoothGatt? = null
     private var rxCharacteristic: BluetoothGattCharacteristic? = null
+    private val txQueue = ArrayDeque<ByteArray>()
+    private var txWriteInFlight = false
 
     fun requiredPermissions(): Array<String> {
         return if (Build.VERSION.SDK_INT >= 31) {
@@ -145,6 +148,7 @@ class EdgezBleClient(private val context: Context) {
     fun close() {
         stopScan()
         rxCharacteristic = null
+        clearTxQueue()
         gatt?.close()
         gatt = null
         rxLen = 0
@@ -239,7 +243,32 @@ class EdgezBleClient(private val context: Context) {
         tx.put(payload)
 
         val frame = tx.array()
-        emitDebug("TX protobuf frame len=${payload.size}")
+        emitDebug("TX protobuf frame len=${payload.size} queue=${synchronized(this) { txQueue.size }}")
+        synchronized(this) {
+            txQueue.add(frame)
+        }
+        return if (writeNextFrame(gatt, rx)) {
+            Result.success("BLE queued protobuf")
+        } else {
+            synchronized(this) {
+                txQueue.remove(frame)
+            }
+            Result.failure(IllegalStateException("BLE write failed"))
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun writeNextFrame(
+        activeGatt: BluetoothGatt? = gatt,
+        writeCharacteristic: BluetoothGattCharacteristic? = rxCharacteristic,
+    ): Boolean {
+        val frame = synchronized(this) {
+            if (txWriteInFlight) return true
+            txQueue.peekFirst() ?: return true
+        }
+        val gatt = activeGatt ?: return false
+        val rx = writeCharacteristic ?: return false
+
         val ok = if (Build.VERSION.SDK_INT >= 33) {
             gatt.writeCharacteristic(rx, frame, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == BluetoothGatt.GATT_SUCCESS
         } else {
@@ -247,7 +276,19 @@ class EdgezBleClient(private val context: Context) {
             rx.value = frame
             gatt.writeCharacteristic(rx)
         }
-        return if (ok) Result.success("BLE sent protobuf") else Result.failure(IllegalStateException("BLE write failed"))
+        if (ok) {
+            synchronized(this) {
+                txWriteInFlight = true
+            }
+            emitDebug("TX start frame=${frame.size} queued=${synchronized(this) { txQueue.size }}")
+        }
+        return ok
+    }
+
+    @Synchronized
+    private fun clearTxQueue() {
+        txQueue.clear()
+        txWriteInFlight = false
     }
 
     private val callback = object : BluetoothGattCallback() {
@@ -259,6 +300,7 @@ class EdgezBleClient(private val context: Context) {
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 rxCharacteristic = null
                 rxLen = 0
+                clearTxQueue()
             }
         }
 
@@ -314,7 +356,18 @@ class EdgezBleClient(private val context: Context) {
             characteristic: BluetoothGattCharacteristic,
             status: Int,
         ) {
-            emitDebug("TX complete status=$status")
+            synchronized(this@EdgezBleClient) {
+                txWriteInFlight = false
+                if (status == BluetoothGatt.GATT_SUCCESS) {
+                    txQueue.pollFirst()
+                } else {
+                    txQueue.clear()
+                }
+            }
+            emitDebug("TX complete status=$status remaining=${synchronized(this@EdgezBleClient) { txQueue.size }}")
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                writeNextFrame(gatt, characteristic)
+            }
         }
     }
 
