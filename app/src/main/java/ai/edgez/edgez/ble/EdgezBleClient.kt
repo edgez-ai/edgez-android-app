@@ -263,12 +263,14 @@ class EdgezBleClient(private val context: Context) {
         activeGatt: BluetoothGatt? = gatt,
         writeCharacteristic: BluetoothGattCharacteristic? = rxCharacteristic,
     ): Boolean {
-        val frame = synchronized(this) {
-            if (txWriteInFlight) return true
-            txQueue.peekFirst() ?: return true
-        }
         val gatt = activeGatt ?: return false
         val rx = writeCharacteristic ?: return false
+        val frame = synchronized(this) {
+            if (txWriteInFlight) return true
+            val nextFrame = txQueue.peekFirst() ?: return true
+            txWriteInFlight = true
+            nextFrame
+        }
 
         val ok = if (Build.VERSION.SDK_INT >= 33) {
             gatt.writeCharacteristic(rx, frame, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == BluetoothGatt.GATT_SUCCESS
@@ -278,10 +280,11 @@ class EdgezBleClient(private val context: Context) {
             gatt.writeCharacteristic(rx)
         }
         if (ok) {
-            synchronized(this) {
-                txWriteInFlight = true
-            }
             emitDebug("TX start frame=${frame.size} queued=${synchronized(this) { txQueue.size }}")
+        } else {
+            synchronized(this) {
+                txWriteInFlight = false
+            }
         }
         return ok
     }

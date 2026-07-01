@@ -314,6 +314,11 @@ fun EdgeZApp() {
                                     )
                                 }
                             }.getOrElse {
+                                Log.w(
+                                    TAG_USERS,
+                                    "conversation decrypt failed mime=${message.mime} from=0x%012x to=0x%012x seq=${message.sequence} payload=${message.payload.size} nonce=${conversationMessage.nonce.size} cipher=${conversationMessage.ciphertext.size}",
+                                    it,
+                                )
                                 ConversationEntry(
                                     text = "Unable to decrypt message",
                                     mine = false,
