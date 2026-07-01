@@ -17,6 +17,7 @@ import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 import java.util.Arrays
+import java.util.UUID
 import java.util.concurrent.CopyOnWriteArraySet
 
 const val ACTION_USB_PERMISSION = "ai.edgez.edgez.USB_PERMISSION"
@@ -158,7 +159,8 @@ data class HaLowInitConfig(
 }
 
 data class NetworkPacket(
-    val id: Long = 0,
+    val messageIdHigh: Long = 0,
+    val messageIdLow: Long = 0,
     val from: Long = 0,
     val to: Long = 0,
     val operation: Int = 0,
@@ -186,7 +188,8 @@ data class NetworkPacket(
         if (javaClass != other?.javaClass) return false
 
         other as NetworkPacket
-        return id == other.id &&
+        return messageIdHigh == other.messageIdHigh &&
+            messageIdLow == other.messageIdLow &&
             from == other.from &&
             to == other.to &&
             operation == other.operation &&
@@ -204,7 +207,8 @@ data class NetworkPacket(
     }
 
     override fun hashCode(): Int {
-        var result = id.hashCode()
+        var result = messageIdHigh.hashCode()
+        result = 31 * result + messageIdLow.hashCode()
         result = 31 * result + from.hashCode()
         result = 31 * result + to.hashCode()
         result = 31 * result + operation
@@ -410,6 +414,8 @@ object EdgezUsbControlProto {
         mime: PacketMime = PacketMime.TEXT,
         maxHop: Int = 0,
         sequence: Int = 0,
+        messageIdHigh: Long = 0,
+        messageIdLow: Long = 0,
     ): ByteArray {
         val conversation = ByteArrayOutputStream()
         writeBytesField(conversation, 1, message.nonce)
@@ -420,6 +426,8 @@ object EdgezUsbControlProto {
         }
 
         return encodeNetworkPacket(
+            messageIdHigh = messageIdHigh,
+            messageIdLow = messageIdLow,
             from = from,
             to = to,
             mime = mime,
@@ -440,7 +448,8 @@ object EdgezUsbControlProto {
 
     fun decodeNetworkPacket(payload: ByteArray): NetworkPacket? {
         var offset = 0
-        var id = 0L
+        var messageIdHigh = 0L
+        var messageIdLow = 0L
         var from = 0L
         var to = 0L
         var operation = 0
@@ -467,16 +476,17 @@ object EdgezUsbControlProto {
                     val valueRead = readVarint(payload, offset) ?: return null
                     offset = valueRead.nextOffset
                     when (field) {
-                        1 -> id = valueRead.value
-                        2 -> from = valueRead.value
-                        3 -> to = valueRead.value
-                        4 -> operation = valueRead.value.toInt()
-                        5 -> interfaceId = valueRead.value.toInt()
-                        6 -> sequence = valueRead.value.toInt()
-                        7 -> userHigh = valueRead.value
-                        8 -> userLow = valueRead.value
-                        9 -> mime = PacketMime.fromWireValue(valueRead.value.toInt())
-                        10 -> maxHop = valueRead.value.toInt()
+                        1 -> messageIdHigh = valueRead.value
+                        2 -> messageIdLow = valueRead.value
+                        3 -> from = valueRead.value
+                        4 -> to = valueRead.value
+                        5 -> operation = valueRead.value.toInt()
+                        6 -> interfaceId = valueRead.value.toInt()
+                        7 -> sequence = valueRead.value.toInt()
+                        8 -> userHigh = valueRead.value
+                        9 -> userLow = valueRead.value
+                        10 -> mime = PacketMime.fromWireValue(valueRead.value.toInt())
+                        11 -> maxHop = valueRead.value.toInt()
                     }
                 }
                 2 -> {
@@ -501,7 +511,8 @@ object EdgezUsbControlProto {
         }
 
         return NetworkPacket(
-            id = id,
+            messageIdHigh = messageIdHigh,
+            messageIdLow = messageIdLow,
             from = from,
             to = to,
             operation = operation,
@@ -758,6 +769,8 @@ object EdgezUsbControlProto {
     }
 
     private fun encodeNetworkPacket(
+        messageIdHigh: Long = 0,
+        messageIdLow: Long = 0,
         from: Long = 0,
         to: Long = 0,
         userIdHigh: Long = 0,
@@ -768,29 +781,35 @@ object EdgezUsbControlProto {
         writeBody: (ByteArrayOutputStream) -> Unit,
     ): ByteArray {
         val out = ByteArrayOutputStream()
-        val packetId = System.currentTimeMillis() and 0xffffffffL
-        writeVarintField(out, 1, packetId)
+        val generatedId = if (messageIdHigh == 0L && messageIdLow == 0L) newMessageId() else messageIdHigh to messageIdLow
+        writeVarintField(out, 1, generatedId.first)
+        writeVarintField(out, 2, generatedId.second)
         if (from != 0L) {
-            writeVarintField(out, 2, from)
+            writeVarintField(out, 3, from)
         }
         if (to != 0L) {
-            writeVarintField(out, 3, to)
+            writeVarintField(out, 4, to)
         }
-        writeVarintField(out, 4, NETWORK_OPERATION_REQUEST.toLong())
-        writeVarintField(out, 5, NETWORK_INTERFACE_HALOW.toLong())
+        writeVarintField(out, 5, NETWORK_OPERATION_REQUEST.toLong())
+        writeVarintField(out, 6, NETWORK_INTERFACE_HALOW.toLong())
         if (sequence > 0) {
-            writeVarintField(out, 6, sequence.toLong())
+            writeVarintField(out, 7, sequence.toLong())
         }
-        writeVarintField(out, 7, userIdHigh)
-        writeVarintField(out, 8, userIdLow)
+        writeVarintField(out, 8, userIdHigh)
+        writeVarintField(out, 9, userIdLow)
         if (mime != PacketMime.UNSPECIFIED) {
-            writeVarintField(out, 9, mime.wireValue.toLong())
+            writeVarintField(out, 10, mime.wireValue.toLong())
         }
         if (maxHop > 0) {
-            writeVarintField(out, 10, maxHop.coerceIn(0, 255).toLong())
+            writeVarintField(out, 11, maxHop.coerceIn(0, 255).toLong())
         }
         writeBody(out)
         return out.toByteArray()
+    }
+
+    private fun newMessageId(): Pair<Long, Long> {
+        val uuid = UUID.randomUUID()
+        return uuid.mostSignificantBits to uuid.leastSignificantBits
     }
 
     private fun encodeBeacon(
@@ -1053,10 +1072,21 @@ class EdgezUsbClient(private val context: Context) {
         mime: PacketMime = PacketMime.TEXT,
         maxHop: Int = 0,
         sequence: Int = 0,
+        messageIdHigh: Long = 0,
+        messageIdLow: Long = 0,
         timeoutMs: Int = 1500,
     ): Result<String> {
         val packet = runCatching {
-            EdgezUsbControlProto.encodeConversationMessage(message, from, to, mime, maxHop, sequence)
+            EdgezUsbControlProto.encodeConversationMessage(
+                message = message,
+                from = from,
+                to = to,
+                mime = mime,
+                maxHop = maxHop,
+                sequence = sequence,
+                messageIdHigh = messageIdHigh,
+                messageIdLow = messageIdLow,
+            )
         }.getOrElse { error ->
             return Result.failure(error)
         }

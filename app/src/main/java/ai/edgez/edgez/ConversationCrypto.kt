@@ -23,6 +23,8 @@ data class ConversationEntry(
     val mime: PacketMime = PacketMime.TEXT,
     val audioPath: String = "",
     val durationMs: Long = 0,
+    val messageIdHigh: Long = 0,
+    val messageIdLow: Long = 0,
 )
 
 fun encryptConversationText(

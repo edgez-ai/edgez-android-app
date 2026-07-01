@@ -127,20 +127,21 @@ fun HaLowInterfaceStatus.summary(): String {
 }
 
 fun NetworkPacket.summary(): String {
+    val messageId = formatUuid(messageIdHigh, messageIdLow)
     beacon?.let {
-        return "NetworkPacket beacon user=${it.userName.ifBlank { "unknown" }} node=${formatMacAddress(from)} userId=${formatUuid(it.userIdHigh, it.userIdLow)} id=$id"
+        return "NetworkPacket beacon user=${it.userName.ifBlank { "unknown" }} node=${formatMacAddress(from)} userId=${formatUuid(it.userIdHigh, it.userIdLow)} messageId=$messageId"
     }
     conversationMessage?.let { message ->
-        return "Conversation id=$id mime=$mime seq=$sequence from=0x%012x to=0x%012x bytes=${message.ciphertext.size}".format(from, to)
+        return "Conversation messageId=$messageId mime=$mime seq=$sequence from=0x%012x to=0x%012x bytes=${message.ciphertext.size}".format(from, to)
     }
     if (payload.isNotEmpty()) {
-        return "NetworkPacket payload mime=$mime maxHop=$maxHop bytes=${payload.size} from=0x%012x id=$id".format(from)
+        return "NetworkPacket payload mime=$mime maxHop=$maxHop bytes=${payload.size} from=0x%012x messageId=$messageId".format(from)
     }
     halowStatus?.let { return it.summary() }
     init?.let {
-        return "NetworkPacket init country=${it.countryCode} meshId=${it.meshId} maxHop=${it.maxHop} user=${it.userName.ifBlank { "unknown" }} id=$id"
+        return "NetworkPacket init country=${it.countryCode} meshId=${it.meshId} maxHop=${it.maxHop} user=${it.userName.ifBlank { "unknown" }} messageId=$messageId"
     }
-    return "NetworkPacket op=$operation iface=$interfaceId seq=$sequence id=$id from=0x%012x to=0x%012x user=${formatUuid(userHigh, userLow)}".format(from, to)
+    return "NetworkPacket op=$operation iface=$interfaceId seq=$sequence messageId=$messageId from=0x%012x to=0x%012x user=${formatUuid(userHigh, userLow)}".format(from, to)
 }
 
 fun NetworkPacket.toHaLowUser(route: String): HaLowUser? {

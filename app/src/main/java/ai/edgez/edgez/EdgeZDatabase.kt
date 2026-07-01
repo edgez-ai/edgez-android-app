@@ -48,6 +48,8 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 mime INTEGER NOT NULL DEFAULT 1,
                 audio_path TEXT NOT NULL DEFAULT '',
                 duration_ms INTEGER NOT NULL DEFAULT 0,
+                message_id_high INTEGER NOT NULL DEFAULT 0,
+                message_id_low INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY(peer_node_num) REFERENCES $TABLE_USERS(node_num) ON DELETE CASCADE
             )
             """.trimIndent(),
@@ -129,7 +131,18 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
         val messages = linkedMapOf<Long, MutableList<ConversationEntry>>()
         readableDatabase.query(
             TABLE_MESSAGES,
-            arrayOf("peer_node_num", "text", "mine", "timestamp_ms", "status", "mime", "audio_path", "duration_ms"),
+            arrayOf(
+                "peer_node_num",
+                "text",
+                "mine",
+                "timestamp_ms",
+                "status",
+                "mime",
+                "audio_path",
+                "duration_ms",
+                "message_id_high",
+                "message_id_low",
+            ),
             null,
             null,
             null,
@@ -144,6 +157,8 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
             val mimeIndex = cursor.getColumnIndexOrThrow("mime")
             val audioPathIndex = cursor.getColumnIndexOrThrow("audio_path")
             val durationIndex = cursor.getColumnIndexOrThrow("duration_ms")
+            val messageIdHighIndex = cursor.getColumnIndexOrThrow("message_id_high")
+            val messageIdLowIndex = cursor.getColumnIndexOrThrow("message_id_low")
             while (cursor.moveToNext()) {
                 val peerNodeNum = cursor.getLong(peerIndex)
                 val entry = ConversationEntry(
@@ -154,6 +169,8 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                     mime = PacketMime.fromWireValue(cursor.getInt(mimeIndex)),
                     audioPath = cursor.getString(audioPathIndex),
                     durationMs = cursor.getLong(durationIndex),
+                    messageIdHigh = cursor.getLong(messageIdHighIndex),
+                    messageIdLow = cursor.getLong(messageIdLowIndex),
                 )
                 messages.getOrPut(peerNodeNum) { mutableListOf() }.add(entry)
             }
@@ -204,6 +221,8 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 put("mime", entry.mime.wireValue)
                 put("audio_path", entry.audioPath)
                 put("duration_ms", entry.durationMs)
+                put("message_id_high", entry.messageIdHigh)
+                put("message_id_low", entry.messageIdLow)
             },
         )
     }
