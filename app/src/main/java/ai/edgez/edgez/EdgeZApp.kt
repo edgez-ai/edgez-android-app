@@ -273,8 +273,9 @@ fun EdgeZApp() {
 
         fun handleTransportFrame(source: ActiveConnection, frame: ByteArray) {
             if (source != currentActiveConnection) return
-            val message = decodeHaLowSyncFrame(frame)
-            val status = message?.halowStatus ?: decodeHaLowStatusFrame(frame)
+            val meshPassphrase = lastConnectionPreferences.getMeshPassphrase()
+            val message = decodeHaLowSyncFrame(frame, meshPassphrase)
+            val status = message?.halowStatus ?: decodeHaLowStatusFrame(frame, meshPassphrase)
             val user = message?.toHaLowUser(source.name)
             val conversationMessage = message?.conversationMessage
             val isConversationAck = message?.operation == NETWORK_OPERATION_ACK &&
@@ -465,6 +466,7 @@ fun EdgeZApp() {
                 val status = currentHaLowStatus
                 if (source != ActiveConnection.NONE && status != null && status.supported && status.stackInitialized && status.meshMode) {
                     val userIdentity = lastConnectionPreferences.getOrCreateUserIdentity()
+                    val meshPassphrase = lastConnectionPreferences.getMeshPassphrase()
                     val shareLocationEnabled = lastConnectionPreferences.getShareLocation()
                     val location = if (shareLocationEnabled) {
                         context.applicationContext.getBestKnownLocation()
@@ -479,21 +481,23 @@ fun EdgeZApp() {
                         when (source) {
                             ActiveConnection.USB -> usbClient.sendHaLowBeacon(
                                 userIdentity.userIdHigh,
-                                userIdentity.userIdLow,
-                                userIdentity.name,
-                                userIdentity.publicKey,
-                                location?.latitude,
-                                location?.longitude,
-                                location?.time ?: 0L,
+                                                userIdentity.userIdLow,
+                                                userIdentity.name,
+                                                userIdentity.publicKey,
+                                                meshPassphrase,
+                                                location?.latitude,
+                                                location?.longitude,
+                                                location?.time ?: 0L,
                             )
                             ActiveConnection.BLE -> bleClient.sendHaLowBeacon(
                                 userIdentity.userIdHigh,
-                                userIdentity.userIdLow,
-                                userIdentity.name,
-                                userIdentity.publicKey,
-                                location?.latitude,
-                                location?.longitude,
-                                location?.time ?: 0L,
+                                                userIdentity.userIdLow,
+                                                userIdentity.name,
+                                                userIdentity.publicKey,
+                                                meshPassphrase,
+                                                location?.latitude,
+                                                location?.longitude,
+                                                location?.time ?: 0L,
                             )
                             ActiveConnection.NONE -> Unit
                         }

@@ -110,15 +110,15 @@ private fun decodeHaLowSyncPayload(frame: ByteArray): ByteArray? {
     return frame.copyOfRange(EDGEZ_HEADER_LEN, EDGEZ_HEADER_LEN + payloadLen)
 }
 
-fun decodeHaLowStatusFrame(frame: ByteArray): HaLowInterfaceStatus? {
+fun decodeHaLowStatusFrame(frame: ByteArray, meshPassphrase: String = ""): HaLowInterfaceStatus? {
     val payload = decodeHaLowSyncPayload(frame) ?: return null
-    return EdgezUsbControlProto.decodeMobileFromRadio(payload)
+    return EdgezUsbControlProto.decodeMobileFromRadio(payload, meshPassphrase)
         ?: EdgezUsbControlProto.decodeHaLowInterfaceStatus(payload)
 }
 
-fun decodeHaLowSyncFrame(frame: ByteArray): NetworkPacket? {
+fun decodeHaLowSyncFrame(frame: ByteArray, meshPassphrase: String = ""): NetworkPacket? {
     val payload = decodeHaLowSyncPayload(frame) ?: return null
-    return EdgezUsbControlProto.decodeMobileFromRadioMessage(payload)
+    return EdgezUsbControlProto.decodeMobileFromRadioMessage(payload, meshPassphrase)
 }
 
 fun HaLowInterfaceStatus.summary(): String {

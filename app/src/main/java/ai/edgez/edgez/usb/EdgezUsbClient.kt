@@ -18,10 +18,15 @@ import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
+import java.security.SecureRandom
 import java.util.Base64
 import java.util.Arrays
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArraySet
+import javax.crypto.Cipher
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 
 const val ACTION_USB_PERMISSION = "ai.edgez.edgez.USB_PERMISSION"
 const val EDGEZ_MAGIC_0 = 'E'.code.toByte()
@@ -29,6 +34,10 @@ const val EDGEZ_MAGIC_1 = 'Z'.code.toByte()
 const val EDGEZ_HEADER_LEN = 4
 const val EDGEZ_MAX_PAYLOAD = 512
 const val EDGEZ_NETWORK_PACKET_MAX_PAYLOAD = 350
+private const val BEACON_AES_GCM_TAG_BITS = 128
+private const val BEACON_AES_GCM_NONCE_SIZE = 12
+private val BEACON_ENCRYPTED_MAGIC = byteArrayOf('E'.code.toByte(), 'Z'.code.toByte(), 'B'.code.toByte(), 1)
+private val BEACON_RANDOM = SecureRandom()
 
 const val USB_CONTROL_ACTION_SET_BLE_ENABLED = 1
 const val USB_CONTROL_ACTION_SET_PAIRING_ENABLED = 2
@@ -385,11 +394,12 @@ object EdgezUsbControlProto {
         userIdLow: Long,
         userName: String,
         userPublicKey: ByteArray,
+        meshPassphrase: String = "",
         latitude: Double? = null,
         longitude: Double? = null,
         locationTimestampMs: Long = 0,
     ): ByteArray {
-        val beacon = encodeBeacon(userIdHigh, userIdLow, userName, userPublicKey, latitude, longitude, locationTimestampMs)
+        val beacon = encodeBeacon(userIdHigh, userIdLow, userName, userPublicKey, meshPassphrase, latitude, longitude, locationTimestampMs)
         return encodeNetworkPacketBuilder(
             userIdHigh = userIdHigh,
             userIdLow = userIdLow,
@@ -467,15 +477,15 @@ object EdgezUsbControlProto {
         ).setPayload(ByteString.EMPTY).build().toByteArray()
     }
 
-    fun decodeMobileFromRadio(payload: ByteArray): HaLowInterfaceStatus? {
-        return decodeNetworkPacket(payload)?.halowStatus
+    fun decodeMobileFromRadio(payload: ByteArray, meshPassphrase: String = ""): HaLowInterfaceStatus? {
+        return decodeNetworkPacket(payload, meshPassphrase)?.halowStatus
     }
 
-    fun decodeMobileFromRadioMessage(payload: ByteArray): NetworkPacket? {
-        return decodeNetworkPacket(payload)
+    fun decodeMobileFromRadioMessage(payload: ByteArray, meshPassphrase: String = ""): NetworkPacket? {
+        return decodeNetworkPacket(payload, meshPassphrase)
     }
 
-    fun decodeNetworkPacket(payload: ByteArray): NetworkPacket? {
+    fun decodeNetworkPacket(payload: ByteArray, meshPassphrase: String = ""): NetworkPacket? {
         val packet = try {
             UsbControl.NetworkPacket.parseFrom(payload)
         } catch (_: InvalidProtocolBufferException) {
@@ -489,7 +499,7 @@ object EdgezUsbControlProto {
         }
         val beaconRaw = if (packet.bodyCase == UsbControl.NetworkPacket.BodyCase.BEACON) packet.beacon else ""
         val beacon = if (beaconRaw.isNotBlank()) {
-            decodeBeaconString(beaconRaw.toByteArray(StandardCharsets.UTF_8))
+            decodeBeaconString(beaconRaw.toByteArray(StandardCharsets.UTF_8), meshPassphrase)
         } else {
             null
         }
@@ -641,6 +651,7 @@ object EdgezUsbControlProto {
         userIdLow: Long,
         userName: String,
         userPublicKey: ByteArray,
+        meshPassphrase: String,
         latitude: Double?,
         longitude: Double?,
         locationTimestampMs: Long,
@@ -654,15 +665,68 @@ object EdgezUsbControlProto {
             beacon.setAttitude(latitude.toFloat())
             beacon.setLongitude(longitude.toFloat())
         }
-        return Base64.getEncoder().encodeToString(beacon.build().toByteArray())
+        val beaconBytes = beacon.build().toByteArray()
+        val payload = if (meshPassphrase.isNotBlank()) {
+            encryptBeacon(beaconBytes, meshPassphrase)
+        } else {
+            beaconBytes
+        }
+        return Base64.getEncoder().encodeToString(payload)
     }
 
-    private fun decodeBeaconString(payload: ByteArray): EdgeZAssocMetadata? {
-        return try {
-            decodeEdgeZAssocMetadata(Base64.getDecoder().decode(payload))
+    private fun decodeBeaconString(payload: ByteArray, meshPassphrase: String): EdgeZAssocMetadata? {
+        val decoded = try {
+            Base64.getDecoder().decode(payload)
         } catch (_: IllegalArgumentException) {
-            decodeEdgeZAssocMetadata(payload)
+            payload
         }
+        val decrypted = if (meshPassphrase.isNotBlank()) {
+            decryptBeacon(decoded, meshPassphrase) ?: decoded
+        } else {
+            decoded
+        }
+        return decodeEdgeZAssocMetadata(decrypted)
+    }
+
+    private fun encryptBeacon(payload: ByteArray, meshPassphrase: String): ByteArray {
+        val nonce = ByteArray(BEACON_AES_GCM_NONCE_SIZE)
+        BEACON_RANDOM.nextBytes(nonce)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, beaconSecretKey(meshPassphrase), GCMParameterSpec(BEACON_AES_GCM_TAG_BITS, nonce))
+        val ciphertext = cipher.doFinal(payload)
+        return BEACON_ENCRYPTED_MAGIC + nonce + ciphertext
+    }
+
+    private fun decryptBeacon(payload: ByteArray, meshPassphrase: String): ByteArray? {
+        if (!payload.startsWithBytes(BEACON_ENCRYPTED_MAGIC) ||
+            payload.size <= BEACON_ENCRYPTED_MAGIC.size + BEACON_AES_GCM_NONCE_SIZE
+        ) {
+            return null
+        }
+        return try {
+            val nonceStart = BEACON_ENCRYPTED_MAGIC.size
+            val nonceEnd = nonceStart + BEACON_AES_GCM_NONCE_SIZE
+            val nonce = payload.copyOfRange(nonceStart, nonceEnd)
+            val ciphertext = payload.copyOfRange(nonceEnd, payload.size)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, beaconSecretKey(meshPassphrase), GCMParameterSpec(BEACON_AES_GCM_TAG_BITS, nonce))
+            cipher.doFinal(ciphertext)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun beaconSecretKey(meshPassphrase: String): SecretKeySpec {
+        val key = MessageDigest.getInstance("SHA-256").digest(meshPassphrase.toByteArray(StandardCharsets.UTF_8))
+        return SecretKeySpec(key, "AES")
+    }
+
+    private fun ByteArray.startsWithBytes(prefix: ByteArray): Boolean {
+        if (size < prefix.size) return false
+        for (index in prefix.indices) {
+            if (this[index] != prefix[index]) return false
+        }
+        return true
     }
 
     private fun UsbControl.HaLowInterfaceStatus.toAppStatus(): HaLowInterfaceStatus {
@@ -908,6 +972,7 @@ class EdgezUsbClient(private val context: Context) {
         userIdLow: Long,
         userName: String,
         userPublicKey: ByteArray,
+        meshPassphrase: String = "",
         latitude: Double? = null,
         longitude: Double? = null,
         locationTimestampMs: Long = 0,
@@ -919,6 +984,7 @@ class EdgezUsbClient(private val context: Context) {
                 userIdLow,
                 userName,
                 userPublicKey,
+                meshPassphrase,
                 latitude,
                 longitude,
                 locationTimestampMs,
