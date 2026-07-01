@@ -85,7 +85,7 @@ fun HomeScreen(
                 }
             }
 
-            items(users, key = { it.nodeNum }) { user ->
+            items(users, key = { user -> user.userUuid.ifBlank { user.nodeNum.toString() } }) { user ->
                 SwipeToRemoveNodeCard(
                     user = user,
                     onRemove = { onRemoveNode(user) },

@@ -23,8 +23,8 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
         db.execSQL(
             """
             CREATE TABLE $TABLE_USERS (
-                node_num INTEGER PRIMARY KEY,
-                user_uuid TEXT NOT NULL DEFAULT '',
+                user_uuid TEXT PRIMARY KEY,
+                node_num INTEGER NOT NULL,
                 short_name TEXT NOT NULL,
                 long_name TEXT NOT NULL,
                 route TEXT NOT NULL,
@@ -40,7 +40,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
             """
             CREATE TABLE $TABLE_MESSAGES (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                peer_node_num INTEGER NOT NULL,
+                peer_user_uuid TEXT NOT NULL,
                 text TEXT NOT NULL,
                 mine INTEGER NOT NULL,
                 timestamp_ms INTEGER NOT NULL,
@@ -49,11 +49,11 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 audio_path TEXT NOT NULL DEFAULT '',
                 duration_ms INTEGER NOT NULL DEFAULT 0,
                 message_uuid TEXT NOT NULL DEFAULT '',
-                FOREIGN KEY(peer_node_num) REFERENCES $TABLE_USERS(node_num) ON DELETE CASCADE
+                FOREIGN KEY(peer_user_uuid) REFERENCES $TABLE_USERS(user_uuid) ON DELETE CASCADE
             )
             """.trimIndent(),
         )
-        db.execSQL("CREATE INDEX idx_messages_peer_time ON $TABLE_MESSAGES(peer_node_num, timestamp_ms)")
+        db.execSQL("CREATE INDEX idx_messages_peer_time ON $TABLE_MESSAGES(peer_user_uuid, timestamp_ms)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -126,12 +126,12 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
         return users
     }
 
-    fun getMessages(): Map<Long, List<ConversationEntry>> {
-        val messages = linkedMapOf<Long, MutableList<ConversationEntry>>()
+    fun getMessages(): Map<String, List<ConversationEntry>> {
+        val messages = linkedMapOf<String, MutableList<ConversationEntry>>()
         readableDatabase.query(
             TABLE_MESSAGES,
             arrayOf(
-                "peer_node_num",
+                "peer_user_uuid",
                 "text",
                 "mine",
                 "timestamp_ms",
@@ -147,7 +147,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
             null,
             "timestamp_ms ASC, id ASC",
         ).use { cursor ->
-            val peerIndex = cursor.getColumnIndexOrThrow("peer_node_num")
+            val peerIndex = cursor.getColumnIndexOrThrow("peer_user_uuid")
             val textIndex = cursor.getColumnIndexOrThrow("text")
             val mineIndex = cursor.getColumnIndexOrThrow("mine")
             val timestampIndex = cursor.getColumnIndexOrThrow("timestamp_ms")
@@ -157,7 +157,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
             val durationIndex = cursor.getColumnIndexOrThrow("duration_ms")
             val messageUuidIndex = cursor.getColumnIndexOrThrow("message_uuid")
             while (cursor.moveToNext()) {
-                val peerNodeNum = cursor.getLong(peerIndex)
+                val peerUserUuid = cursor.getString(peerIndex)
                 val messageUuid = cursor.getString(messageUuidIndex)
                 val entry = ConversationEntry(
                     text = cursor.getString(textIndex),
@@ -169,7 +169,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                     durationMs = cursor.getLong(durationIndex),
                     messageUuid = messageUuid,
                 )
-                messages.getOrPut(peerNodeNum) { mutableListOf() }.add(entry)
+                messages.getOrPut(peerUserUuid) { mutableListOf() }.add(entry)
             }
         }
         return messages
@@ -200,17 +200,17 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
         )
     }
 
-    fun deleteUser(nodeNum: Long) {
-        writableDatabase.delete(TABLE_MESSAGES, "peer_node_num = ?", arrayOf(nodeNum.toString()))
-        writableDatabase.delete(TABLE_USERS, "node_num = ?", arrayOf(nodeNum.toString()))
+    fun deleteUser(userUuid: String) {
+        writableDatabase.delete(TABLE_MESSAGES, "peer_user_uuid = ?", arrayOf(userUuid))
+        writableDatabase.delete(TABLE_USERS, "user_uuid = ?", arrayOf(userUuid))
     }
 
-    fun insertMessage(peerNodeNum: Long, entry: ConversationEntry) {
+    fun insertMessage(peerUserUuid: String, entry: ConversationEntry) {
         writableDatabase.insert(
             TABLE_MESSAGES,
             null,
             ContentValues().apply {
-                put("peer_node_num", peerNodeNum)
+                put("peer_user_uuid", peerUserUuid)
                 put("text", entry.text)
                 put("mine", if (entry.mine) 1 else 0)
                 put("timestamp_ms", entry.timestampMs)
@@ -224,7 +224,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
     }
 
     fun updateMessageStatus(
-        peerNodeNum: Long,
+        peerUserUuid: String,
         timestampMs: Long,
         audioPath: String,
         status: String,
@@ -234,8 +234,8 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
             ContentValues().apply {
                 put("status", status)
             },
-            "peer_node_num = ? AND timestamp_ms = ? AND audio_path = ?",
-            arrayOf(peerNodeNum.toString(), timestampMs.toString(), audioPath),
+            "peer_user_uuid = ? AND timestamp_ms = ? AND audio_path = ?",
+            arrayOf(peerUserUuid, timestampMs.toString(), audioPath),
         )
     }
 

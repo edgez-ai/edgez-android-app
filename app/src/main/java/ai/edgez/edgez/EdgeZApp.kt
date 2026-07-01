@@ -77,6 +77,8 @@ private fun newMessageUuid(): MessageUuid {
     )
 }
 
+private fun conversationKey(user: HaLowUser): String = user.userUuid.ifBlank { user.nodeNum.toString() }
+
 private data class PendingVoiceMessage(
     val durationMs: Long,
     val codec: Int,
@@ -282,19 +284,25 @@ fun EdgeZApp() {
                         haLowStatus = status
                     }
                     if (user != null) {
-                        val previousUser = haLowUsers[user.nodeNum]
+                        val userKey = conversationKey(user)
+                        val previousUser = haLowUsers.values.firstOrNull { conversationKey(it) == userKey }
                         val updatedUser = user.withFallbackLocation(previousUser)
+                        val updatedUserKey = conversationKey(updatedUser)
                         Log.d(
                             TAG_USERS,
                             "update user source=$source node=${updatedUser.nodeId} " +
                                 "previousLastSeen=${previousUser?.lastSeenMs} newLastSeen=${updatedUser.lastSeenMs} " +
                                 "previousLat=${previousUser?.latitude} previousLon=${previousUser?.longitude} " +
                                 "newLat=${updatedUser.latitude} newLon=${updatedUser.longitude} locTs=${updatedUser.locationTimestampMs} " +
-                                "selected=${selectedConversationUser?.nodeNum == updatedUser.nodeNum}",
+                                "selected=${selectedConversationUser?.let { conversationKey(it) } == updatedUserKey}",
                         )
                         edgeZDatabase.upsertUser(updatedUser)
-                        haLowUsers = haLowUsers + (updatedUser.nodeNum to updatedUser)
-                        if (selectedConversationUser?.nodeNum == updatedUser.nodeNum) {
+                        haLowUsers = (if (previousUser != null && previousUser.nodeNum != updatedUser.nodeNum) {
+                            haLowUsers - previousUser.nodeNum
+                        } else {
+                            haLowUsers
+                        }) + (updatedUser.nodeNum to updatedUser)
+                        if (selectedConversationUser?.let { conversationKey(it) } == updatedUserKey) {
                             selectedConversationUser = updatedUser
                             Log.d(TAG_USERS, "refreshed selected conversation user node=${updatedUser.nodeId}")
                         }
@@ -363,10 +371,13 @@ fun EdgeZApp() {
                                 )
                             }
                             if (entry != null) {
-                                edgeZDatabase.insertMessage(senderNodeNum, entry)
-                                conversations = conversations + (
-                                    senderNodeNum to ((conversations[senderNodeNum] ?: emptyList()) + entry)
-                                    )
+                                if (senderUser != null) {
+                                    val senderKey = conversationKey(senderUser)
+                                    edgeZDatabase.insertMessage(senderKey, entry)
+                                    conversations = conversations + (
+                                        senderKey to ((conversations[senderKey] ?: emptyList()) + entry)
+                                        )
+                                }
                             }
                         }
                     }
@@ -515,10 +526,11 @@ fun EdgeZApp() {
             AppDestination.HOME -> {
                 val conversationUser = selectedConversationUser
                 if (conversationUser != null) {
+                    val conversationUserKey = conversationKey(conversationUser)
                     ConversationScreen(
                         activeConnection = activeConnection,
                         user = conversationUser,
-                        messages = conversations[conversationUser.nodeNum] ?: emptyList(),
+                        messages = conversations[conversationUserKey] ?: emptyList(),
                         onBack = { selectedConversationUser = null },
                         onSendMessage = { text ->
                             val identity = lastConnectionPreferences.getOrCreateUserIdentity()
@@ -546,9 +558,9 @@ fun EdgeZApp() {
                                                 status = "Sent via ${activeConnection.name}",
                                                 messageUuid = messageUuid.text,
                                             )
-                                            edgeZDatabase.insertMessage(conversationUser.nodeNum, entry)
+                                            edgeZDatabase.insertMessage(conversationUserKey, entry)
                                             conversations = conversations + (
-                                                conversationUser.nodeNum to ((conversations[conversationUser.nodeNum] ?: emptyList()) + entry)
+                                                conversationUserKey to ((conversations[conversationUserKey] ?: emptyList()) + entry)
                                                 )
                                         }
                                     },
@@ -571,15 +583,15 @@ fun EdgeZApp() {
                                 durationMs = durationMs,
                                 messageUuid = messageUuid.text,
                             )
-                            edgeZDatabase.insertMessage(conversationUser.nodeNum, entry)
+                            edgeZDatabase.insertMessage(conversationUserKey, entry)
                             conversations = conversations + (
-                                conversationUser.nodeNum to ((conversations[conversationUser.nodeNum] ?: emptyList()) + entry)
+                                conversationUserKey to ((conversations[conversationUserKey] ?: emptyList()) + entry)
                                 )
 
                             fun updateVoiceStatus(nextStatus: String) {
-                                edgeZDatabase.updateMessageStatus(conversationUser.nodeNum, timestampMs, localPath, nextStatus)
+                                edgeZDatabase.updateMessageStatus(conversationUserKey, timestampMs, localPath, nextStatus)
                                 conversations = conversations + (
-                                    conversationUser.nodeNum to ((conversations[conversationUser.nodeNum] ?: emptyList()).map {
+                                    conversationUserKey to ((conversations[conversationUserKey] ?: emptyList()).map {
                                         if (it.timestampMs == timestampMs && it.audioPath == localPath) {
                                             it.copy(status = nextStatus)
                                         } else {
@@ -637,9 +649,9 @@ fun EdgeZApp() {
                             val fromNode = haLowStatus?.macAddress?.takeIf { it != 0L }
 
                             fun updateVoiceStatus(nextStatus: String) {
-                                edgeZDatabase.updateMessageStatus(conversationUser.nodeNum, entry.timestampMs, entry.audioPath, nextStatus)
+                                edgeZDatabase.updateMessageStatus(conversationUserKey, entry.timestampMs, entry.audioPath, nextStatus)
                                 conversations = conversations + (
-                                    conversationUser.nodeNum to ((conversations[conversationUser.nodeNum] ?: emptyList()).map {
+                                    conversationUserKey to ((conversations[conversationUserKey] ?: emptyList()).map {
                                         if (it.timestampMs == entry.timestampMs && it.audioPath == entry.audioPath) {
                                             it.copy(status = nextStatus)
                                         } else {
@@ -707,10 +719,11 @@ fun EdgeZApp() {
                         haLowStatus = haLowStatus,
                         users = haLowUsers.values.sortedByDescending { it.lastSeenMs },
                         onRemoveNode = { user ->
-                            edgeZDatabase.deleteUser(user.nodeNum)
+                            val userKey = conversationKey(user)
+                            edgeZDatabase.deleteUser(userKey)
                             haLowUsers = haLowUsers - user.nodeNum
-                            conversations = conversations - user.nodeNum
-                            if (selectedConversationUser?.nodeNum == user.nodeNum) {
+                            conversations = conversations - userKey
+                            if (selectedConversationUser?.let { conversationKey(it) } == userKey) {
                                 selectedConversationUser = null
                             }
                         },

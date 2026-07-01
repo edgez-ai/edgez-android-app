@@ -52,11 +52,12 @@ fun ConversationScreen(
     onSendVoiceMessage: (ByteArray, Long, String, Int) -> Result<String>,
     onResendVoiceMessage: (ConversationEntry) -> Result<String>,
 ) {
-    var draft by rememberSaveable(user.nodeNum) { mutableStateOf("") }
-    var status by rememberSaveable(user.nodeNum) { mutableStateOf("") }
-    var recording by rememberSaveable(user.nodeNum) { mutableStateOf(false) }
+    val userKey = user.userUuid.ifBlank { user.nodeNum.toString() }
+    var draft by rememberSaveable(userKey) { mutableStateOf("") }
+    var status by rememberSaveable(userKey) { mutableStateOf("") }
+    var recording by rememberSaveable(userKey) { mutableStateOf(false) }
     val context = LocalContext.current
-    val recorder = androidx.compose.runtime.remember(user.nodeNum) { VoiceMessageRecorder(context.applicationContext) }
+    val recorder = androidx.compose.runtime.remember(userKey) { VoiceMessageRecorder(context.applicationContext) }
     val audioPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
