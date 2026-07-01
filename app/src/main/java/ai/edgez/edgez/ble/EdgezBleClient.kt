@@ -34,6 +34,7 @@ import java.util.UUID
 import java.util.concurrent.CopyOnWriteArraySet
 
 private const val EDGEZ_MAX_FRAME = EDGEZ_HEADER_LEN + EDGEZ_MAX_PAYLOAD
+private const val EDGEZ_BLE_REQUESTED_MTU = 517
 private val EDGEZ_SERVICE_UUID: UUID = UUID.fromString("0000fff0-0000-1000-8000-00805f9b34fb")
 private val EDGEZ_RX_UUID: UUID = UUID.fromString("0000fff1-0000-1000-8000-00805f9b34fb")
 private val EDGEZ_TX_UUID: UUID = UUID.fromString("0000fff2-0000-1000-8000-00805f9b34fb")
@@ -296,7 +297,7 @@ class EdgezBleClient(private val context: Context) {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             emitDebug("CONN status=$status state=$newState")
             if (newState == BluetoothProfile.STATE_CONNECTED) {
-                gatt.requestMtu(256)
+                gatt.requestMtu(EDGEZ_BLE_REQUESTED_MTU)
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 rxCharacteristic = null
                 rxLen = 0

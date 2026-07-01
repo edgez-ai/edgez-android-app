@@ -103,7 +103,7 @@ data class VoiceChunk(
 )
 
 private val VOICE_CHUNK_MAGIC = byteArrayOf('E'.code.toByte(), 'V'.code.toByte(), '2'.code.toByte())
-const val VOICE_CHUNK_AUDIO_BYTES = 144
+const val VOICE_CHUNK_AUDIO_BYTES = 280
 
 fun encodeVoiceChunk(chunk: VoiceChunk): ByteArray {
     return ByteBuffer.allocate(VOICE_CHUNK_MAGIC.size + 8 + 4 + 2 + 2 + 1 + chunk.audio.size)
