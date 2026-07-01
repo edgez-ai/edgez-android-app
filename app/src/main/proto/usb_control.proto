@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+package ai.edgez.halow;
+
+enum Operation {
+  OPERATION_UNSPECIFIED = 0;
+  REQUEST = 1;
+  RESPONSE = 2;
+  ACKNOWLEDGE = 3;
+  BROADCAST = 9;
+}
+
+enum Interface {
+  INTERFACE_UNSPECIFIED = 0;
+  USB = 1;
+  BLE = 2;
+  WIFI = 3;
+  ETHERNET = 4;
+  HALOW = 5;
+  LORA = 6;
+}
+
+enum Mime {
+  MIME_UNSPECIFIED = 0;
+  MIME_TEXT = 1;
+  MIME_VOICE = 2;
+  MIME_IMAGE = 3;
+  MIME_VIDEO = 4;
+  MIME_BINARY = 5;
+}
+
+message NetworkPacket {
+  uint64 message_id_high = 1;
+  uint64 message_id_low = 2;
+  uint64 from = 3;
+  uint64 to = 4;
+  Operation operation = 5;
+  Interface interface = 6;
+  uint32 sequence = 7;
+  uint64 user_high = 8;
+  uint64 user_low = 9;
+  Mime mime = 10;
+  uint32 max_hop = 11;
+
+  oneof body {
+    bytes payload = 100;
+    string beacon = 101;
+    HaLowInterfaceStatus status = 102;
+    HaLowInitConfig init = 103;
+  }
+}
+
+message Beacon {
+  uint64 user_id_high = 1;
+  uint64 user_id_low = 2;
+  string user_name = 3;
+  bytes user_public_key = 4;
+  float attitude = 5;
+  float longitude = 6;
+}
+
+message HaLowInterfaceStatus {
+  bool supported = 1;
+  bool stack_initialized = 2;
+  bool mesh_mode = 3;
+  bool link_up = 4;
+  bool route_ready = 5;
+  bool ready_for_report = 6;
+  uint32 ethertype = 7;
+  string mesh_id = 8;
+  string ip_addr = 9;
+  string gateway = 10;
+  uint64 mac_address = 11;
+}
+
+message HaLowInitConfig {
+  string country_code = 1;
+  string mesh_id = 2;
+  string passphrase = 3;
+  uint32 max_hop = 4;
+  uint64 user_id_high = 5;
+  uint64 user_id_low = 6;
+  string user_name = 7;
+  bytes user_public_key = 8;
+}

@@ -11,6 +11,9 @@ import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
 import android.os.Build
 import android.util.Log
+import ai.edgez.halow.UsbControl
+import com.google.protobuf.ByteString
+import com.google.protobuf.InvalidProtocolBufferException
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -31,13 +34,7 @@ const val USB_CONTROL_ACTION_SET_BLE_ENABLED = 1
 const val USB_CONTROL_ACTION_SET_PAIRING_ENABLED = 2
 const val USB_CONTROL_ACTION_SET_WIFI_CREDENTIALS = 3
 const val USB_CONTROL_ACTION_GET_STATUS = 4
-private const val NETWORK_OPERATION_REQUEST = 1
-const val NETWORK_OPERATION_ACK = 2
-private const val NETWORK_INTERFACE_HALOW = 5
-private const val NETWORK_PACKET_PAYLOAD_TAG = 100
-private const val NETWORK_PACKET_BEACON_TAG = 101
-private const val NETWORK_PACKET_STATUS_TAG = 102
-private const val NETWORK_PACKET_INIT_TAG = 103
+const val NETWORK_OPERATION_ACK = 3
 
 private const val ESPRESSIF_VID = 0x303A
 private const val EDGEZ_MAX_FRAME = EDGEZ_HEADER_LEN + EDGEZ_MAX_PAYLOAD
@@ -366,22 +363,21 @@ object EdgezUsbControlProto {
         userPublicKey: ByteArray,
         maxHop: Int,
     ): ByteArray {
-        val init = ByteArrayOutputStream()
-        writeStringField(init, 1, countryCode.take(2).uppercase())
-        writeStringField(init, 2, meshId.take(32))
-        writeStringField(init, 3, passphrase.take(64))
-        writeVarintField(init, 4, maxHop.coerceIn(0, 255).toLong())
-        writeVarintField(init, 5, userIdHigh)
-        writeVarintField(init, 6, userIdLow)
-        writeStringField(init, 7, userName.take(64))
-        writeBytesField(init, 8, userPublicKey.copyOf(minOf(userPublicKey.size, 32)))
+        val init = UsbControl.HaLowInitConfig.newBuilder()
+            .setCountryCode(countryCode.take(2).uppercase())
+            .setMeshId(meshId.take(32))
+            .setPassphrase(passphrase.take(64))
+            .setMaxHop(maxHop.coerceIn(0, 255))
+            .setUserIdHigh(userIdHigh)
+            .setUserIdLow(userIdLow)
+            .setUserName(userName.take(64))
+            .setUserPublicKey(ByteString.copyFrom(userPublicKey.copyOf(minOf(userPublicKey.size, 32))))
+            .build()
 
-        return encodeNetworkPacket(
+        return encodeNetworkPacketBuilder(
             userIdHigh = userIdHigh,
             userIdLow = userIdLow,
-        ) { out ->
-            writeBytesField(out, NETWORK_PACKET_INIT_TAG, init.toByteArray())
-        }
+        ).setInit(init).build().toByteArray()
     }
 
     fun encodeHaLowBeacon(
@@ -394,18 +390,17 @@ object EdgezUsbControlProto {
         locationTimestampMs: Long = 0,
     ): ByteArray {
         val beacon = encodeBeacon(userIdHigh, userIdLow, userName, userPublicKey, latitude, longitude, locationTimestampMs)
-        return encodeNetworkPacket(
+        return encodeNetworkPacketBuilder(
             userIdHigh = userIdHigh,
             userIdLow = userIdLow,
-        ) { out ->
-            writeStringField(out, NETWORK_PACKET_BEACON_TAG, beacon)
-        }
+        ).setBeacon(beacon).build().toByteArray()
     }
 
     fun encodeStatusRequest(): ByteArray {
-        return encodeNetworkPacket { out ->
-            writeBytesField(out, NETWORK_PACKET_STATUS_TAG, ByteArray(0))
-        }
+        return encodeNetworkPacketBuilder()
+            .setStatus(UsbControl.HaLowInterfaceStatus.getDefaultInstance())
+            .build()
+            .toByteArray()
     }
 
     fun encodeConversationMessage(
@@ -431,7 +426,7 @@ object EdgezUsbControlProto {
             "NetworkPacket payload too large: ${conversationPayload.size}/$EDGEZ_NETWORK_PACKET_MAX_PAYLOAD"
         }
 
-        return encodeNetworkPacket(
+        return encodeNetworkPacketBuilder(
             messageIdHigh = messageIdHigh,
             messageIdLow = messageIdLow,
             from = from,
@@ -441,9 +436,7 @@ object EdgezUsbControlProto {
             mime = mime,
             maxHop = maxHop,
             sequence = sequence,
-        ) { out ->
-            writeBytesField(out, NETWORK_PACKET_PAYLOAD_TAG, conversationPayload)
-        }
+        ).setPayload(ByteString.copyFrom(conversationPayload)).build().toByteArray()
     }
 
     fun encodeConversationAck(
@@ -461,8 +454,8 @@ object EdgezUsbControlProto {
         require(userIdHigh != 0L || userIdLow != 0L) {
             "NetworkPacket ACK requires a user UUID"
         }
-        return encodeNetworkPacket(
-            operation = NETWORK_OPERATION_ACK,
+        return encodeNetworkPacketBuilder(
+            operation = UsbControl.Operation.ACKNOWLEDGE,
             messageIdHigh = messageIdHigh,
             messageIdLow = messageIdLow,
             from = from,
@@ -471,9 +464,7 @@ object EdgezUsbControlProto {
             userIdLow = userIdLow,
             mime = PacketMime.TEXT,
             maxHop = maxHop,
-        ) { out ->
-            writeBytesField(out, NETWORK_PACKET_PAYLOAD_TAG, ByteArray(0))
-        }
+        ).setPayload(ByteString.EMPTY).build().toByteArray()
     }
 
     fun decodeMobileFromRadio(payload: ByteArray): HaLowInterfaceStatus? {
@@ -485,81 +476,46 @@ object EdgezUsbControlProto {
     }
 
     fun decodeNetworkPacket(payload: ByteArray): NetworkPacket? {
-        var offset = 0
-        var messageIdHigh = 0L
-        var messageIdLow = 0L
-        var from = 0L
-        var to = 0L
-        var operation = 0
-        var interfaceId = 0
-        var sequence = 0
-        var userHigh = 0L
-        var userLow = 0L
-        var mime = PacketMime.UNSPECIFIED
-        var maxHop = 0
-        var packetPayload = ByteArray(0)
-        var beacon: EdgeZAssocMetadata? = null
-        var beaconRaw = ""
-        var halowStatus: HaLowInterfaceStatus? = null
-        var init: HaLowInitConfig? = null
+        val packet = try {
+            UsbControl.NetworkPacket.parseFrom(payload)
+        } catch (_: InvalidProtocolBufferException) {
+            return null
+        }
 
-        while (offset < payload.size) {
-            val tagRead = readVarint(payload, offset) ?: return null
-            offset = tagRead.nextOffset
-            val field = (tagRead.value ushr 3).toInt()
-            val wireType = (tagRead.value and 0x07).toInt()
-
-            when (wireType) {
-                0 -> {
-                    val valueRead = readVarint(payload, offset) ?: return null
-                    offset = valueRead.nextOffset
-                    when (field) {
-                        1 -> messageIdHigh = valueRead.value
-                        2 -> messageIdLow = valueRead.value
-                        3 -> from = valueRead.value
-                        4 -> to = valueRead.value
-                        5 -> operation = valueRead.value.toInt()
-                        6 -> interfaceId = valueRead.value.toInt()
-                        7 -> sequence = valueRead.value.toInt()
-                        8 -> userHigh = valueRead.value
-                        9 -> userLow = valueRead.value
-                        10 -> mime = PacketMime.fromWireValue(valueRead.value.toInt())
-                        11 -> maxHop = valueRead.value.toInt()
-                    }
-                }
-                2 -> {
-                    val lenRead = readVarint(payload, offset) ?: return null
-                    offset = lenRead.nextOffset
-                    val len = lenRead.value.toInt()
-                    if (len < 0 || offset + len > payload.size) return null
-                    val bytes = payload.copyOfRange(offset, offset + len)
-                    when (field) {
-                        NETWORK_PACKET_PAYLOAD_TAG -> packetPayload = bytes
-                        NETWORK_PACKET_BEACON_TAG -> {
-                            beaconRaw = String(bytes, StandardCharsets.UTF_8)
-                            beacon = decodeBeaconString(bytes)
-                        }
-                        NETWORK_PACKET_STATUS_TAG -> halowStatus = decodeHaLowInterfaceStatus(bytes)
-                        NETWORK_PACKET_INIT_TAG -> init = decodeHaLowInitConfig(bytes)
-                    }
-                    offset += len
-                }
-                else -> return null
-            }
+        val packetPayload = if (packet.bodyCase == UsbControl.NetworkPacket.BodyCase.PAYLOAD) {
+            packet.payload.toByteArray()
+        } else {
+            ByteArray(0)
+        }
+        val beaconRaw = if (packet.bodyCase == UsbControl.NetworkPacket.BodyCase.BEACON) packet.beacon else ""
+        val beacon = if (beaconRaw.isNotBlank()) {
+            decodeBeaconString(beaconRaw.toByteArray(StandardCharsets.UTF_8))
+        } else {
+            null
+        }
+        val halowStatus = if (packet.bodyCase == UsbControl.NetworkPacket.BodyCase.STATUS) {
+            packet.status.toAppStatus()
+        } else {
+            null
+        }
+        val init = if (packet.bodyCase == UsbControl.NetworkPacket.BodyCase.INIT) {
+            packet.init.toAppInit()
+        } else {
+            null
         }
 
         return NetworkPacket(
-            messageIdHigh = messageIdHigh,
-            messageIdLow = messageIdLow,
-            from = from,
-            to = to,
-            operation = operation,
-            interfaceId = interfaceId,
-            sequence = sequence,
-            userHigh = userHigh,
-            userLow = userLow,
-            mime = mime,
-            maxHop = maxHop,
+            messageIdHigh = packet.messageIdHigh,
+            messageIdLow = packet.messageIdLow,
+            from = packet.from,
+            to = packet.to,
+            operation = packet.operationValue,
+            interfaceId = packet.interfaceValue,
+            sequence = packet.sequence,
+            userHigh = packet.userHigh,
+            userLow = packet.userLow,
+            mime = PacketMime.fromWireValue(packet.mimeValue),
+            maxHop = packet.maxHop,
             payload = packetPayload,
             beacon = beacon,
             beaconRaw = beaconRaw,
@@ -614,200 +570,31 @@ object EdgezUsbControlProto {
     }
 
     fun decodeHaLowInterfaceStatus(payload: ByteArray): HaLowInterfaceStatus? {
-        var offset = 0
-        var supported = false
-        var stackInitialized = false
-        var meshMode = false
-        var linkUp = false
-        var routeReady = false
-        var readyForReport = false
-        var ethertype = 0
-        var meshId = ""
-        var ipAddr = ""
-        var gateway = ""
-        var macAddress = 0L
-
-        while (offset < payload.size) {
-            val tagRead = readVarint(payload, offset) ?: return null
-            offset = tagRead.nextOffset
-            val field = (tagRead.value ushr 3).toInt()
-            val wireType = (tagRead.value and 0x07).toInt()
-
-            when (wireType) {
-                0 -> {
-                    val valueRead = readVarint(payload, offset) ?: return null
-                    offset = valueRead.nextOffset
-                    when (field) {
-                        1 -> supported = valueRead.value != 0L
-                        2 -> stackInitialized = valueRead.value != 0L
-                        3 -> meshMode = valueRead.value != 0L
-                        4 -> linkUp = valueRead.value != 0L
-                        5 -> routeReady = valueRead.value != 0L
-                        6 -> readyForReport = valueRead.value != 0L
-                        7 -> ethertype = valueRead.value.toInt()
-                        11 -> macAddress = valueRead.value
-                    }
-                }
-                2 -> {
-                    val lenRead = readVarint(payload, offset) ?: return null
-                    offset = lenRead.nextOffset
-                    val len = lenRead.value.toInt()
-                    if (len < 0 || offset + len > payload.size) return null
-                    val text = String(payload, offset, len, StandardCharsets.UTF_8)
-                    when (field) {
-                        8 -> meshId = text
-                        9 -> ipAddr = text
-                        10 -> gateway = text
-                    }
-                    offset += len
-                }
-                else -> return null
-            }
+        return try {
+            UsbControl.HaLowInterfaceStatus.parseFrom(payload).toAppStatus()
+        } catch (_: InvalidProtocolBufferException) {
+            null
         }
-
-        return HaLowInterfaceStatus(
-            supported = supported,
-            stackInitialized = stackInitialized,
-            meshMode = meshMode,
-            linkUp = linkUp,
-            routeReady = routeReady,
-            readyForReport = readyForReport,
-            ethertype = ethertype,
-            meshId = meshId,
-            ipAddr = ipAddr,
-            gateway = gateway,
-            macAddress = macAddress,
-        )
     }
 
     fun decodeHaLowInitConfig(payload: ByteArray): HaLowInitConfig? {
-        var offset = 0
-        var countryCode = ""
-        var meshId = ""
-        var passphrase = ""
-        var maxHop = 0
-        var userIdHigh = 0L
-        var userIdLow = 0L
-        var userName = ""
-        var userPublicKey = ByteArray(0)
-
-        while (offset < payload.size) {
-            val tagRead = readVarint(payload, offset) ?: return null
-            offset = tagRead.nextOffset
-            val field = (tagRead.value ushr 3).toInt()
-            val wireType = (tagRead.value and 0x07).toInt()
-
-            when (wireType) {
-                0 -> {
-                    val valueRead = readVarint(payload, offset) ?: return null
-                    offset = valueRead.nextOffset
-                    when (field) {
-                        4 -> maxHop = valueRead.value.toInt()
-                        5 -> userIdHigh = valueRead.value
-                        6 -> userIdLow = valueRead.value
-                    }
-                }
-                2 -> {
-                    val lenRead = readVarint(payload, offset) ?: return null
-                    offset = lenRead.nextOffset
-                    val len = lenRead.value.toInt()
-                    if (len < 0 || offset + len > payload.size) return null
-                    val bytes = payload.copyOfRange(offset, offset + len)
-                    when (field) {
-                        1 -> countryCode = String(bytes, StandardCharsets.UTF_8)
-                        2 -> meshId = String(bytes, StandardCharsets.UTF_8)
-                        3 -> passphrase = String(bytes, StandardCharsets.UTF_8)
-                        7 -> userName = String(bytes, StandardCharsets.UTF_8)
-                        8 -> userPublicKey = bytes
-                    }
-                    offset += len
-                }
-                else -> return null
-            }
+        return try {
+            UsbControl.HaLowInitConfig.parseFrom(payload).toAppInit()
+        } catch (_: InvalidProtocolBufferException) {
+            null
         }
-
-        return HaLowInitConfig(
-            countryCode = countryCode,
-            meshId = meshId,
-            passphrase = passphrase,
-            maxHop = maxHop,
-            userIdHigh = userIdHigh,
-            userIdLow = userIdLow,
-            userName = userName,
-            userPublicKey = userPublicKey,
-        )
     }
 
     fun decodeEdgeZAssocMetadata(payload: ByteArray): EdgeZAssocMetadata? {
-        var offset = 0
-        var userIdHigh = 0L
-        var userIdLow = 0L
-        var userName = ""
-        var userPublicKey = ByteArray(0)
-        var latitude: Double? = null
-        var longitude: Double? = null
-        var locationTimestampMs = 0L
-
-        while (offset < payload.size) {
-            val tagRead = readVarint(payload, offset) ?: return null
-            offset = tagRead.nextOffset
-            val field = (tagRead.value ushr 3).toInt()
-            val wireType = (tagRead.value and 0x07).toInt()
-
-            when (wireType) {
-                0 -> {
-                    val valueRead = readVarint(payload, offset) ?: return null
-                    offset = valueRead.nextOffset
-                    when (field) {
-                        1 -> userIdHigh = valueRead.value
-                        2 -> userIdLow = valueRead.value
-                        7 -> locationTimestampMs = valueRead.value
-                    }
-                }
-                2 -> {
-                    val lenRead = readVarint(payload, offset) ?: return null
-                    offset = lenRead.nextOffset
-                    val len = lenRead.value.toInt()
-                    if (len < 0 || offset + len > payload.size) return null
-                    val bytes = payload.copyOfRange(offset, offset + len)
-                    when (field) {
-                        3 -> userName = String(bytes, StandardCharsets.UTF_8)
-                        4 -> userPublicKey = bytes
-                        5 -> latitude = String(bytes, StandardCharsets.UTF_8).toDoubleOrNull()
-                        6 -> longitude = String(bytes, StandardCharsets.UTF_8).toDoubleOrNull()
-                    }
-                    offset += len
-                }
-                5 -> {
-                    if (offset + 4 > payload.size) return null
-                    val value = readFixed32Float(payload, offset).toDouble()
-                    when (field) {
-                        5 -> latitude = value
-                        6 -> longitude = value
-                    }
-                    offset += 4
-                }
-                else -> return null
-            }
+        return try {
+            UsbControl.Beacon.parseFrom(payload).toAppBeacon()
+        } catch (_: InvalidProtocolBufferException) {
+            null
         }
-
-        if (userIdHigh == 0L && userIdLow == 0L && userName.isBlank() && userPublicKey.isEmpty()) {
-            return null
-        }
-
-        return EdgeZAssocMetadata(
-            userIdHigh = userIdHigh,
-            userIdLow = userIdLow,
-            userName = userName,
-            userPublicKey = userPublicKey,
-            latitude = latitude,
-            longitude = longitude,
-            locationTimestampMs = locationTimestampMs,
-        )
     }
 
-    private fun encodeNetworkPacket(
-        operation: Int = NETWORK_OPERATION_REQUEST,
+    private fun encodeNetworkPacketBuilder(
+        operation: UsbControl.Operation = UsbControl.Operation.REQUEST,
         messageIdHigh: Long = 0,
         messageIdLow: Long = 0,
         from: Long = 0,
@@ -817,33 +604,31 @@ object EdgezUsbControlProto {
         mime: PacketMime = PacketMime.UNSPECIFIED,
         maxHop: Int = 0,
         sequence: Int = 0,
-        writeBody: (ByteArrayOutputStream) -> Unit,
-    ): ByteArray {
-        val out = ByteArrayOutputStream()
+    ): UsbControl.NetworkPacket.Builder {
         val generatedId = if (messageIdHigh == 0L && messageIdLow == 0L) newMessageId() else messageIdHigh to messageIdLow
-        writeVarintField(out, 1, generatedId.first)
-        writeVarintField(out, 2, generatedId.second)
+        val builder = UsbControl.NetworkPacket.newBuilder()
+            .setMessageIdHigh(generatedId.first)
+            .setMessageIdLow(generatedId.second)
+            .setOperation(operation)
+            .setInterface(UsbControl.Interface.HALOW)
+            .setUserHigh(userIdHigh)
+            .setUserLow(userIdLow)
         if (from != 0L) {
-            writeVarintField(out, 3, from)
+            builder.setFrom(from)
         }
         if (to != 0L) {
-            writeVarintField(out, 4, to)
+            builder.setTo(to)
         }
-        writeVarintField(out, 5, operation.toLong())
-        writeVarintField(out, 6, NETWORK_INTERFACE_HALOW.toLong())
-        if (sequence > 0) {
-            writeVarintField(out, 7, sequence.toLong())
-        }
-        writeVarintField(out, 8, userIdHigh)
-        writeVarintField(out, 9, userIdLow)
         if (mime != PacketMime.UNSPECIFIED) {
-            writeVarintField(out, 10, mime.wireValue.toLong())
+            builder.setMime(mime.toProtoMime())
         }
         if (maxHop > 0) {
-            writeVarintField(out, 11, maxHop.coerceIn(0, 255).toLong())
+            builder.setMaxHop(maxHop.coerceIn(0, 255))
         }
-        writeBody(out)
-        return out.toByteArray()
+        if (sequence > 0) {
+            builder.setSequence(sequence)
+        }
+        return builder
     }
 
     private fun newMessageId(): Pair<Long, Long> {
@@ -860,16 +645,16 @@ object EdgezUsbControlProto {
         longitude: Double?,
         locationTimestampMs: Long,
     ): String {
-        val out = ByteArrayOutputStream()
-        writeVarintField(out, 1, userIdHigh)
-        writeVarintField(out, 2, userIdLow)
-        writeStringField(out, 3, userName.take(64))
-        writeBytesField(out, 4, userPublicKey.copyOf(minOf(userPublicKey.size, 32)))
+        val beacon = UsbControl.Beacon.newBuilder()
+            .setUserIdHigh(userIdHigh)
+            .setUserIdLow(userIdLow)
+            .setUserName(userName.take(64))
+            .setUserPublicKey(ByteString.copyFrom(userPublicKey.copyOf(minOf(userPublicKey.size, 32))))
         if (latitude != null && longitude != null) {
-            writeFloatField(out, 5, latitude.toFloat())
-            writeFloatField(out, 6, longitude.toFloat())
+            beacon.setAttitude(latitude.toFloat())
+            beacon.setLongitude(longitude.toFloat())
         }
-        return Base64.getEncoder().encodeToString(out.toByteArray())
+        return Base64.getEncoder().encodeToString(beacon.build().toByteArray())
     }
 
     private fun decodeBeaconString(payload: ByteArray): EdgeZAssocMetadata? {
@@ -877,6 +662,61 @@ object EdgezUsbControlProto {
             decodeEdgeZAssocMetadata(Base64.getDecoder().decode(payload))
         } catch (_: IllegalArgumentException) {
             decodeEdgeZAssocMetadata(payload)
+        }
+    }
+
+    private fun UsbControl.HaLowInterfaceStatus.toAppStatus(): HaLowInterfaceStatus {
+        return HaLowInterfaceStatus(
+            supported = supported,
+            stackInitialized = stackInitialized,
+            meshMode = meshMode,
+            linkUp = linkUp,
+            routeReady = routeReady,
+            readyForReport = readyForReport,
+            ethertype = ethertype,
+            meshId = meshId,
+            ipAddr = ipAddr,
+            gateway = gateway,
+            macAddress = macAddress,
+        )
+    }
+
+    private fun UsbControl.HaLowInitConfig.toAppInit(): HaLowInitConfig {
+        return HaLowInitConfig(
+            countryCode = countryCode,
+            meshId = meshId,
+            passphrase = passphrase,
+            maxHop = maxHop,
+            userIdHigh = userIdHigh,
+            userIdLow = userIdLow,
+            userName = userName,
+            userPublicKey = userPublicKey.toByteArray(),
+        )
+    }
+
+    private fun UsbControl.Beacon.toAppBeacon(): EdgeZAssocMetadata? {
+        if (userIdHigh == 0L && userIdLow == 0L && userName.isBlank() && userPublicKey.isEmpty) {
+            return null
+        }
+        return EdgeZAssocMetadata(
+            userIdHigh = userIdHigh,
+            userIdLow = userIdLow,
+            userName = userName,
+            userPublicKey = userPublicKey.toByteArray(),
+            latitude = attitude.toDouble().takeIf { attitude != 0f },
+            longitude = longitude.toDouble().takeIf { longitude != 0f },
+            locationTimestampMs = 0,
+        )
+    }
+
+    private fun PacketMime.toProtoMime(): UsbControl.Mime {
+        return when (this) {
+            PacketMime.TEXT -> UsbControl.Mime.MIME_TEXT
+            PacketMime.VOICE -> UsbControl.Mime.MIME_VOICE
+            PacketMime.IMAGE -> UsbControl.Mime.MIME_IMAGE
+            PacketMime.VIDEO -> UsbControl.Mime.MIME_VIDEO
+            PacketMime.BINARY -> UsbControl.Mime.MIME_BINARY
+            PacketMime.UNSPECIFIED -> UsbControl.Mime.MIME_UNSPECIFIED
         }
     }
 
@@ -894,15 +734,6 @@ object EdgezUsbControlProto {
         writeVarint(out, ((fieldNumber shl 3) or 2).toLong())
         writeVarint(out, bytes.size.toLong())
         out.write(bytes)
-    }
-
-    private fun writeFloatField(out: ByteArrayOutputStream, fieldNumber: Int, value: Float) {
-        writeVarint(out, ((fieldNumber shl 3) or 5).toLong())
-        val bits = value.toRawBits()
-        out.write(bits and 0xff)
-        out.write((bits ushr 8) and 0xff)
-        out.write((bits ushr 16) and 0xff)
-        out.write((bits ushr 24) and 0xff)
     }
 
     private fun writeVarint(out: ByteArrayOutputStream, rawValue: Long) {
@@ -928,14 +759,6 @@ object EdgezUsbControlProto {
             shift += 7
         }
         return null
-    }
-
-    private fun readFixed32Float(data: ByteArray, offset: Int): Float {
-        val bits = (data[offset].toInt() and 0xff) or
-            ((data[offset + 1].toInt() and 0xff) shl 8) or
-            ((data[offset + 2].toInt() and 0xff) shl 16) or
-            ((data[offset + 3].toInt() and 0xff) shl 24)
-        return Float.fromBits(bits)
     }
 
     private data class VarintRead(val value: Long, val nextOffset: Int)
