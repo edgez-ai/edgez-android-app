@@ -45,9 +45,36 @@ private const val TAG_USERS = "EdgeZUsers"
 private const val HALOW_BROADCAST_NODE_48 = 0xffffffffffffL
 private const val HALOW_BROADCAST_NODE_32 = 0xffffffffL
 
-private fun newMessageUuid(): Pair<Long, Long> {
+private data class MessageUuid(
+    val high: Long,
+    val low: Long,
+    val text: String,
+)
+
+private fun formatMessageUuid(high: Long, low: Long): String {
+    if (high == 0L && low == 0L) return ""
+    val highText = "%016x".format(high)
+    val lowText = "%016x".format(low)
+    return "${highText.substring(0, 8)}-${highText.substring(8, 12)}-${highText.substring(12, 16)}-" +
+        "${lowText.substring(0, 4)}-${lowText.substring(4, 16)}"
+}
+
+private fun parseMessageUuid(uuid: String): MessageUuid? {
+    val parsed = runCatching { UUID.fromString(uuid) }.getOrNull() ?: return null
+    return MessageUuid(
+        high = parsed.mostSignificantBits,
+        low = parsed.leastSignificantBits,
+        text = parsed.toString(),
+    )
+}
+
+private fun newMessageUuid(): MessageUuid {
     val uuid = UUID.randomUUID()
-    return uuid.mostSignificantBits to uuid.leastSignificantBits
+    return MessageUuid(
+        high = uuid.mostSignificantBits,
+        low = uuid.leastSignificantBits,
+        text = uuid.toString(),
+    )
 }
 
 private data class PendingVoiceMessage(
@@ -310,8 +337,7 @@ fun EdgeZApp() {
                                                 mime = PacketMime.VOICE,
                                                 audioPath = path,
                                                 durationMs = pending.durationMs,
-                                                messageIdHigh = message.messageIdHigh,
-                                                messageIdLow = message.messageIdLow,
+                                                messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow),
                                             )
                                         }
                                     }
@@ -319,8 +345,7 @@ fun EdgeZApp() {
                                         text = decryptConversationText(identity, senderUser, message),
                                         mine = false,
                                         timestampMs = System.currentTimeMillis(),
-                                        messageIdHigh = message.messageIdHigh,
-                                        messageIdLow = message.messageIdLow,
+                                        messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow),
                                     )
                                 }
                             }.getOrElse {
@@ -334,8 +359,7 @@ fun EdgeZApp() {
                                     mine = false,
                                     timestampMs = System.currentTimeMillis(),
                                     status = it.message.orEmpty(),
-                                    messageIdHigh = message.messageIdHigh,
-                                    messageIdLow = message.messageIdLow,
+                                    messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow),
                                 )
                             }
                             if (entry != null) {
@@ -510,8 +534,8 @@ fun EdgeZApp() {
                                         val maxHop = lastConnectionPreferences.getMeshMaxHop()
                                         val messageUuid = newMessageUuid()
                                         val result = when (activeConnection) {
-                                            ActiveConnection.USB -> usbClient.sendConversationMessage(encryptedMessage, fromNode, toNode, PacketMime.TEXT, maxHop, messageIdHigh = messageUuid.first, messageIdLow = messageUuid.second)
-                                            ActiveConnection.BLE -> bleClient.sendConversationMessage(encryptedMessage, fromNode, toNode, PacketMime.TEXT, maxHop, messageIdHigh = messageUuid.first, messageIdLow = messageUuid.second)
+                                            ActiveConnection.USB -> usbClient.sendConversationMessage(encryptedMessage, fromNode, toNode, PacketMime.TEXT, maxHop, messageIdHigh = messageUuid.high, messageIdLow = messageUuid.low)
+                                            ActiveConnection.BLE -> bleClient.sendConversationMessage(encryptedMessage, fromNode, toNode, PacketMime.TEXT, maxHop, messageIdHigh = messageUuid.high, messageIdLow = messageUuid.low)
                                             ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
                                         }
                                         result.onSuccess {
@@ -520,8 +544,7 @@ fun EdgeZApp() {
                                                 mine = true,
                                                 timestampMs = System.currentTimeMillis(),
                                                 status = "Sent via ${activeConnection.name}",
-                                                messageIdHigh = messageUuid.first,
-                                                messageIdLow = messageUuid.second,
+                                                messageUuid = messageUuid.text,
                                             )
                                             edgeZDatabase.insertMessage(conversationUser.nodeNum, entry)
                                             conversations = conversations + (
@@ -546,8 +569,7 @@ fun EdgeZApp() {
                                 mime = PacketMime.VOICE,
                                 audioPath = localPath,
                                 durationMs = durationMs,
-                                messageIdHigh = messageUuid.first,
-                                messageIdLow = messageUuid.second,
+                                messageUuid = messageUuid.text,
                             )
                             edgeZDatabase.insertMessage(conversationUser.nodeNum, entry)
                             conversations = conversations + (
@@ -590,8 +612,8 @@ fun EdgeZApp() {
                                             )
                                             val encrypted = encryptConversationPayload(identity, conversationUser, voicePayload, fromNode)
                                             val sendResult = when (activeConnection) {
-                                                ActiveConnection.USB -> usbClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, index + 1, messageUuid.first, messageUuid.second)
-                                                ActiveConnection.BLE -> bleClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, index + 1, messageUuid.first, messageUuid.second)
+                                                ActiveConnection.USB -> usbClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, index + 1, messageUuid.high, messageUuid.low)
+                                                ActiveConnection.BLE -> bleClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, index + 1, messageUuid.high, messageUuid.low)
                                                 ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
                                             }
                                             sendResult.getOrThrow()
@@ -643,11 +665,7 @@ fun EdgeZApp() {
                                     val maxHop = lastConnectionPreferences.getMeshMaxHop()
                                     val voiceBytes = voiceFile.readBytes()
                                     val codec = voiceCodecFromPath(entry.audioPath)
-                                    val resendMessageUuid = if (entry.messageIdHigh == 0L && entry.messageIdLow == 0L) {
-                                        newMessageUuid()
-                                    } else {
-                                        entry.messageIdHigh to entry.messageIdLow
-                                    }
+                                    val resendMessageUuid = parseMessageUuid(entry.messageUuid) ?: newMessageUuid()
                                     val chunks = voiceBytes.asList().chunked(VOICE_CHUNK_AUDIO_BYTES)
                                     chunks.forEachIndexed { index, chunkBytes ->
                                         val voicePayload = encodeVoiceChunk(
@@ -662,8 +680,8 @@ fun EdgeZApp() {
                                         )
                                         val encrypted = encryptConversationPayload(identity, conversationUser, voicePayload, fromNode)
                                         val sendResult = when (activeConnection) {
-                                            ActiveConnection.USB -> usbClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, index + 1, resendMessageUuid.first, resendMessageUuid.second)
-                                            ActiveConnection.BLE -> bleClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, index + 1, resendMessageUuid.first, resendMessageUuid.second)
+                                            ActiveConnection.USB -> usbClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, index + 1, resendMessageUuid.high, resendMessageUuid.low)
+                                            ActiveConnection.BLE -> bleClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, index + 1, resendMessageUuid.high, resendMessageUuid.low)
                                             ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
                                         }
                                         sendResult.getOrThrow()
