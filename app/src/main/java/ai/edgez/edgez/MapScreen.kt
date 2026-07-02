@@ -491,6 +491,8 @@ private fun syncUserMapMarkers(users: List<HaLowUser>, controller: MapController
             Framework.nativeClearApiPoints()
         } else {
             val url = buildUserMarkerApiUrl(users)
+            Log.d(TAG_MAP, "sync user map markers count=${users.size} url=$url")
+            Framework.nativeClearApiPoints()
             Framework.nativeParseAndSetApiUrl(url)
             OrganicMap.executeMapApiRequest()
             Framework.nativeDeactivatePopup()
@@ -516,7 +518,7 @@ private fun buildUserMarkerApiUrl(users: List<HaLowUser>): String {
         val markerId = Uri.encode("edgez-${user.nodeNum}")
         val name = Uri.encode(user.displayName)
         val markerStyle = NodeMapMarker.fromId(user.marker).organicMapsStyle
-        val style = markerStyle?.let { "&style=${Uri.encode(it)}" }.orEmpty()
+        val style = markerStyle?.let { "&s=${Uri.encode(it)}" }.orEmpty()
         "ll=$point&n=$name&id=$markerId$style"
     }
 }
