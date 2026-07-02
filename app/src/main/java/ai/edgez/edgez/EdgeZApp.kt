@@ -496,13 +496,7 @@ fun EdgeZApp() {
         val removeBleFrameListener = bleClient.addFrameListener { frame ->
             handleTransportFrame(ActiveConnection.BLE, frame)
         }
-        val removeUsbDebugListener = usbClient.addDebugListener { line ->
-            if (line.startsWith("USB RX error")) {
-                mainHandler.post {
-                    currentSetTransportConnected(ActiveConnection.USB, false)
-                }
-            }
-        }
+        val removeUsbDebugListener = usbClient.addDebugListener { _ -> }
         val removeBleDebugListener = bleClient.addDebugListener { line ->
             if (line == "SERVICE ready") {
                 mainHandler.post {

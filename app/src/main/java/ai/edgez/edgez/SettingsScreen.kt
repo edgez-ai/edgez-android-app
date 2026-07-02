@@ -35,6 +35,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,7 +54,6 @@ import ai.edgez.edgez.ui.theme.EdgeZTheme
 import ai.edgez.edgez.usb.ACTION_USB_PERMISSION
 import ai.edgez.edgez.usb.DeviceSettings
 import ai.edgez.edgez.usb.EdgezUsbClient
-import ai.edgez.edgez.usb.USB_CONTROL_ACTION_GET_STATUS
 import ai.edgez.edgez.usb.UsbCandidate
 import java.util.concurrent.Executors
 import java.util.UUID
@@ -321,8 +321,16 @@ fun SettingsScreen(
             }
             activity?.runOnUiThread {
                 status = result.fold(
-                    onSuccess = { "Device settings request sent" },
-                    onFailure = { it.message ?: "Device settings request failed" },
+                    onSuccess = {
+                        deviceMode = false
+                        DeviceModeState.enabled = false
+                        "Device settings request sent; using app mode unless device settings respond"
+                    },
+                    onFailure = {
+                        deviceMode = false
+                        DeviceModeState.enabled = false
+                        "Device settings unavailable; using app mode"
+                    },
                 )
             }
         }
@@ -394,39 +402,6 @@ fun SettingsScreen(
         status = "Settings saved"
     }
 
-    fun sendControl(
-        label: String,
-        action: Int,
-        connection: ActiveConnection = activeConnection,
-    ) {
-        status = "Sending $label..."
-        executor.execute {
-            val result = when (connection) {
-                ActiveConnection.BLE -> {
-                    bleClient.sendControl(
-                        action = action,
-                    )
-                }
-                ActiveConnection.USB -> {
-                    client.sendControl(
-                        action = action,
-                    )
-                }
-                ActiveConnection.NONE -> Result.failure(IllegalStateException("No TX connection"))
-            }
-            activity?.runOnUiThread {
-                result.fold(
-                    onSuccess = {
-                        status = "$label command sent via ${connection.name}"
-                    },
-                    onFailure = {
-                        status = it.message ?: "$label failed"
-                    },
-                )
-            }
-        }
-    }
-
     DisposableEffect(Unit) {
         fun handleSettingsFrame(frame: ByteArray) {
             val deviceSettings = decodeHaLowSyncFrame(frame, connectionPreferences.getMeshPassphrase())?.deviceSettings
@@ -438,12 +413,21 @@ fun SettingsScreen(
 
         val removeUsbSettingsListener = client.addFrameListener(::handleSettingsFrame)
         val removeBleSettingsListener = bleClient.addFrameListener(::handleSettingsFrame)
+        val removeUsbDebugListener = client.addDebugListener { line ->
+            activity?.runOnUiThread {
+                if (line.startsWith("CONNECT ")) {
+                    bleReady = false
+                    currentOnTransportConnectionChange(ActiveConnection.USB, true)
+                } else if (line == "CLOSE") {
+                    currentOnTransportConnectionChange(ActiveConnection.USB, false)
+                }
+            }
+        }
         val removeBleDebugListener = bleClient.addDebugListener { line ->
             activity?.runOnUiThread {
                 if (line == "SERVICE ready") {
                     bleReady = true
                     currentOnTransportConnectionChange(ActiveConnection.BLE, true)
-                    requestDeviceSettings(ActiveConnection.BLE)
                 } else if (line.startsWith("CONN") && line.contains("state=0") || line == "CLOSE") {
                     bleReady = false
                     currentOnTransportConnectionChange(ActiveConnection.BLE, false)
@@ -461,15 +445,19 @@ fun SettingsScreen(
         }
         val flags = if (Build.VERSION.SDK_INT >= 33) Context.RECEIVER_NOT_EXPORTED else 0
         context.registerReceiver(receiver, IntentFilter(ACTION_USB_PERMISSION), flags)
-        if (activeConnection != ActiveConnection.NONE) {
-            requestDeviceSettings(activeConnection)
-        }
         onDispose {
             context.unregisterReceiver(receiver)
             removeUsbSettingsListener()
             removeBleSettingsListener()
+            removeUsbDebugListener()
             removeBleDebugListener()
             executor.shutdownNow()
+        }
+    }
+
+    LaunchedEffect(activeConnection) {
+        if (activeConnection != ActiveConnection.NONE) {
+            requestDeviceSettings(activeConnection)
         }
     }
 
@@ -558,10 +546,6 @@ fun SettingsScreen(
                                 status = "Requesting USB permission"
                             } else {
                                 status = client.connect(candidate)
-                                onTransportConnectionChange(ActiveConnection.USB, true)
-                                bleReady = false
-                                sendControl("status", USB_CONTROL_ACTION_GET_STATUS, connection = ActiveConnection.USB)
-                                requestDeviceSettings(ActiveConnection.USB)
                             }
                         }) { Text("Connect") }
                     }
