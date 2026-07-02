@@ -1,7 +1,15 @@
 package ai.edgez.edgez
 
+import android.Manifest
+import android.annotation.SuppressLint
+import android.content.Context
+import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationManager
 import android.util.Log
 import android.view.MotionEvent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -39,13 +47,39 @@ private const val TAG_MAP = "EdgeZMap"
 private const val DEFAULT_MAP_ZOOM = 12
 private const val REGION_AUTOCACHE_INTERVAL_MS = 3_500L
 private const val REGION_AUTOCACHE_INITIAL_DELAY_MS = 5_000L
+private const val MAP_REFRESH_DELAY_MS = 250L
+
+private data class MapTarget(
+    val latitude: Double,
+    val longitude: Double,
+    val label: String,
+)
 
 @Composable
 fun MapScreen(users: List<HaLowUser>) {
     val context = LocalContext.current
     val application = context.applicationContext as EdgeZApplication
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val targetUser by rememberUpdatedState(users.firstOrNull { it.hasLocation() })
+    var locationPermissionGranted by remember { mutableStateOf(context.hasMapLocationPermission()) }
+    var phoneLocation by remember { mutableStateOf<Location?>(null) }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grants ->
+        locationPermissionGranted = grants.values.any { it } || context.hasMapLocationPermission()
+    }
+    val targetUser = users.firstOrNull { it.hasLocation() }
+    val target = targetUser?.let { user ->
+        val latitude = user.latitude
+        val longitude = user.longitude
+        if (latitude != null && longitude != null) {
+            MapTarget(latitude, longitude, user.displayName)
+        } else {
+            null
+        }
+    } ?: phoneLocation?.let { location ->
+        MapTarget(location.latitude, location.longitude, "phone location")
+    }
+    val targetState by rememberUpdatedState(target)
 
     var initialized by remember { mutableStateOf(application.organicMaps.arePlatformAndCoreInitialized()) }
     var status by remember { mutableStateOf("Starting offline map") }
@@ -69,6 +103,47 @@ fun MapScreen(users: List<HaLowUser>) {
         }
     }
 
+    LaunchedEffect(initialized, locationPermissionGranted) {
+        if (initialized && !locationPermissionGranted) {
+            permissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                ),
+            )
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    DisposableEffect(initialized, locationPermissionGranted, controller) {
+        val locationHelper = application.organicMaps.locationHelper
+        if (initialized && locationPermissionGranted && controller != null) {
+            runCatching {
+                locationHelper.start()
+            }.onFailure { error ->
+                Log.w(TAG_MAP, "Unable to start map location updates", error)
+            }
+        }
+        onDispose {
+            if (initialized && locationPermissionGranted && controller != null) {
+                locationHelper.stop()
+            }
+        }
+    }
+
+    LaunchedEffect(initialized, locationPermissionGranted, controller) {
+        if (!initialized || !locationPermissionGranted || controller == null) {
+            phoneLocation = null
+            return@LaunchedEffect
+        }
+
+        while (true) {
+            phoneLocation = application.organicMaps.locationHelper.savedLocation
+                ?: context.getBestKnownMapLocation()
+            delay(PHONE_LOCATION_REFRESH_MS)
+        }
+    }
+
     LaunchedEffect(initialized, controller) {
         if (!initialized || controller == null) {
             return@LaunchedEffect
@@ -82,6 +157,14 @@ fun MapScreen(users: List<HaLowUser>) {
                 status = "Map region available to download"
             }
             delay(REGION_AUTOCACHE_INTERVAL_MS)
+        }
+    }
+
+    LaunchedEffect(initialized, controller, target?.latitude, target?.longitude) {
+        if (initialized && controller != null) {
+            centerOnTarget(target, controller)
+            delay(MAP_REFRESH_DELAY_MS)
+            centerOnTarget(target, controller)
         }
     }
 
@@ -161,15 +244,15 @@ fun MapScreen(users: List<HaLowUser>) {
                                 object : MapRenderingListener {
                                     override fun onRenderingCreated() {
                                         status = "Offline map ready"
-                                        centerOnTarget(targetUser)
+                                        centerOnTarget(targetState, controller)
                                     }
 
                                     override fun onRenderingRestored() {
-                                        centerOnTarget(targetUser)
+                                        centerOnTarget(targetState, controller)
                                     }
 
                                     override fun onRenderingInitializationFinished() {
-                                        centerOnTarget(targetUser)
+                                        centerOnTarget(targetState, controller)
                                     }
                                 },
                                 {
@@ -247,15 +330,50 @@ private fun MapDownloadPrompt(
     }
 }
 
-private fun centerOnTarget(user: HaLowUser?) {
-    val latitude = user?.latitude ?: return
-    val longitude = user.longitude ?: return
+private const val PHONE_LOCATION_REFRESH_MS = 1_000L
+
+private fun centerOnTarget(target: MapTarget?, controller: MapController?) {
+    val latitude = target?.latitude
+    val longitude = target?.longitude
     runCatching {
-        Framework.nativeStopLocationFollow()
-        Framework.nativeSetViewportCenter(latitude, longitude, DEFAULT_MAP_ZOOM)
+        if (latitude != null && longitude != null) {
+            Framework.nativeStopLocationFollow()
+            Framework.nativeZoomToPoint(latitude, longitude, DEFAULT_MAP_ZOOM, false)
+        }
+        forceMapRefresh(controller)
     }.onFailure { error ->
-        Log.w(TAG_MAP, "Unable to center map on ${user.displayName}", error)
+        Log.w(TAG_MAP, "Unable to refresh map for ${target?.label ?: "current viewport"}", error)
     }
+}
+
+private fun forceMapRefresh(controller: MapController?) {
+    controller?.updateCompassOffset(0, 0)
+    controller?.view?.postInvalidate()
+}
+
+private fun Context.hasMapLocationPermission(): Boolean {
+    return checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+        checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+}
+
+private fun Context.getBestKnownMapLocation(): Location? {
+    if (!hasMapLocationPermission()) return null
+    val locationManager = getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
+    val hasFine = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    val providers = if (hasFine) {
+        listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER)
+    } else {
+        listOf(LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER)
+    }
+    return providers.mapNotNull { provider ->
+        runCatching {
+            if (locationManager.isProviderEnabled(provider)) {
+                locationManager.getLastKnownLocation(provider)
+            } else {
+                null
+            }
+        }.getOrNull()
+    }.maxByOrNull { it.time }
 }
 
 private fun findDownloadableRegion(requestedRegions: Set<String>): String? {
