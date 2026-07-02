@@ -12,5 +12,8 @@
 /captures
 .externalNativeBuild
 .cxx
+.gradle-local/
+organicmaps-*/build/
+organicmaps-*/nativeOutputs/
 local.properties
 .idea/
