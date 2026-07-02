@@ -209,6 +209,7 @@ fun EdgeZApp() {
         if (connected && connection != ActiveConnection.NONE) {
             markTransportConnected(connection)
         } else if (activeConnection == connection) {
+            DeviceModeState.enabled = false
             activeConnection = ActiveConnection.NONE
             haLowStatus = null
             selectedConversationUser = null
@@ -218,6 +219,25 @@ fun EdgeZApp() {
             scheduleReconnect(connection)
         }
     }
+
+    fun disconnectTransport(connection: ActiveConnection) {
+        clearReconnect()
+        when (connection) {
+            ActiveConnection.USB -> usbClient.close()
+            ActiveConnection.BLE -> bleClient.close()
+            ActiveConnection.NONE -> Unit
+        }
+        if (activeConnection == connection || connection == ActiveConnection.NONE) {
+            DeviceModeState.enabled = false
+            activeConnection = ActiveConnection.NONE
+            haLowStatus = null
+            selectedConversationUser = null
+            resetHaLowInitTrigger()
+            EdgeZBeaconRunner.setActiveConnection(ActiveConnection.NONE)
+            BleForegroundService.stop(context.applicationContext)
+        }
+    }
+
     val currentSetTransportConnected by rememberUpdatedState<(ActiveConnection, Boolean) -> Unit> { connection, connected ->
         setTransportConnected(connection, connected)
     }
@@ -230,7 +250,7 @@ fun EdgeZApp() {
                 resetHaLowInitTrigger()
                 return
             }
-            if (lastConnectionPreferences.getDeviceModeEnabled()) return
+            if (DeviceModeState.enabled) return
 
             val meshId = lastConnectionPreferences.getMeshId()
             if (meshId.isBlank()) return
@@ -782,6 +802,9 @@ fun EdgeZApp() {
                 },
                 onTransportConnectionChange = { connection, connected ->
                     setTransportConnected(connection, connected)
+                },
+                onTransportDisconnect = { connection ->
+                    disconnectTransport(connection)
                 },
             )
         }

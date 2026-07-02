@@ -93,7 +93,7 @@ object EdgeZBeaconRunner {
         }
 
         val preferences = LastConnectionPreferences(context)
-        if (preferences.getDeviceModeEnabled()) return
+        if (DeviceModeState.enabled) return
         val userIdentity = preferences.getOrCreateUserIdentity()
         val meshPassphrase = preferences.getMeshPassphrase()
         val marker = preferences.getUserMarker()

@@ -66,9 +66,23 @@ fun SettingsScreen(
     shareLocation: Boolean,
     onShareLocationChange: (Boolean) -> Unit,
     onTransportConnectionChange: (ActiveConnection, Boolean) -> Unit,
+    onTransportDisconnect: (ActiveConnection) -> Unit,
 ) {
     val context = LocalContext.current
     val connectionPreferences = remember { LastConnectionPreferences(context.applicationContext) }
+    fun newDeviceIdentity(name: String = "EdgeZ Device"): UserIdentity {
+        val uuid = UUID.randomUUID()
+        val keyPair = X25519KeyGenerator.generateKeyPair()
+        return UserIdentity(
+            userUuid = uuid.toString(),
+            userIdHigh = uuid.mostSignificantBits,
+            userIdLow = uuid.leastSignificantBits,
+            name = name,
+            privateKey = keyPair.first,
+            publicKey = keyPair.second,
+        )
+    }
+
     var candidates by remember { mutableStateOf(client.scan()) }
     var selected by remember { mutableStateOf<UsbCandidate?>(candidates.firstOrNull()) }
     var bleCandidates by remember { mutableStateOf(listOf<BleCandidate>()) }
@@ -88,13 +102,21 @@ fun SettingsScreen(
     var userIdentity by remember { mutableStateOf(connectionPreferences.getOrCreateUserIdentity()) }
     var userName by rememberSaveable { mutableStateOf(userIdentity.name) }
     var userMarker by rememberSaveable { mutableStateOf(connectionPreferences.getUserMarker()) }
-    var deviceMode by rememberSaveable { mutableStateOf(connectionPreferences.getDeviceModeEnabled()) }
+    var deviceIdentity by remember { mutableStateOf<UserIdentity?>(null) }
+    var deviceUserName by rememberSaveable { mutableStateOf("EdgeZ Device") }
+    var deviceUserMarker by rememberSaveable { mutableStateOf(NodeMapMarker.DEFAULT.id) }
+    var deviceMeshId by rememberSaveable { mutableStateOf("edgez") }
+    var deviceBeaconIntervalSeconds by rememberSaveable { mutableStateOf(DEFAULT_BEACON_INTERVAL_SECONDS.toString()) }
+    var deviceShareLocation by rememberSaveable { mutableStateOf(false) }
+    var deviceLatitude by rememberSaveable { mutableStateOf<Double?>(null) }
+    var deviceLongitude by rememberSaveable { mutableStateOf<Double?>(null) }
+    var deviceMode by rememberSaveable { mutableStateOf(DeviceModeState.enabled) }
     var autoReplayReceivedVoice by rememberSaveable { mutableStateOf(connectionPreferences.getAutoReplayReceivedVoice()) }
     var showDebugPopup by rememberSaveable { mutableStateOf(false) }
     var status by remember { mutableStateOf("Connect the ESP32-S3 USB port, then scan.") }
     val activity = context as? ComponentActivity
-    val currentDeviceMode by rememberUpdatedState(deviceMode)
     val currentOnTransportConnectionChange by rememberUpdatedState(onTransportConnectionChange)
+    val showDeviceSettingsOnly = activeConnection != ActiveConnection.NONE && deviceMode
 
     if (showDebugPopup) {
         DebugScreen(
@@ -107,6 +129,30 @@ fun SettingsScreen(
     }
 
     val executor = remember { Executors.newSingleThreadExecutor() }
+
+    fun reloadAppSettingsFromPreferences() {
+        meshCountry = connectionPreferences.getMeshCountry()
+        meshId = connectionPreferences.getMeshId()
+        passphrase = connectionPreferences.getMeshPassphrase()
+        maxHop = connectionPreferences.getMeshMaxHop().toString()
+        beaconIntervalSeconds = connectionPreferences.getBeaconIntervalSeconds().toString()
+        userIdentity = connectionPreferences.getOrCreateUserIdentity()
+        userName = userIdentity.name
+        userMarker = connectionPreferences.getUserMarker()
+        deviceMode = false
+        DeviceModeState.enabled = false
+        autoReplayReceivedVoice = connectionPreferences.getAutoReplayReceivedVoice()
+        onShareLocationChange(connectionPreferences.getShareLocation())
+    }
+
+    fun ensureDeviceIdentity(): UserIdentity {
+        val existing = deviceIdentity
+        if (existing != null) return existing
+        val generated = newDeviceIdentity(deviceUserName.ifBlank { "EdgeZ Device" })
+        deviceIdentity = generated
+        deviceUserName = generated.name
+        return generated
+    }
 
     fun requestBlePermissions() {
         val required = if (Build.VERSION.SDK_INT >= 33) {
@@ -194,51 +240,71 @@ fun SettingsScreen(
 
     fun applyDeviceSettings(settings: DeviceSettings) {
         deviceMode = settings.deviceModeEnabled
-        connectionPreferences.setDeviceModeEnabled(settings.deviceModeEnabled)
+        DeviceModeState.enabled = settings.deviceModeEnabled
         if (settings.meshId.isNotBlank()) {
-            meshId = settings.meshId
+            deviceMeshId = settings.meshId
         }
-        onShareLocationChange(settings.shareLocation)
-        userName = settings.userName.ifBlank { userName }
-        userMarker = NodeMapMarker.normalize(settings.marker)
+        deviceShareLocation = settings.shareLocation
+        deviceUserName = settings.userName.ifBlank { deviceUserName }
+        deviceUserMarker = NodeMapMarker.normalize(settings.marker)
         if (settings.beaconIntervalSeconds > 0) {
-            beaconIntervalSeconds = settings.beaconIntervalSeconds.toString()
+            deviceBeaconIntervalSeconds = settings.beaconIntervalSeconds.toString()
         }
-        if ((settings.userIdHigh != 0L || settings.userIdLow != 0L) && settings.userPrivateKey.size == 32) {
+        if ((deviceLatitude == null || deviceLongitude == null) && settings.latitude != null && settings.longitude != null) {
+            deviceLatitude = settings.latitude
+            deviceLongitude = settings.longitude
+        }
+        if (deviceIdentity == null && (settings.userIdHigh != 0L || settings.userIdLow != 0L) && settings.userPrivateKey.size == 32) {
             val publicKey = if (settings.userPublicKey.size == 32) {
                 settings.userPublicKey
             } else {
                 X25519KeyGenerator.publicKey(settings.userPrivateKey)
             }
-            userIdentity = UserIdentity(
+            deviceIdentity = UserIdentity(
                 userUuid = UUID(settings.userIdHigh, settings.userIdLow).toString(),
                 userIdHigh = settings.userIdHigh,
                 userIdLow = settings.userIdLow,
-                name = userName.ifBlank { settings.userName },
+                name = deviceUserName.ifBlank { settings.userName },
                 privateKey = settings.userPrivateKey,
                 publicKey = publicKey,
             )
-            connectionPreferences.saveUserIdentity(userIdentity)
+        } else if (deviceIdentity == null && settings.deviceModeEnabled) {
+            ensureDeviceIdentity()
         }
         status = "Device settings loaded"
     }
 
     fun currentDeviceSettings(enabled: Boolean = deviceMode): DeviceSettings {
-        val location = if (shareLocation) currentLocationPair() else null
+        val identity = ensureDeviceIdentity()
         return DeviceSettings(
             deviceModeEnabled = enabled,
-            meshId = meshId,
-            shareLocation = shareLocation,
-            userName = userName,
-            marker = userMarker,
-            beaconIntervalSeconds = beaconIntervalSeconds.toIntOrNull() ?: DEFAULT_BEACON_INTERVAL_SECONDS,
-            userIdHigh = userIdentity.userIdHigh,
-            userIdLow = userIdentity.userIdLow,
-            userPublicKey = userIdentity.publicKey,
-            userPrivateKey = userIdentity.privateKey,
-            latitude = location?.first,
-            longitude = location?.second,
+            meshId = deviceMeshId.ifBlank { "edgez" },
+            shareLocation = deviceShareLocation,
+            userName = deviceUserName,
+            marker = deviceUserMarker,
+            beaconIntervalSeconds = deviceBeaconIntervalSeconds.toIntOrNull() ?: DEFAULT_BEACON_INTERVAL_SECONDS,
+            userIdHigh = identity.userIdHigh,
+            userIdLow = identity.userIdLow,
+            userPublicKey = identity.publicKey,
+            userPrivateKey = identity.privateKey,
+            latitude = deviceLatitude.takeIf { deviceShareLocation },
+            longitude = deviceLongitude.takeIf { deviceShareLocation },
         )
+    }
+
+    fun refreshDeviceLocation() {
+        val location = currentLocationPair()
+        if (location == null) {
+            if (!hasLocationPermission()) {
+                requestLocationPermissions()
+            } else {
+                status = "No phone location available"
+            }
+            return
+        }
+        deviceLatitude = location.first
+        deviceLongitude = location.second
+        status = "Device location refreshed"
     }
 
     fun requestDeviceSettings(connection: ActiveConnection = activeConnection) {
@@ -285,6 +351,26 @@ fun SettingsScreen(
                 )
             }
         }
+    }
+
+    fun disconnectActiveTransport() {
+        val connection = activeConnection
+        DeviceModeState.enabled = false
+        reloadAppSettingsFromPreferences()
+        if (connection == ActiveConnection.NONE) {
+            status = "Disconnected"
+            return
+        }
+        when (connection) {
+            ActiveConnection.USB -> client.close()
+            ActiveConnection.BLE -> {
+                bleReady = false
+                bleClient.close()
+            }
+            ActiveConnection.NONE -> Unit
+        }
+        onTransportDisconnect(connection)
+        status = "Disconnected from ${connection.name}"
     }
 
     fun saveMeshPreferences(
@@ -357,13 +443,7 @@ fun SettingsScreen(
                 if (line == "SERVICE ready") {
                     bleReady = true
                     currentOnTransportConnectionChange(ActiveConnection.BLE, true)
-                    if (currentDeviceMode) {
-                        sendDeviceSettingsToDevice(
-                            currentDeviceSettings(enabled = true),
-                            ActiveConnection.BLE,
-                            "Device mode settings",
-                        )
-                    }
+                    requestDeviceSettings(ActiveConnection.BLE)
                 } else if (line.startsWith("CONN") && line.contains("state=0") || line == "CLOSE") {
                     bleReady = false
                     currentOnTransportConnectionChange(ActiveConnection.BLE, false)
@@ -381,6 +461,9 @@ fun SettingsScreen(
         }
         val flags = if (Build.VERSION.SDK_INT >= 33) Context.RECEIVER_NOT_EXPORTED else 0
         context.registerReceiver(receiver, IntentFilter(ACTION_USB_PERMISSION), flags)
+        if (activeConnection != ActiveConnection.NONE) {
+            requestDeviceSettings(activeConnection)
+        }
         onDispose {
             context.unregisterReceiver(receiver)
             removeUsbSettingsListener()
@@ -408,11 +491,13 @@ fun SettingsScreen(
                 Text(status, style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { showDebugPopup = true }) {
-                        Text("Debug")
-                    }
-                    Button(onClick = { requestIgnoreBatteryOptimizations() }) {
-                        Text("Allow background connection")
+                    if (!showDeviceSettingsOnly) {
+                        Button(onClick = { showDebugPopup = true }) {
+                            Text("Debug")
+                        }
+                        Button(onClick = { requestIgnoreBatteryOptimizations() }) {
+                            Text("Allow background connection")
+                        }
                     }
                 }
             }
@@ -432,7 +517,7 @@ fun SettingsScreen(
                             checked = deviceMode,
                             onCheckedChange = { enabled ->
                                 deviceMode = enabled
-                                connectionPreferences.setDeviceModeEnabled(enabled)
+                                DeviceModeState.enabled = enabled
                                 sendDeviceSettingsToDevice(
                                     currentDeviceSettings(enabled = enabled),
                                     label = if (enabled) "Device mode settings" else "App mode settings",
@@ -449,17 +534,16 @@ fun SettingsScreen(
                         ) {
                             Text("Load")
                         }
-                        Button(
-                            enabled = activeConnection != ActiveConnection.NONE,
-                            onClick = { sendDeviceSettingsToDevice() },
-                        ) {
-                            Text("Save to device")
+                        if (showDeviceSettingsOnly) {
+                            Button(onClick = { disconnectActiveTransport() }) {
+                                Text("Disconnect")
+                            }
                         }
                     }
                 }
             }
 
-            item {
+            if (!showDeviceSettingsOnly) item {
                 SettingsCard(title = "USB connection") {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = {
@@ -477,13 +561,7 @@ fun SettingsScreen(
                                 onTransportConnectionChange(ActiveConnection.USB, true)
                                 bleReady = false
                                 sendControl("status", USB_CONTROL_ACTION_GET_STATUS, connection = ActiveConnection.USB)
-                                if (deviceMode) {
-                                    sendDeviceSettingsToDevice(
-                                        currentDeviceSettings(enabled = true),
-                                        ActiveConnection.USB,
-                                        "Device mode settings",
-                                    )
-                                }
+                                requestDeviceSettings(ActiveConnection.USB)
                             }
                         }) { Text("Connect") }
                     }
@@ -492,7 +570,7 @@ fun SettingsScreen(
                 }
             }
 
-            item {
+            if (!showDeviceSettingsOnly) item {
                 SettingsCard(title = "BLE connection") {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = {
@@ -558,30 +636,60 @@ fun SettingsScreen(
             }
 
             item {
-                SettingsCard(title = "User") {
+                SettingsCard(title = if (showDeviceSettingsOnly) "Device user" else "User") {
                     Text("User ID", style = MaterialTheme.typography.titleSmall)
-                    Text(userIdentity.userUuid, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        if (showDeviceSettingsOnly) deviceIdentity?.userUuid ?: "Not loaded" else userIdentity.userUuid,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
-                        value = userName,
-                        onValueChange = { userName = it.take(64) },
+                        value = if (showDeviceSettingsOnly) deviceUserName else userName,
+                        onValueChange = { value ->
+                            if (showDeviceSettingsOnly) {
+                                deviceUserName = value.take(64)
+                            } else {
+                                userName = value.take(64)
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Name") },
                         singleLine = true,
                     )
                     Spacer(Modifier.height(8.dp))
                     Text("X25519 public key", style = MaterialTheme.typography.titleSmall)
-                    Text(formatHex(userIdentity.publicKey), style = MaterialTheme.typography.bodySmall)
-                    Spacer(Modifier.height(10.dp))
-                    Button(onClick = {
-                        connectionPreferences.setUserName(userName)
-                        connectionPreferences.setUserMarker(userMarker)
-                        connectionPreferences.setShareLocation(shareLocation)
-                        userIdentity = connectionPreferences.regenerateUserKeyPair()
-                        userName = userIdentity.name
-                        status = "X25519 key pair regenerated"
-                    }) {
-                        Text("Generate key pair")
+                    Text(
+                        if (showDeviceSettingsOnly) {
+                            deviceIdentity?.publicKey?.let(::formatHex) ?: "Not loaded"
+                        } else {
+                            formatHex(userIdentity.publicKey)
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    if (showDeviceSettingsOnly) {
+                        Spacer(Modifier.height(8.dp))
+                        Text("X25519 private key", style = MaterialTheme.typography.titleSmall)
+                        Text(deviceIdentity?.privateKey?.let(::formatHex) ?: "Not loaded", style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.height(10.dp))
+                        Button(onClick = {
+                            deviceIdentity = newDeviceIdentity(deviceUserName.ifBlank { "EdgeZ Device" })
+                            deviceUserName = deviceIdentity?.name ?: "EdgeZ Device"
+                            status = "Device X25519 key pair regenerated"
+                        }) {
+                            Text("Generate device key pair")
+                        }
+                    } else {
+                        Spacer(Modifier.height(10.dp))
+                        Button(onClick = {
+                            connectionPreferences.setUserName(userName)
+                            connectionPreferences.setUserMarker(userMarker)
+                            connectionPreferences.setShareLocation(shareLocation)
+                            userIdentity = connectionPreferences.regenerateUserKeyPair()
+                            userName = userIdentity.name
+                            status = "X25519 key pair regenerated"
+                        }) {
+                            Text("Generate key pair")
+                        }
                     }
                     Spacer(Modifier.height(10.dp))
                     Box(modifier = Modifier.fillMaxWidth()) {
@@ -589,7 +697,9 @@ fun SettingsScreen(
                             modifier = Modifier.fillMaxWidth(),
                             onClick = { markerDropdownExpanded = true },
                         ) {
-                            Text("Marker: ${NodeMapMarker.fromId(userMarker).label}")
+                            Text(
+                                "Marker: ${NodeMapMarker.fromId(if (showDeviceSettingsOnly) deviceUserMarker else userMarker).label}",
+                            )
                         }
                         DropdownMenu(
                             expanded = markerDropdownExpanded,
@@ -599,9 +709,13 @@ fun SettingsScreen(
                                 DropdownMenuItem(
                                     text = { Text(marker.label) },
                                     onClick = {
-                                        userMarker = marker.id
+                                        if (showDeviceSettingsOnly) {
+                                            deviceUserMarker = marker.id
+                                        } else {
+                                            userMarker = marker.id
+                                        }
                                         markerDropdownExpanded = false
-                                        if (!deviceMode) {
+                                        if (!showDeviceSettingsOnly) {
                                             connectionPreferences.setUserMarker(marker.id)
                                         }
                                         status = "Marker set to ${marker.label}"
@@ -621,12 +735,14 @@ fun SettingsScreen(
                             Text("Include location in HaLow beacon", style = MaterialTheme.typography.bodySmall)
                         }
                         Switch(
-                            checked = shareLocation,
+                            checked = if (showDeviceSettingsOnly) deviceShareLocation else shareLocation,
                             onCheckedChange = { enabled ->
-                                if (!deviceMode) {
+                                if (showDeviceSettingsOnly) {
+                                    deviceShareLocation = enabled
+                                } else {
                                     connectionPreferences.setShareLocation(enabled)
+                                    onShareLocationChange(enabled)
                                 }
-                                onShareLocationChange(enabled)
                                 if (enabled && !hasLocationPermission()) {
                                     requestLocationPermissions()
                                 } else {
@@ -635,65 +751,90 @@ fun SettingsScreen(
                             },
                         )
                     }
+                    if (showDeviceSettingsOnly) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Location: ${formatLocation(deviceLatitude, deviceLongitude)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Button(onClick = { refreshDeviceLocation() }) {
+                            Text("Refresh location")
+                        }
+                    }
                 }
             }
 
             item {
-                SettingsCard(title = "Mesh network") {
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        OutlinedButton(
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = { countryDropdownExpanded = true },
-                        ) {
-                            Text("Country: $meshCountry")
-                        }
-                        DropdownMenu(
-                            expanded = countryDropdownExpanded,
-                            onDismissRequest = { countryDropdownExpanded = false },
-                        ) {
-                            countryOptions.forEach { country ->
-                                DropdownMenuItem(
-                                    text = { Text(country) },
-                                    onClick = {
-                                        meshCountry = country
-                                        countryDropdownExpanded = false
-                                    },
-                                )
+                SettingsCard(title = if (showDeviceSettingsOnly) "Device settings" else "Mesh network") {
+                    if (!showDeviceSettingsOnly) {
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = { countryDropdownExpanded = true },
+                            ) {
+                                Text("Country: $meshCountry")
+                            }
+                            DropdownMenu(
+                                expanded = countryDropdownExpanded,
+                                onDismissRequest = { countryDropdownExpanded = false },
+                            ) {
+                                countryOptions.forEach { country ->
+                                    DropdownMenuItem(
+                                        text = { Text(country) },
+                                        onClick = {
+                                            meshCountry = country
+                                            countryDropdownExpanded = false
+                                        },
+                                    )
+                                }
                             }
                         }
+                        Spacer(Modifier.height(8.dp))
                     }
-                    Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
-                        value = meshId,
-                        onValueChange = { meshId = it.take(32) },
+                        value = if (showDeviceSettingsOnly) deviceMeshId else meshId,
+                        onValueChange = { value ->
+                            if (showDeviceSettingsOnly) {
+                                deviceMeshId = value.take(32)
+                            } else {
+                                meshId = value.take(32)
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Mesh ID / SSID") },
                         singleLine = true,
                     )
+                    if (!showDeviceSettingsOnly) {
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = passphrase,
+                            onValueChange = { passphrase = it.take(64) },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Passphrase") },
+                            singleLine = true,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = maxHop,
+                            onValueChange = { value ->
+                                maxHop = value.filter { it.isDigit() }.take(3)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Max hop") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        )
+                    }
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
-                        value = passphrase,
-                        onValueChange = { passphrase = it.take(64) },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Passphrase") },
-                        singleLine = true,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = maxHop,
+                        value = if (showDeviceSettingsOnly) deviceBeaconIntervalSeconds else beaconIntervalSeconds,
                         onValueChange = { value ->
-                            maxHop = value.filter { it.isDigit() }.take(3)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Max hop") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = beaconIntervalSeconds,
-                        onValueChange = { value ->
-                            beaconIntervalSeconds = value.filter { it.isDigit() }.take(4)
+                            if (showDeviceSettingsOnly) {
+                                deviceBeaconIntervalSeconds = value.filter { it.isDigit() }.take(4)
+                            } else {
+                                beaconIntervalSeconds = value.filter { it.isDigit() }.take(4)
+                            }
                         },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Beacon interval (seconds)") },
@@ -707,7 +848,7 @@ fun SettingsScreen(
                 }
             }
 
-            item {
+            if (!showDeviceSettingsOnly) item {
                 SettingsCard(title = "Chat") {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -737,6 +878,11 @@ private fun formatHex(bytes: ByteArray): String {
     return bytes.joinToString(separator = "") { "%02x".format(it.toInt() and 0xff) }
 }
 
+private fun formatLocation(latitude: Double?, longitude: Double?): String {
+    if (latitude == null || longitude == null) return "Not loaded"
+    return "%.6f, %.6f".format(latitude, longitude)
+}
+
 @Preview(showBackground = true)
 @Composable
 private fun SettingsPreview() {
@@ -749,6 +895,7 @@ private fun SettingsPreview() {
             shareLocation = false,
             onShareLocationChange = {},
             onTransportConnectionChange = { _, _ -> },
+            onTransportDisconnect = {},
         )
     }
 }
