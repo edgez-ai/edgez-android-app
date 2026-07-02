@@ -80,6 +80,7 @@ git -C "$BOOST_PATH" submodule update --init --depth 1 --filter=blob:none \
   libs/integer \
   libs/io \
   libs/iterator \
+  libs/lambda \
   libs/lexical_cast \
   libs/math \
   libs/move \
