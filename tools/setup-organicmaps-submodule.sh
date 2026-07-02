@@ -32,6 +32,7 @@ git -C "$SUBMODULE_PATH" sparse-checkout set --no-cone \
   '/data/*.bin' \
   '/data/*.dat' \
   '/data/*.mwm' \
+  /data/editor.config \
   /data/conf/ \
   /data/countries-strings/ \
   /data/fonts/ \
