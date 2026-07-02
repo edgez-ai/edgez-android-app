@@ -14,8 +14,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -45,6 +47,7 @@ import kotlinx.coroutines.delay
 
 private const val TAG_MAP = "EdgeZMap"
 private const val DEFAULT_MAP_ZOOM = 11
+private const val MIN_DOWNLOAD_PROMPT_ZOOM = 11
 private const val REGION_AUTOCACHE_INTERVAL_MS = 3_500L
 private const val REGION_AUTOCACHE_INITIAL_DELAY_MS = 5_000L
 private const val MAP_REFRESH_DELAY_MS = 250L
@@ -53,6 +56,11 @@ private data class MapTarget(
     val latitude: Double,
     val longitude: Double,
     val label: String,
+)
+
+private data class MapDownloadProgress(
+    val countryId: String,
+    val progress: Float?,
 )
 
 @Composable
@@ -85,6 +93,7 @@ fun MapScreen(users: List<HaLowUser>) {
     var status by remember { mutableStateOf("Starting offline map") }
     var controller by remember { mutableStateOf<MapController?>(null) }
     var pendingRegionId by remember { mutableStateOf<String?>(null) }
+    var downloadProgress by remember { mutableStateOf<MapDownloadProgress?>(null) }
     val requestedRegions = remember { mutableSetOf<String>() }
 
     LaunchedEffect(Unit) {
@@ -152,9 +161,13 @@ fun MapScreen(users: List<HaLowUser>) {
         runCatching { Framework.nativeRestoreDownloadQueue() }
         delay(REGION_AUTOCACHE_INITIAL_DELAY_MS)
         while (true) {
-            findDownloadableRegion(requestedRegions)?.let { regionId ->
-                pendingRegionId = regionId
-                status = "Map region available to download"
+            if (isDownloadPromptZoomAllowed()) {
+                findDownloadableRegion(requestedRegions)?.let { regionId ->
+                    pendingRegionId = regionId
+                    status = "Map region available to download"
+                }
+            } else {
+                pendingRegionId = null
             }
             delay(REGION_AUTOCACHE_INTERVAL_MS)
         }
@@ -175,11 +188,23 @@ fun MapScreen(users: List<HaLowUser>) {
                     val event = data.lastOrNull() ?: return
                     val name = event.countryId
                     status = when (event.newStatus) {
-                        CountryItem.STATUS_DONE -> "Offline map cached: $name"
-                        CountryItem.STATUS_PROGRESS -> "Downloading map: $name"
-                        CountryItem.STATUS_ENQUEUED -> "Queued map: $name"
+                        CountryItem.STATUS_DONE -> {
+                            downloadProgress = null
+                            "Offline map cached: $name"
+                        }
+                        CountryItem.STATUS_PROGRESS -> {
+                            if (downloadProgress?.countryId != name) {
+                                downloadProgress = MapDownloadProgress(name, null)
+                            }
+                            "Downloading map: $name"
+                        }
+                        CountryItem.STATUS_ENQUEUED -> {
+                            downloadProgress = MapDownloadProgress(name, null)
+                            "Queued map: $name"
+                        }
                         CountryItem.STATUS_FAILED -> {
                             requestedRegions.remove(event.countryId)
+                            downloadProgress = null
                             "Map download failed: $name"
                         }
                         else -> status
@@ -192,6 +217,14 @@ fun MapScreen(users: List<HaLowUser>) {
                     } else {
                         0L
                     }
+                    downloadProgress = MapDownloadProgress(
+                        countryId = countryId,
+                        progress = if (remoteSize > 0L) {
+                            (localSize.toFloat() / remoteSize.toFloat()).coerceIn(0f, 1f)
+                        } else {
+                            null
+                        },
+                    )
                     status = "Downloading map: $countryId $progress%"
                 }
             })
@@ -231,9 +264,13 @@ fun MapScreen(users: List<HaLowUser>) {
                         MapView(viewContext).also { mapView ->
                             mapView.setOnTouchListener { _, event ->
                                 if (event.actionMasked == MotionEvent.ACTION_UP) {
-                                    findDownloadableRegion(requestedRegions)?.let { regionId ->
-                                        pendingRegionId = regionId
-                                        status = "Map region available to download"
+                                    if (isDownloadPromptZoomAllowed()) {
+                                        findDownloadableRegion(requestedRegions)?.let { regionId ->
+                                            pendingRegionId = regionId
+                                            status = "Map region available to download"
+                                        }
+                                    } else {
+                                        pendingRegionId = null
                                     }
                                 }
                                 false
@@ -275,6 +312,7 @@ fun MapScreen(users: List<HaLowUser>) {
 
             if (pendingRegionId != null) {
                 MapDownloadPrompt(
+                    regionId = pendingRegionId.orEmpty(),
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(16.dp),
@@ -289,12 +327,62 @@ fun MapScreen(users: List<HaLowUser>) {
                     },
                 )
             }
+
+            downloadProgress?.let { progress ->
+                MapDownloadProgressPanel(
+                    progress = progress,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(16.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MapDownloadProgressPanel(
+    progress: MapDownloadProgress,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.small,
+        tonalElevation = 6.dp,
+        shadowElevation = 4.dp,
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            val progressFraction = progress.progress
+            val percent = progressFraction?.let { (it * 100).toInt().coerceIn(0, 100) }
+            Text(
+                text = if (percent != null) {
+                    "Downloading map: ${progress.countryId} $percent%"
+                } else {
+                    "Preparing map download: ${progress.countryId}"
+                },
+                style = MaterialTheme.typography.titleSmall,
+            )
+            if (progressFraction != null) {
+                LinearProgressIndicator(
+                    progress = { progressFraction },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                )
+            } else {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                )
+            }
         }
     }
 }
 
 @Composable
 private fun MapDownloadPrompt(
+    regionId: String,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
@@ -307,7 +395,7 @@ private fun MapDownloadPrompt(
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
-                text = "Download this map region?",
+                text = "Download map: $regionId?",
                 style = MaterialTheme.typography.titleSmall,
             )
             Text(
@@ -380,6 +468,9 @@ private fun findDownloadableRegion(requestedRegions: Set<String>): String? {
     if (!ConnectionState.INSTANCE.isConnected()) {
         return null
     }
+    if (!isDownloadPromptZoomAllowed()) {
+        return null
+    }
 
     return runCatching {
         if (Framework.nativeIsDownloadedMapAtScreenCenter()) {
@@ -398,6 +489,14 @@ private fun findDownloadableRegion(requestedRegions: Set<String>): String? {
     }.onFailure { error ->
         Log.w(TAG_MAP, "Unable to find downloadable map region", error)
     }.getOrNull()
+}
+
+private fun isDownloadPromptZoomAllowed(): Boolean {
+    return runCatching {
+        Framework.nativeGetDrawScale() >= MIN_DOWNLOAD_PROMPT_ZOOM
+    }.onFailure { error ->
+        Log.w(TAG_MAP, "Unable to read map zoom", error)
+    }.getOrDefault(false)
 }
 
 private fun startRegionDownload(regionId: String, requestedRegions: MutableSet<String>): String? {
