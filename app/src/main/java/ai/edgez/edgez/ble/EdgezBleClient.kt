@@ -26,6 +26,7 @@ import ai.edgez.edgez.usb.EDGEZ_MAGIC_0
 import ai.edgez.edgez.usb.EDGEZ_MAGIC_1
 import ai.edgez.edgez.usb.EDGEZ_MAX_PAYLOAD
 import ai.edgez.edgez.usb.ConversationMessage
+import ai.edgez.edgez.usb.DeviceSettings
 import ai.edgez.edgez.usb.EdgezUsbControlProto
 import ai.edgez.edgez.usb.PacketMime
 import java.nio.ByteBuffer
@@ -216,6 +217,14 @@ class EdgezBleClient(private val context: Context) {
                 marker,
             ),
         )
+    }
+
+    fun requestDeviceSettings(): Result<String> {
+        return sendFrame(EdgezUsbControlProto.encodeDeviceSettingsRequest())
+    }
+
+    fun sendDeviceSettings(settings: DeviceSettings): Result<String> {
+        return sendFrame(EdgezUsbControlProto.encodeDeviceSettingsSet(settings))
     }
 
     fun sendConversationMessage(

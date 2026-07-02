@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.hardware.usb.UsbManager
+import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
@@ -50,10 +51,12 @@ import ai.edgez.edgez.ble.BleCandidate
 import ai.edgez.edgez.ble.EdgezBleClient
 import ai.edgez.edgez.ui.theme.EdgeZTheme
 import ai.edgez.edgez.usb.ACTION_USB_PERMISSION
+import ai.edgez.edgez.usb.DeviceSettings
 import ai.edgez.edgez.usb.EdgezUsbClient
 import ai.edgez.edgez.usb.USB_CONTROL_ACTION_GET_STATUS
 import ai.edgez.edgez.usb.UsbCandidate
 import java.util.concurrent.Executors
+import java.util.UUID
 
 @Composable
 fun SettingsScreen(
@@ -85,11 +88,12 @@ fun SettingsScreen(
     var userIdentity by remember { mutableStateOf(connectionPreferences.getOrCreateUserIdentity()) }
     var userName by rememberSaveable { mutableStateOf(userIdentity.name) }
     var userMarker by rememberSaveable { mutableStateOf(connectionPreferences.getUserMarker()) }
+    var deviceMode by rememberSaveable { mutableStateOf(connectionPreferences.getDeviceModeEnabled()) }
     var autoReplayReceivedVoice by rememberSaveable { mutableStateOf(connectionPreferences.getAutoReplayReceivedVoice()) }
     var showDebugPopup by rememberSaveable { mutableStateOf(false) }
     var status by remember { mutableStateOf("Connect the ESP32-S3 USB port, then scan.") }
     val activity = context as? ComponentActivity
-    val currentActiveConnection by rememberUpdatedState(activeConnection)
+    val currentDeviceMode by rememberUpdatedState(deviceMode)
     val currentOnTransportConnectionChange by rememberUpdatedState(onTransportConnectionChange)
 
     if (showDebugPopup) {
@@ -164,6 +168,124 @@ fun SettingsScreen(
         status = "Requesting location permission"
     }
 
+    fun currentLocationPair(): Pair<Double, Double>? {
+        val hasFine = context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val hasCoarse = context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!hasFine && !hasCoarse) return null
+        val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
+        val providers = if (hasFine) {
+            listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER)
+        } else {
+            listOf(LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER)
+        }
+        val location = providers.mapNotNull { provider ->
+            runCatching {
+                if (locationManager.isProviderEnabled(provider)) {
+                    locationManager.getLastKnownLocation(provider)
+                } else {
+                    null
+                }
+            }.getOrNull()
+        }.maxByOrNull { it.time }
+        return location?.latitude?.let { lat ->
+            location.longitude.let { lon -> lat to lon }
+        }
+    }
+
+    fun applyDeviceSettings(settings: DeviceSettings) {
+        deviceMode = settings.deviceModeEnabled
+        connectionPreferences.setDeviceModeEnabled(settings.deviceModeEnabled)
+        if (settings.meshId.isNotBlank()) {
+            meshId = settings.meshId
+        }
+        onShareLocationChange(settings.shareLocation)
+        userName = settings.userName.ifBlank { userName }
+        userMarker = NodeMapMarker.normalize(settings.marker)
+        if (settings.beaconIntervalSeconds > 0) {
+            beaconIntervalSeconds = settings.beaconIntervalSeconds.toString()
+        }
+        if ((settings.userIdHigh != 0L || settings.userIdLow != 0L) && settings.userPrivateKey.size == 32) {
+            val publicKey = if (settings.userPublicKey.size == 32) {
+                settings.userPublicKey
+            } else {
+                X25519KeyGenerator.publicKey(settings.userPrivateKey)
+            }
+            userIdentity = UserIdentity(
+                userUuid = UUID(settings.userIdHigh, settings.userIdLow).toString(),
+                userIdHigh = settings.userIdHigh,
+                userIdLow = settings.userIdLow,
+                name = userName.ifBlank { settings.userName },
+                privateKey = settings.userPrivateKey,
+                publicKey = publicKey,
+            )
+            connectionPreferences.saveUserIdentity(userIdentity)
+        }
+        status = "Device settings loaded"
+    }
+
+    fun currentDeviceSettings(enabled: Boolean = deviceMode): DeviceSettings {
+        val location = if (shareLocation) currentLocationPair() else null
+        return DeviceSettings(
+            deviceModeEnabled = enabled,
+            meshId = meshId,
+            shareLocation = shareLocation,
+            userName = userName,
+            marker = userMarker,
+            beaconIntervalSeconds = beaconIntervalSeconds.toIntOrNull() ?: DEFAULT_BEACON_INTERVAL_SECONDS,
+            userIdHigh = userIdentity.userIdHigh,
+            userIdLow = userIdentity.userIdLow,
+            userPublicKey = userIdentity.publicKey,
+            userPrivateKey = userIdentity.privateKey,
+            latitude = location?.first,
+            longitude = location?.second,
+        )
+    }
+
+    fun requestDeviceSettings(connection: ActiveConnection = activeConnection) {
+        if (connection == ActiveConnection.NONE) {
+            status = "Connect USB or BLE before loading device settings"
+            return
+        }
+        status = "Loading device settings..."
+        executor.execute {
+            val result = when (connection) {
+                ActiveConnection.USB -> client.requestDeviceSettings()
+                ActiveConnection.BLE -> bleClient.requestDeviceSettings()
+                ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+            }
+            activity?.runOnUiThread {
+                status = result.fold(
+                    onSuccess = { "Device settings request sent" },
+                    onFailure = { it.message ?: "Device settings request failed" },
+                )
+            }
+        }
+    }
+
+    fun sendDeviceSettingsToDevice(
+        settings: DeviceSettings = currentDeviceSettings(),
+        connection: ActiveConnection = activeConnection,
+    ) {
+        if (connection == ActiveConnection.NONE) {
+            status = "Connect USB or BLE before saving device settings"
+            return
+        }
+        status = "Saving device settings..."
+        executor.execute {
+            val result = when (connection) {
+                ActiveConnection.USB -> client.sendDeviceSettings(settings)
+                ActiveConnection.BLE -> bleClient.sendDeviceSettings(settings)
+                ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+            }
+            activity?.runOnUiThread {
+                status = result.fold(
+                    onSuccess = { "Device settings sent" },
+                    onFailure = { it.message ?: "Device settings save failed" },
+                )
+            }
+        }
+    }
+
     fun saveMeshPreferences(
         country: String = meshCountry,
         id: String = meshId,
@@ -171,6 +293,10 @@ fun SettingsScreen(
         hopLimit: Int = maxHop.toIntOrNull() ?: 2,
         beaconInterval: Int = beaconIntervalSeconds.toIntOrNull() ?: DEFAULT_BEACON_INTERVAL_SECONDS,
     ) {
+        if (deviceMode) {
+            sendDeviceSettingsToDevice()
+            return
+        }
         connectionPreferences.setMeshCredentials(country, id, password, hopLimit, beaconInterval)
         maxHop = connectionPreferences.getMeshMaxHop().toString()
         beaconIntervalSeconds = connectionPreferences.getBeaconIntervalSeconds().toString()
@@ -215,11 +341,24 @@ fun SettingsScreen(
     }
 
     DisposableEffect(Unit) {
+        fun handleSettingsFrame(frame: ByteArray) {
+            val deviceSettings = decodeHaLowSyncFrame(frame, connectionPreferences.getMeshPassphrase())?.deviceSettings
+                ?: return
+            activity?.runOnUiThread {
+                applyDeviceSettings(deviceSettings)
+            }
+        }
+
+        val removeUsbSettingsListener = client.addFrameListener(::handleSettingsFrame)
+        val removeBleSettingsListener = bleClient.addFrameListener(::handleSettingsFrame)
         val removeBleDebugListener = bleClient.addDebugListener { line ->
             activity?.runOnUiThread {
                 if (line == "SERVICE ready") {
                     bleReady = true
                     currentOnTransportConnectionChange(ActiveConnection.BLE, true)
+                    if (currentDeviceMode) {
+                        requestDeviceSettings(ActiveConnection.BLE)
+                    }
                 } else if (line.startsWith("CONN") && line.contains("state=0") || line == "CLOSE") {
                     bleReady = false
                     currentOnTransportConnectionChange(ActiveConnection.BLE, false)
@@ -239,6 +378,8 @@ fun SettingsScreen(
         context.registerReceiver(receiver, IntentFilter(ACTION_USB_PERMISSION), flags)
         onDispose {
             context.unregisterReceiver(receiver)
+            removeUsbSettingsListener()
+            removeBleSettingsListener()
             removeBleDebugListener()
             executor.shutdownNow()
         }
@@ -257,6 +398,8 @@ fun SettingsScreen(
                 Spacer(Modifier.height(6.dp))
                 Text("Interface: ${activeConnection.name}", style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(6.dp))
+                Text("Settings source: ${if (deviceMode) "Device" else "App"}", style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(6.dp))
                 Text(status, style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -265,6 +408,50 @@ fun SettingsScreen(
                     }
                     Button(onClick = { requestIgnoreBatteryOptimizations() }) {
                         Text("Allow background connection")
+                    }
+                }
+            }
+
+            item {
+                SettingsCard(title = "Device mode") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Use device settings", style = MaterialTheme.typography.titleSmall)
+                            Text("Read and write mesh, beacon, location, name, and marker on the connected device", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Switch(
+                            checked = deviceMode,
+                            enabled = activeConnection != ActiveConnection.NONE,
+                            onCheckedChange = { enabled ->
+                                deviceMode = enabled
+                                connectionPreferences.setDeviceModeEnabled(enabled)
+                                if (enabled) {
+                                    requestDeviceSettings()
+                                } else {
+                                    sendDeviceSettingsToDevice(currentDeviceSettings(enabled = false))
+                                    status = "App settings mode enabled"
+                                }
+                            },
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            enabled = activeConnection != ActiveConnection.NONE,
+                            onClick = { requestDeviceSettings() },
+                        ) {
+                            Text("Load")
+                        }
+                        Button(
+                            enabled = activeConnection != ActiveConnection.NONE,
+                            onClick = { sendDeviceSettingsToDevice() },
+                        ) {
+                            Text("Save to device")
+                        }
                     }
                 }
             }
@@ -287,6 +474,9 @@ fun SettingsScreen(
                                 onTransportConnectionChange(ActiveConnection.USB, true)
                                 bleReady = false
                                 sendControl("status", USB_CONTROL_ACTION_GET_STATUS, connection = ActiveConnection.USB)
+                                if (deviceMode) {
+                                    requestDeviceSettings(ActiveConnection.USB)
+                                }
                             }
                         }) { Text("Connect") }
                     }
@@ -404,7 +594,9 @@ fun SettingsScreen(
                                     onClick = {
                                         userMarker = marker.id
                                         markerDropdownExpanded = false
-                                        connectionPreferences.setUserMarker(marker.id)
+                                        if (!deviceMode) {
+                                            connectionPreferences.setUserMarker(marker.id)
+                                        }
                                         status = "Marker set to ${marker.label}"
                                     },
                                 )
@@ -424,7 +616,9 @@ fun SettingsScreen(
                         Switch(
                             checked = shareLocation,
                             onCheckedChange = { enabled ->
-                                connectionPreferences.setShareLocation(enabled)
+                                if (!deviceMode) {
+                                    connectionPreferences.setShareLocation(enabled)
+                                }
                                 onShareLocationChange(enabled)
                                 if (enabled && !hasLocationPermission()) {
                                     requestLocationPermissions()
@@ -501,7 +695,7 @@ fun SettingsScreen(
                     )
                     Spacer(Modifier.height(10.dp))
                     Button(onClick = { saveMeshPreferences() }) {
-                        Text("Save settings")
+                        Text(if (deviceMode) "Save to device" else "Save settings")
                     }
                 }
             }

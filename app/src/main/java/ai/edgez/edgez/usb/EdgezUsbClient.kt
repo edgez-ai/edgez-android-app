@@ -170,6 +170,59 @@ data class HaLowInitConfig(
     }
 }
 
+data class DeviceSettings(
+    val action: Int = 0,
+    val deviceModeEnabled: Boolean = false,
+    val meshId: String = "",
+    val shareLocation: Boolean = false,
+    val userName: String = "",
+    val marker: String = NodeMapMarker.DEFAULT.id,
+    val beaconIntervalSeconds: Int = 0,
+    val userIdHigh: Long = 0,
+    val userIdLow: Long = 0,
+    val userPublicKey: ByteArray = ByteArray(0),
+    val userPrivateKey: ByteArray = ByteArray(0),
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+
+        other as DeviceSettings
+        return action == other.action &&
+            deviceModeEnabled == other.deviceModeEnabled &&
+            meshId == other.meshId &&
+            shareLocation == other.shareLocation &&
+            userName == other.userName &&
+            marker == other.marker &&
+            beaconIntervalSeconds == other.beaconIntervalSeconds &&
+            userIdHigh == other.userIdHigh &&
+            userIdLow == other.userIdLow &&
+            userPublicKey.contentEquals(other.userPublicKey) &&
+            userPrivateKey.contentEquals(other.userPrivateKey) &&
+            latitude == other.latitude &&
+            longitude == other.longitude
+    }
+
+    override fun hashCode(): Int {
+        var result = action
+        result = 31 * result + deviceModeEnabled.hashCode()
+        result = 31 * result + meshId.hashCode()
+        result = 31 * result + shareLocation.hashCode()
+        result = 31 * result + userName.hashCode()
+        result = 31 * result + marker.hashCode()
+        result = 31 * result + beaconIntervalSeconds
+        result = 31 * result + userIdHigh.hashCode()
+        result = 31 * result + userIdLow.hashCode()
+        result = 31 * result + userPublicKey.contentHashCode()
+        result = 31 * result + userPrivateKey.contentHashCode()
+        result = 31 * result + (latitude?.hashCode() ?: 0)
+        result = 31 * result + (longitude?.hashCode() ?: 0)
+        return result
+    }
+}
+
 data class NetworkPacket(
     val messageIdHigh: Long = 0,
     val messageIdLow: Long = 0,
@@ -187,6 +240,7 @@ data class NetworkPacket(
     val beaconRaw: String = "",
     val halowStatus: HaLowInterfaceStatus? = null,
     val init: HaLowInitConfig? = null,
+    val deviceSettings: DeviceSettings? = null,
 ) {
     val conversationMessage: ConversationMessage?
         get() = if (mime != PacketMime.UNSPECIFIED) {
@@ -215,7 +269,8 @@ data class NetworkPacket(
             beacon == other.beacon &&
             beaconRaw == other.beaconRaw &&
             halowStatus == other.halowStatus &&
-            init == other.init
+            init == other.init &&
+            deviceSettings == other.deviceSettings
     }
 
     override fun hashCode(): Int {
@@ -235,6 +290,7 @@ data class NetworkPacket(
         result = 31 * result + beaconRaw.hashCode()
         result = 31 * result + (halowStatus?.hashCode() ?: 0)
         result = 31 * result + (init?.hashCode() ?: 0)
+        result = 31 * result + (deviceSettings?.hashCode() ?: 0)
         return result
     }
 }
@@ -429,6 +485,39 @@ object EdgezUsbControlProto {
             .toByteArray()
     }
 
+    fun encodeDeviceSettingsRequest(): ByteArray {
+        val settings = UsbControl.DeviceSettings.newBuilder()
+            .setAction(UsbControl.DeviceSettingsAction.DEVICE_SETTINGS_GET)
+            .build()
+        return encodeNetworkPacketBuilder()
+            .setDeviceSettings(settings)
+            .build()
+            .toByteArray()
+    }
+
+    fun encodeDeviceSettingsSet(settings: DeviceSettings): ByteArray {
+        val protoSettings = UsbControl.DeviceSettings.newBuilder()
+            .setAction(UsbControl.DeviceSettingsAction.DEVICE_SETTINGS_SET)
+            .setDeviceModeEnabled(settings.deviceModeEnabled)
+            .setMeshId(settings.meshId.take(32))
+            .setShareLocation(settings.shareLocation)
+            .setUserName(settings.userName.take(64))
+            .setMarker(NodeMapMarker.fromId(settings.marker).toProtoMarkerColor())
+            .setBeaconIntervalSeconds(settings.beaconIntervalSeconds.coerceIn(5, 3600))
+            .setUserIdHigh(settings.userIdHigh)
+            .setUserIdLow(settings.userIdLow)
+            .setUserPublicKey(ByteString.copyFrom(settings.userPublicKey.copyOf(minOf(settings.userPublicKey.size, 32))))
+            .setUserPrivateKey(ByteString.copyFrom(settings.userPrivateKey.copyOf(minOf(settings.userPrivateKey.size, 32))))
+        if (settings.latitude != null && settings.longitude != null) {
+            protoSettings.setLatitude(settings.latitude.toFloat())
+            protoSettings.setLongitude(settings.longitude.toFloat())
+        }
+        return encodeNetworkPacketBuilder(
+            userIdHigh = settings.userIdHigh,
+            userIdLow = settings.userIdLow,
+        ).setDeviceSettings(protoSettings.build()).build().toByteArray()
+    }
+
     fun encodeConversationMessage(
         message: ConversationMessage,
         from: Long,
@@ -529,6 +618,11 @@ object EdgezUsbControlProto {
         } else {
             null
         }
+        val deviceSettings = if (packet.bodyCase == UsbControl.NetworkPacket.BodyCase.DEVICE_SETTINGS) {
+            packet.deviceSettings.toAppDeviceSettings()
+        } else {
+            null
+        }
 
         return NetworkPacket(
             messageIdHigh = packet.messageIdHigh,
@@ -547,6 +641,7 @@ object EdgezUsbControlProto {
             beaconRaw = beaconRaw,
             halowStatus = halowStatus,
             init = init,
+            deviceSettings = deviceSettings,
         )
     }
 
@@ -784,6 +879,24 @@ object EdgezUsbControlProto {
             userIdLow = userIdLow,
             userName = userName,
             userPublicKey = userPublicKey.toByteArray(),
+        )
+    }
+
+    private fun UsbControl.DeviceSettings.toAppDeviceSettings(): DeviceSettings {
+        return DeviceSettings(
+            action = actionValue,
+            deviceModeEnabled = deviceModeEnabled,
+            meshId = meshId,
+            shareLocation = shareLocation,
+            userName = userName,
+            marker = marker.toNodeMarkerId(),
+            beaconIntervalSeconds = beaconIntervalSeconds.coerceIn(5, 3600),
+            userIdHigh = userIdHigh,
+            userIdLow = userIdLow,
+            userPublicKey = userPublicKey.toByteArray(),
+            userPrivateKey = userPrivateKey.toByteArray(),
+            latitude = latitude.toDouble().takeIf { latitude != 0f },
+            longitude = longitude.toDouble().takeIf { longitude != 0f },
         )
     }
 
@@ -1095,6 +1208,14 @@ class EdgezUsbClient(private val context: Context) {
             ),
             timeoutMs,
         )
+    }
+
+    fun requestDeviceSettings(timeoutMs: Int = 1500): Result<String> {
+        return sendFrame(EdgezUsbControlProto.encodeDeviceSettingsRequest(), timeoutMs)
+    }
+
+    fun sendDeviceSettings(settings: DeviceSettings, timeoutMs: Int = 1500): Result<String> {
+        return sendFrame(EdgezUsbControlProto.encodeDeviceSettingsSet(settings), timeoutMs)
     }
 
     fun sendConversationMessage(

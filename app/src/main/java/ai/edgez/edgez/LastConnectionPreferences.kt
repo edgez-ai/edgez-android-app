@@ -18,6 +18,7 @@ private const val KEY_USER_PRIVATE_KEY = "user_private_key"
 private const val KEY_USER_PUBLIC_KEY = "user_public_key"
 private const val KEY_SHARE_LOCATION = "share_location"
 private const val KEY_AUTO_REPLAY_RECEIVED_VOICE = "auto_replay_received_voice"
+private const val KEY_DEVICE_MODE_ENABLED = "device_mode_enabled"
 private const val DEFAULT_MESH_ID = "edgez"
 private const val DEFAULT_MESH_MAX_HOP = 2
 const val DEFAULT_BEACON_INTERVAL_SECONDS = 30
@@ -111,6 +112,8 @@ class LastConnectionPreferences(context: Context) {
 
     fun getAutoReplayReceivedVoice(): Boolean = prefs.getBoolean(KEY_AUTO_REPLAY_RECEIVED_VOICE, false)
 
+    fun getDeviceModeEnabled(): Boolean = prefs.getBoolean(KEY_DEVICE_MODE_ENABLED, false)
+
     fun setShareLocation(enabled: Boolean) {
         prefs.edit()
             .putBoolean(KEY_SHARE_LOCATION, enabled)
@@ -120,6 +123,12 @@ class LastConnectionPreferences(context: Context) {
     fun setAutoReplayReceivedVoice(enabled: Boolean) {
         prefs.edit()
             .putBoolean(KEY_AUTO_REPLAY_RECEIVED_VOICE, enabled)
+            .apply()
+    }
+
+    fun setDeviceModeEnabled(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(KEY_DEVICE_MODE_ENABLED, enabled)
             .apply()
     }
 
@@ -155,7 +164,7 @@ class LastConnectionPreferences(context: Context) {
 
     private fun normalizeBeaconIntervalSeconds(seconds: Int): Int = seconds.coerceIn(5, 3600)
 
-    private fun saveUserIdentity(identity: UserIdentity) {
+    fun saveUserIdentity(identity: UserIdentity) {
         prefs.edit()
             .putString(KEY_USER_UUID, identity.userUuid)
             .putString(KEY_USER_NAME, identity.name.ifBlank { DEFAULT_USER_NAME }.take(64))

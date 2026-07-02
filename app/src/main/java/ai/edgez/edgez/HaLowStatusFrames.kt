@@ -144,6 +144,9 @@ fun NetworkPacket.summary(): String {
     init?.let {
         return "NetworkPacket init country=${it.countryCode} meshId=${it.meshId} maxHop=${it.maxHop} user=${it.userName.ifBlank { "unknown" }} messageId=$messageId"
     }
+    deviceSettings?.let {
+        return "NetworkPacket deviceSettings action=${it.action} mode=${it.deviceModeEnabled} meshId=${it.meshId} user=${it.userName.ifBlank { "unknown" }} marker=${it.marker} interval=${it.beaconIntervalSeconds} shareLocation=${it.shareLocation} messageId=$messageId"
+    }
     return "NetworkPacket op=$operation iface=$interfaceId seq=$sequence messageId=$messageId from=0x%012x to=0x%012x user=${formatUuid(userHigh, userLow)}".format(from, to)
 }
 

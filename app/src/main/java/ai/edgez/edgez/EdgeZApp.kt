@@ -230,6 +230,7 @@ fun EdgeZApp() {
                 resetHaLowInitTrigger()
                 return
             }
+            if (lastConnectionPreferences.getDeviceModeEnabled()) return
 
             val meshId = lastConnectionPreferences.getMeshId()
             if (meshId.isBlank()) return
