@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -36,7 +36,7 @@ import app.organicmaps.sdk.util.ConnectionState
 import kotlinx.coroutines.delay
 
 private const val TAG_MAP = "EdgeZMap"
-private const val DEFAULT_MAP_ZOOM = 16
+private const val DEFAULT_MAP_ZOOM = 12
 private const val REGION_AUTOCACHE_INTERVAL_MS = 3_500L
 private const val REGION_AUTOCACHE_INITIAL_DELAY_MS = 5_000L
 
@@ -50,6 +50,7 @@ fun MapScreen(users: List<HaLowUser>) {
     var initialized by remember { mutableStateOf(application.organicMaps.arePlatformAndCoreInitialized()) }
     var status by remember { mutableStateOf("Starting offline map") }
     var controller by remember { mutableStateOf<MapController?>(null) }
+    var pendingRegionId by remember { mutableStateOf<String?>(null) }
     val requestedRegions = remember { mutableSetOf<String>() }
 
     LaunchedEffect(Unit) {
@@ -76,7 +77,10 @@ fun MapScreen(users: List<HaLowUser>) {
         runCatching { Framework.nativeRestoreDownloadQueue() }
         delay(REGION_AUTOCACHE_INITIAL_DELAY_MS)
         while (true) {
-            requestOfflineRegionCache(requestedRegions)?.let { status = it }
+            findDownloadableRegion(requestedRegions)?.let { regionId ->
+                pendingRegionId = regionId
+                status = "Map region available to download"
+            }
             delay(REGION_AUTOCACHE_INTERVAL_MS)
         }
     }
@@ -144,7 +148,10 @@ fun MapScreen(users: List<HaLowUser>) {
                         MapView(viewContext).also { mapView ->
                             mapView.setOnTouchListener { _, event ->
                                 if (event.actionMasked == MotionEvent.ACTION_UP) {
-                                    requestOfflineRegionCache(requestedRegions)?.let { status = it }
+                                    findDownloadableRegion(requestedRegions)?.let { regionId ->
+                                        pendingRegionId = regionId
+                                        status = "Map region available to download"
+                                    }
                                 }
                                 false
                             }
@@ -183,46 +190,58 @@ fun MapScreen(users: List<HaLowUser>) {
                 )
             }
 
-            MapStatusOverlay(
-                status = status,
-                targetUser = targetUser,
-                locatedUsers = users.count { it.hasLocation() },
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(12.dp),
-            )
+            if (pendingRegionId != null) {
+                MapDownloadPrompt(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(16.dp),
+                    onDismiss = {
+                        pendingRegionId = null
+                        status = "Offline map ready"
+                    },
+                    onConfirm = {
+                        val regionId = pendingRegionId ?: return@MapDownloadPrompt
+                        startRegionDownload(regionId, requestedRegions)?.let { status = it }
+                        pendingRegionId = null
+                    },
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun MapStatusOverlay(
-    status: String,
-    targetUser: HaLowUser?,
-    locatedUsers: Int,
+private fun MapDownloadPrompt(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
         modifier = modifier,
         shape = MaterialTheme.shapes.small,
-        tonalElevation = 4.dp,
-        shadowElevation = 2.dp,
+        tonalElevation = 6.dp,
+        shadowElevation = 4.dp,
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
-                text = targetUser?.displayName ?: "No node location",
+                text = "Download this map region?",
                 style = MaterialTheme.typography.titleSmall,
             )
-            Row(modifier = Modifier.padding(top = 8.dp)) {
-                AssistChip(
-                    onClick = {},
-                    label = { Text(status) },
-                )
-                AssistChip(
+            Text(
+                text = "It will be cached for offline use.",
+                modifier = Modifier.padding(top = 4.dp),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row(modifier = Modifier.padding(top = 12.dp)) {
+                Button(onClick = onConfirm) {
+                    Text("Download")
+                }
+                Button(
                     modifier = Modifier.padding(start = 8.dp),
-                    onClick = {},
-                    label = { Text("$locatedUsers pins") },
-                )
+                    onClick = onDismiss,
+                ) {
+                    Text("Not now")
+                }
             }
         }
     }
@@ -239,14 +258,14 @@ private fun centerOnTarget(user: HaLowUser?) {
     }
 }
 
-private fun requestOfflineRegionCache(requestedRegions: MutableSet<String>): String? {
+private fun findDownloadableRegion(requestedRegions: Set<String>): String? {
     if (!ConnectionState.INSTANCE.isConnected()) {
         return null
     }
 
     return runCatching {
         if (Framework.nativeIsDownloadedMapAtScreenCenter()) {
-            return@runCatching "Offline map ready"
+            return@runCatching null
         }
 
         val center = Framework.nativeGetScreenRectCenter()
@@ -257,16 +276,29 @@ private fun requestOfflineRegionCache(requestedRegions: MutableSet<String>): Str
             return@runCatching null
         }
 
+        countryId.takeUnless { it in requestedRegions }
+    }.onFailure { error ->
+        Log.w(TAG_MAP, "Unable to find downloadable map region", error)
+    }.getOrNull()
+}
+
+private fun startRegionDownload(regionId: String, requestedRegions: MutableSet<String>): String? {
+    if (!ConnectionState.INSTANCE.isConnected()) {
+        return null
+    }
+
+    return runCatching {
         if (ConnectionState.INSTANCE.isMobileConnected()) {
             MapManager.nativeEnableDownloadOn3g()
         }
-        if (requestedRegions.add(countryId)) {
-            MapManager.startDownload(countryId)
+        if (requestedRegions.add(regionId)) {
+            MapManager.startDownload(regionId)
             "Downloading map region"
         } else {
             "Map region queued"
         }
     }.onFailure { error ->
-        Log.w(TAG_MAP, "Unable to auto-cache map region", error)
+        requestedRegions.remove(regionId)
+        Log.w(TAG_MAP, "Unable to start map region download", error)
     }.getOrNull()
 }
