@@ -46,12 +46,13 @@ import app.organicmaps.sdk.util.ConnectionState
 import kotlinx.coroutines.delay
 
 private const val TAG_MAP = "EdgeZMap"
-private const val DEFAULT_MAP_ZOOM = 10
-private const val MIN_DOWNLOAD_PROMPT_ZOOM = 11
+private const val DEFAULT_MAP_ZOOM = 9
+private const val MIN_DOWNLOAD_PROMPT_ZOOM = 9
 private const val REGION_AUTOCACHE_INTERVAL_MS = 3_500L
 private const val REGION_AUTOCACHE_INITIAL_DELAY_MS = 5_000L
 private const val MAP_REFRESH_DELAY_MS = 250L
 private const val MAP_INITIAL_RENDER_DELAY_MS = 750L
+private const val DOWNLOAD_PROMPT_GESTURE_DELAY_MS = 500L
 
 private data class MapTarget(
     val latitude: Double,
@@ -96,6 +97,17 @@ fun MapScreen(users: List<HaLowUser>) {
     var pendingRegionId by remember { mutableStateOf<String?>(null) }
     var downloadProgress by remember { mutableStateOf<MapDownloadProgress?>(null) }
     val requestedRegions = remember { mutableSetOf<String>() }
+
+    fun refreshDownloadPrompt() {
+        if (isDownloadPromptZoomAllowed()) {
+            findDownloadableRegion(requestedRegions)?.let { regionId ->
+                pendingRegionId = regionId
+                status = "Map region available to download"
+            }
+        } else {
+            pendingRegionId = null
+        }
+    }
 
     LaunchedEffect(Unit) {
         application.initializeOrganicMaps {
@@ -162,14 +174,7 @@ fun MapScreen(users: List<HaLowUser>) {
         runCatching { Framework.nativeRestoreDownloadQueue() }
         delay(REGION_AUTOCACHE_INITIAL_DELAY_MS)
         while (true) {
-            if (isDownloadPromptZoomAllowed()) {
-                findDownloadableRegion(requestedRegions)?.let { regionId ->
-                    pendingRegionId = regionId
-                    status = "Map region available to download"
-                }
-            } else {
-                pendingRegionId = null
-            }
+            refreshDownloadPrompt()
             delay(REGION_AUTOCACHE_INTERVAL_MS)
         }
     }
@@ -265,14 +270,11 @@ fun MapScreen(users: List<HaLowUser>) {
                         MapView(viewContext).also { mapView ->
                             mapView.setOnTouchListener { _, event ->
                                 if (event.actionMasked == MotionEvent.ACTION_UP) {
-                                    if (isDownloadPromptZoomAllowed()) {
-                                        findDownloadableRegion(requestedRegions)?.let { regionId ->
-                                            pendingRegionId = regionId
-                                            status = "Map region available to download"
-                                        }
-                                    } else {
-                                        pendingRegionId = null
-                                    }
+                                    refreshDownloadPrompt()
+                                    mapView.postDelayed(
+                                        { refreshDownloadPrompt() },
+                                        DOWNLOAD_PROMPT_GESTURE_DELAY_MS,
+                                    )
                                 }
                                 false
                             }
