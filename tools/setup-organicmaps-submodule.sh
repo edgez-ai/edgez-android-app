@@ -6,7 +6,12 @@ SUBMODULE_PATH="third_party/organicmaps"
 
 cd "$ROOT_DIR"
 
-git submodule update --init --depth 1 --filter=blob:none "$SUBMODULE_PATH"
+if git ls-files --error-unmatch "$SUBMODULE_PATH" >/dev/null 2>&1; then
+  git submodule update --init --depth 1 --filter=blob:none "$SUBMODULE_PATH"
+elif [ ! -d "$SUBMODULE_PATH/.git" ]; then
+  echo "error: $SUBMODULE_PATH is not a registered submodule and no local checkout exists there" >&2
+  exit 1
+fi
 git -C "$SUBMODULE_PATH" sparse-checkout init --no-cone
 git -C "$SUBMODULE_PATH" sparse-checkout set --no-cone \
   /.gitmodules \
@@ -119,6 +124,13 @@ git -C "$BOOST_PATH" submodule update --init --depth 1 --filter=blob:none \
   libs/utility \
   libs/variant \
   libs/variant2
+
+if [ -d "$BOOST_PATH/libs/spirit/include/boost/spirit" ] && [ ! -f "$BOOST_PATH/libs/spirit/include/boost/spirit/include/qi.hpp" ]; then
+  mkdir -p "$BOOST_PATH/libs/spirit/include/boost/spirit/include"
+  cat >"$BOOST_PATH/libs/spirit/include/boost/spirit/include/qi.hpp" <<'EOF'
+#include <boost/spirit/home/qi.hpp>
+EOF
+fi
 
 rm -rf "$BOOST_PATH/boost"
 mkdir -p "$BOOST_PATH/boost"
