@@ -45,6 +45,7 @@ android {
         getByName("main") {
             manifest.srcFile(organicMapsAndroid.resolve("sdk/src/main/AndroidManifest.xml"))
             java.srcDir(organicMapsAndroid.resolve("sdk/src/main/java"))
+            kotlin.srcDir(organicMapsAndroid.resolve("sdk/src/main/java"))
             res.srcDir(organicMapsAndroid.resolve("sdk/src/main/res"))
             assets.srcDir(organicMapsAndroid.resolve("sdk/src/main/assets"))
         }
