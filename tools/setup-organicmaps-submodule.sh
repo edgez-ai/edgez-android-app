@@ -70,6 +70,7 @@ git -C "$BOOST_PATH" submodule update --init --depth 1 --filter=blob:none \
   libs/core \
   libs/date_time \
   libs/detail \
+  libs/describe \
   libs/exception \
   libs/function \
   libs/function_types \
