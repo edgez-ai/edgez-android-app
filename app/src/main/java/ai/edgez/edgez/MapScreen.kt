@@ -46,11 +46,12 @@ import app.organicmaps.sdk.util.ConnectionState
 import kotlinx.coroutines.delay
 
 private const val TAG_MAP = "EdgeZMap"
-private const val DEFAULT_MAP_ZOOM = 11
+private const val DEFAULT_MAP_ZOOM = 10
 private const val MIN_DOWNLOAD_PROMPT_ZOOM = 11
 private const val REGION_AUTOCACHE_INTERVAL_MS = 3_500L
 private const val REGION_AUTOCACHE_INITIAL_DELAY_MS = 5_000L
 private const val MAP_REFRESH_DELAY_MS = 250L
+private const val MAP_INITIAL_RENDER_DELAY_MS = 750L
 
 private data class MapTarget(
     val latitude: Double,
@@ -275,27 +276,34 @@ fun MapScreen(users: List<HaLowUser>) {
                                 }
                                 false
                             }
-                            controller = MapController(
+                            lateinit var mapController: MapController
+                            mapController = MapController(
                                 mapView,
                                 application.organicMaps.locationHelper,
                                 object : MapRenderingListener {
                                     override fun onRenderingCreated() {
                                         status = "Offline map ready"
-                                        centerOnTarget(targetState, controller)
+                                        centerOnTarget(targetState, mapController)
                                     }
 
                                     override fun onRenderingRestored() {
-                                        centerOnTarget(targetState, controller)
+                                        centerOnTarget(targetState, mapController)
                                     }
 
                                     override fun onRenderingInitializationFinished() {
-                                        centerOnTarget(targetState, controller)
+                                        centerOnTarget(targetState, mapController)
                                     }
                                 },
                                 {
                                     status = "Map rendering is not supported on this device"
                                 },
                                 false,
+                            )
+                            controller = mapController
+                            mapView.post { centerOnTarget(targetState, mapController) }
+                            mapView.postDelayed(
+                                { centerOnTarget(targetState, mapController) },
+                                MAP_INITIAL_RENDER_DELAY_MS,
                             )
                         }
                     },
@@ -427,11 +435,21 @@ private fun centerOnTarget(target: MapTarget?, controller: MapController?) {
         if (latitude != null && longitude != null) {
             Framework.nativeStopLocationFollow()
             Framework.nativeZoomToPoint(latitude, longitude, DEFAULT_MAP_ZOOM, false)
+        } else {
+            refreshCurrentViewport()
         }
         forceMapRefresh(controller)
     }.onFailure { error ->
         Log.w(TAG_MAP, "Unable to refresh map for ${target?.label ?: "current viewport"}", error)
     }
+}
+
+private fun refreshCurrentViewport() {
+    val center = Framework.nativeGetScreenRectCenter()
+    val latitude = center.getOrNull(0) ?: return
+    val longitude = center.getOrNull(1) ?: return
+    val zoom = Framework.nativeGetDrawScale().takeIf { it > 0 } ?: DEFAULT_MAP_ZOOM
+    Framework.nativeZoomToPoint(latitude, longitude, zoom, false)
 }
 
 private fun forceMapRefresh(controller: MapController?) {
