@@ -1,6 +1,7 @@
 package ai.edgez.edgez
 
 import android.util.Log
+import android.view.MotionEvent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -29,9 +30,15 @@ import app.organicmaps.sdk.Framework
 import app.organicmaps.sdk.MapController
 import app.organicmaps.sdk.MapRenderingListener
 import app.organicmaps.sdk.MapView
+import app.organicmaps.sdk.downloader.CountryItem
+import app.organicmaps.sdk.downloader.MapManager
+import app.organicmaps.sdk.util.ConnectionState
+import kotlinx.coroutines.delay
 
 private const val TAG_MAP = "EdgeZMap"
 private const val DEFAULT_MAP_ZOOM = 16
+private const val REGION_AUTOCACHE_INTERVAL_MS = 3_500L
+private const val REGION_AUTOCACHE_INITIAL_DELAY_MS = 5_000L
 
 @Composable
 fun MapScreen(users: List<HaLowUser>) {
@@ -43,6 +50,7 @@ fun MapScreen(users: List<HaLowUser>) {
     var initialized by remember { mutableStateOf(application.organicMaps.arePlatformAndCoreInitialized()) }
     var status by remember { mutableStateOf("Starting offline map") }
     var controller by remember { mutableStateOf<MapController?>(null) }
+    val requestedRegions = remember { mutableSetOf<String>() }
 
     LaunchedEffect(Unit) {
         application.initializeOrganicMaps {
@@ -52,10 +60,62 @@ fun MapScreen(users: List<HaLowUser>) {
             if (application.organicMaps.arePlatformAndCoreInitialized()) {
                 initialized = true
                 status = "Offline map ready"
+                runCatching { Framework.nativeRestoreDownloadQueue() }
             }
         }.onFailure { error ->
             status = "Map unavailable: ${error.message ?: error::class.java.simpleName}"
             Log.e(TAG_MAP, "Organic Maps initialization failed", error)
+        }
+    }
+
+    LaunchedEffect(initialized, controller) {
+        if (!initialized || controller == null) {
+            return@LaunchedEffect
+        }
+
+        runCatching { Framework.nativeRestoreDownloadQueue() }
+        delay(REGION_AUTOCACHE_INITIAL_DELAY_MS)
+        while (true) {
+            requestOfflineRegionCache(requestedRegions)?.let { status = it }
+            delay(REGION_AUTOCACHE_INTERVAL_MS)
+        }
+    }
+
+    DisposableEffect(initialized) {
+        val slot = if (initialized) {
+            MapManager.nativeSubscribe(object : MapManager.StorageCallback {
+                override fun onStatusChanged(data: List<MapManager.StorageCallbackData>) {
+                    val event = data.lastOrNull() ?: return
+                    val name = event.countryId
+                    status = when (event.newStatus) {
+                        CountryItem.STATUS_DONE -> "Offline map cached: $name"
+                        CountryItem.STATUS_PROGRESS -> "Downloading map: $name"
+                        CountryItem.STATUS_ENQUEUED -> "Queued map: $name"
+                        CountryItem.STATUS_FAILED -> {
+                            requestedRegions.remove(event.countryId)
+                            "Map download failed: $name"
+                        }
+                        else -> status
+                    }
+                }
+
+                override fun onProgress(countryId: String, localSize: Long, remoteSize: Long) {
+                    val progress = if (remoteSize > 0L) {
+                        ((localSize * 100L) / remoteSize).coerceIn(0L, 100L)
+                    } else {
+                        0L
+                    }
+                    status = "Downloading map: $countryId $progress%"
+                }
+            })
+        } else {
+            null
+        }
+
+        onDispose {
+            if (slot != null) {
+                MapManager.nativeUnsubscribe(slot)
+            }
         }
     }
 
@@ -82,6 +142,12 @@ fun MapScreen(users: List<HaLowUser>) {
                     modifier = Modifier.fillMaxSize(),
                     factory = { viewContext ->
                         MapView(viewContext).also { mapView ->
+                            mapView.setOnTouchListener { _, event ->
+                                if (event.actionMasked == MotionEvent.ACTION_UP) {
+                                    requestOfflineRegionCache(requestedRegions)?.let { status = it }
+                                }
+                                false
+                            }
                             controller = MapController(
                                 mapView,
                                 application.organicMaps.locationHelper,
@@ -171,4 +237,36 @@ private fun centerOnTarget(user: HaLowUser?) {
     }.onFailure { error ->
         Log.w(TAG_MAP, "Unable to center map on ${user.displayName}", error)
     }
+}
+
+private fun requestOfflineRegionCache(requestedRegions: MutableSet<String>): String? {
+    if (!ConnectionState.INSTANCE.isConnected()) {
+        return null
+    }
+
+    return runCatching {
+        if (Framework.nativeIsDownloadedMapAtScreenCenter()) {
+            return@runCatching "Offline map ready"
+        }
+
+        val center = Framework.nativeGetScreenRectCenter()
+        val latitude = center.getOrNull(0) ?: return@runCatching null
+        val longitude = center.getOrNull(1) ?: return@runCatching null
+        val countryId = MapManager.nativeFindCountry(latitude, longitude) ?: return@runCatching null
+        if (countryId.isBlank()) {
+            return@runCatching null
+        }
+
+        if (ConnectionState.INSTANCE.isMobileConnected()) {
+            MapManager.nativeEnableDownloadOn3g()
+        }
+        if (requestedRegions.add(countryId)) {
+            MapManager.startDownload(countryId)
+            "Downloading map region"
+        } else {
+            "Map region queued"
+        }
+    }.onFailure { error ->
+        Log.w(TAG_MAP, "Unable to auto-cache map region", error)
+    }.getOrNull()
 }
