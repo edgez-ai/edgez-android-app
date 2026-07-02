@@ -45,9 +45,7 @@ fun MapScreen(users: List<HaLowUser>) {
     val context = LocalContext.current
     val application = context.applicationContext as EdgeZApplication
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val locatedUsers = users.filter { it.hasLocation() }
-    val targetUser = locatedUsers.firstOrNull()
-    val targetUserState by rememberUpdatedState(targetUser)
+    val targetUser by rememberUpdatedState(users.firstOrNull { it.hasLocation() })
 
     var initialized by remember { mutableStateOf(application.organicMaps.arePlatformAndCoreInitialized()) }
     var status by remember { mutableStateOf("Starting offline map") }
@@ -84,26 +82,6 @@ fun MapScreen(users: List<HaLowUser>) {
                 status = "Map region available to download"
             }
             delay(REGION_AUTOCACHE_INTERVAL_MS)
-        }
-    }
-
-    LaunchedEffect(initialized, controller, targetUser?.nodeNum, targetUser?.latitude, targetUser?.longitude) {
-        if (initialized && controller != null) {
-            centerOnTarget(targetUser)
-        }
-    }
-
-    LaunchedEffect(initialized, controller, locatedUsers) {
-        if (initialized && controller != null) {
-            updateUserMarkers(locatedUsers)
-        }
-    }
-
-    DisposableEffect(initialized, controller) {
-        onDispose {
-            if (initialized && controller != null) {
-                clearUserMarkers()
-            }
         }
     }
 
@@ -183,15 +161,15 @@ fun MapScreen(users: List<HaLowUser>) {
                                 object : MapRenderingListener {
                                     override fun onRenderingCreated() {
                                         status = "Offline map ready"
-                                        centerOnTarget(targetUserState)
+                                        centerOnTarget(targetUser)
                                     }
 
                                     override fun onRenderingRestored() {
-                                        centerOnTarget(targetUserState)
+                                        centerOnTarget(targetUser)
                                     }
 
                                     override fun onRenderingInitializationFinished() {
-                                        centerOnTarget(targetUserState)
+                                        centerOnTarget(targetUser)
                                     }
                                 },
                                 {
@@ -277,29 +255,6 @@ private fun centerOnTarget(user: HaLowUser?) {
         Framework.nativeSetViewportCenter(latitude, longitude, DEFAULT_MAP_ZOOM)
     }.onFailure { error ->
         Log.w(TAG_MAP, "Unable to center map on ${user.displayName}", error)
-    }
-}
-
-private fun updateUserMarkers(users: List<HaLowUser>) {
-    val coordinates = users.mapNotNull { user ->
-        val latitude = user.latitude
-        val longitude = user.longitude
-        if (latitude != null && longitude != null) latitude to longitude else null
-    }
-    val latitudes = coordinates.map { it.first }.toDoubleArray()
-    val longitudes = coordinates.map { it.second }.toDoubleArray()
-    runCatching {
-        Framework.nativeSetEdgeZUserMarkers(latitudes, longitudes)
-    }.onFailure { error ->
-        Log.w(TAG_MAP, "Unable to update user markers", error)
-    }
-}
-
-private fun clearUserMarkers() {
-    runCatching {
-        Framework.nativeSetEdgeZUserMarkers(DoubleArray(0), DoubleArray(0))
-    }.onFailure { error ->
-        Log.w(TAG_MAP, "Unable to clear user markers", error)
     }
 }
 

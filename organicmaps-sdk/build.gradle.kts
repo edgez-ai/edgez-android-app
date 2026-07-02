@@ -4,11 +4,6 @@ plugins {
 
 val organicMapsRoot = rootProject.file("third_party/organicmaps")
 val organicMapsAndroid = organicMapsRoot.resolve("android")
-val edgeZOrganicMapsOverrides = project.file("overrides")
-val applyEdgeZOrganicMapsOverrides = tasks.register<Copy>("applyEdgeZOrganicMapsOverrides") {
-    from(edgeZOrganicMapsOverrides)
-    into(organicMapsRoot)
-}
 
 android {
     namespace = "app.organicmaps.sdk"
@@ -69,15 +64,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-}
-
-tasks.matching {
-    it.name == "preBuild" ||
-        it.name.startsWith("compile") ||
-        it.name.startsWith("configureCMake") ||
-        it.name.startsWith("externalNativeBuild")
-}.configureEach {
-    dependsOn(applyEdgeZOrganicMapsOverrides)
 }
 
 dependencies {
