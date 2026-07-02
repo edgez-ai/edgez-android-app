@@ -47,7 +47,7 @@ import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 @Composable
-fun HomeScreen(
+fun NodesScreen(
     activeConnection: ActiveConnection,
     haLowStatus: HaLowInterfaceStatus?,
     users: List<HaLowUser>,
@@ -68,7 +68,7 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Home", style = MaterialTheme.typography.headlineMedium)
+                    Text("Nodes", style = MaterialTheme.typography.headlineMedium)
                     HaLowMeshStatusIcon(haLowStatus)
                 }
                 Spacer(Modifier.height(6.dp))
@@ -252,7 +252,7 @@ private fun formatLastSeenAge(lastSeenMs: Long, nowMs: Long): String {
 @Composable
 private fun HomePreview() {
     EdgeZTheme {
-        HomeScreen(
+        NodesScreen(
             ActiveConnection.NONE,
             null,
             listOf(

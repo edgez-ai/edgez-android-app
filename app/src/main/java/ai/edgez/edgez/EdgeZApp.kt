@@ -605,7 +605,8 @@ fun EdgeZApp() {
         },
     ) {
         when (currentDestination) {
-            AppDestination.HOME -> {
+            AppDestination.HOME -> MapScreen(users = haLowUsers.values.sortedByDescending { it.lastSeenMs })
+            AppDestination.NODES -> {
                 val conversationUser = selectedConversationUser
                 if (conversationUser != null) {
                     val conversationUserKey = conversationKey(conversationUser)
@@ -796,7 +797,7 @@ fun EdgeZApp() {
                         },
                     )
                 } else {
-                    HomeScreen(
+                    NodesScreen(
                         activeConnection = activeConnection,
                         haLowStatus = haLowStatus,
                         users = haLowUsers.values.sortedByDescending { it.lastSeenMs },
@@ -815,7 +816,6 @@ fun EdgeZApp() {
                     )
                 }
             }
-            AppDestination.MAP -> MapScreen(users = haLowUsers.values.sortedByDescending { it.lastSeenMs })
             AppDestination.PROFILE -> PlaceholderScreen("Profile")
             AppDestination.SETTINGS -> SettingsScreen(
                 client = usbClient,
@@ -874,8 +874,8 @@ private enum class AppDestination(
     val label: String,
     val icon: Int,
 ) {
-    HOME("Home", R.drawable.ic_home),
-    MAP("Map", R.drawable.ic_map),
+    HOME("Home", R.drawable.ic_map),
+    NODES("Nodes", R.drawable.ic_halow_mesh),
     PROFILE("Profile", R.drawable.ic_account_box),
     SETTINGS("Settings", R.drawable.ic_usb),
 }
