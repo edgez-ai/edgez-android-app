@@ -25,3 +25,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "EdgeZ"
 include(":app")
+include(":organicmaps-location-core")
+include(":organicmaps-maps-world")
+include(":organicmaps-sdk")

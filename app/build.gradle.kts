@@ -49,6 +49,8 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(project(":organicmaps-sdk"))
+    implementation(project(":organicmaps-maps-world"))
     implementation(libs.protobuf.javalite)
     implementation(libs.usbSerialForAndroid)
     testImplementation(libs.junit)

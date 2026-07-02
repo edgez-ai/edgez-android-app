@@ -814,7 +814,7 @@ fun EdgeZApp() {
                     )
                 }
             }
-            AppDestination.FAVORITES -> PlaceholderScreen("Favorites")
+            AppDestination.MAP -> MapScreen(users = haLowUsers.values.sortedByDescending { it.lastSeenMs })
             AppDestination.PROFILE -> PlaceholderScreen("Profile")
             AppDestination.SETTINGS -> SettingsScreen(
                 client = usbClient,
@@ -859,7 +859,7 @@ private enum class AppDestination(
     val icon: Int,
 ) {
     HOME("Home", R.drawable.ic_home),
-    FAVORITES("Favorites", R.drawable.ic_favorite),
+    MAP("Map", R.drawable.ic_map),
     PROFILE("Profile", R.drawable.ic_account_box),
     SETTINGS("Settings", R.drawable.ic_usb),
 }
