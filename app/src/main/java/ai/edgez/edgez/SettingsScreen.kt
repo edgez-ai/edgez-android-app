@@ -265,12 +265,13 @@ fun SettingsScreen(
     fun sendDeviceSettingsToDevice(
         settings: DeviceSettings = currentDeviceSettings(),
         connection: ActiveConnection = activeConnection,
+        label: String = "Device settings",
     ) {
         if (connection == ActiveConnection.NONE) {
-            status = "Connect USB or BLE before saving device settings"
+            status = "$label saved locally; connect USB or BLE to sync"
             return
         }
-        status = "Saving device settings..."
+        status = "Saving $label..."
         executor.execute {
             val result = when (connection) {
                 ActiveConnection.USB -> client.sendDeviceSettings(settings)
@@ -279,8 +280,8 @@ fun SettingsScreen(
             }
             activity?.runOnUiThread {
                 status = result.fold(
-                    onSuccess = { "Device settings sent" },
-                    onFailure = { it.message ?: "Device settings save failed" },
+                    onSuccess = { "$label sent" },
+                    onFailure = { it.message ?: "$label save failed" },
                 )
             }
         }
@@ -357,7 +358,11 @@ fun SettingsScreen(
                     bleReady = true
                     currentOnTransportConnectionChange(ActiveConnection.BLE, true)
                     if (currentDeviceMode) {
-                        requestDeviceSettings(ActiveConnection.BLE)
+                        sendDeviceSettingsToDevice(
+                            currentDeviceSettings(enabled = true),
+                            ActiveConnection.BLE,
+                            "Device mode settings",
+                        )
                     }
                 } else if (line.startsWith("CONN") && line.contains("state=0") || line == "CLOSE") {
                     bleReady = false
@@ -425,16 +430,14 @@ fun SettingsScreen(
                         }
                         Switch(
                             checked = deviceMode,
-                            enabled = activeConnection != ActiveConnection.NONE,
                             onCheckedChange = { enabled ->
                                 deviceMode = enabled
                                 connectionPreferences.setDeviceModeEnabled(enabled)
-                                if (enabled) {
-                                    requestDeviceSettings()
-                                } else {
-                                    sendDeviceSettingsToDevice(currentDeviceSettings(enabled = false))
-                                    status = "App settings mode enabled"
-                                }
+                                sendDeviceSettingsToDevice(
+                                    currentDeviceSettings(enabled = enabled),
+                                    label = if (enabled) "Device mode settings" else "App mode settings",
+                                )
+                                if (!enabled) status = "App settings mode enabled"
                             },
                         )
                     }
@@ -475,7 +478,11 @@ fun SettingsScreen(
                                 bleReady = false
                                 sendControl("status", USB_CONTROL_ACTION_GET_STATUS, connection = ActiveConnection.USB)
                                 if (deviceMode) {
-                                    requestDeviceSettings(ActiveConnection.USB)
+                                    sendDeviceSettingsToDevice(
+                                        currentDeviceSettings(enabled = true),
+                                        ActiveConnection.USB,
+                                        "Device mode settings",
+                                    )
                                 }
                             }
                         }) { Text("Connect") }
