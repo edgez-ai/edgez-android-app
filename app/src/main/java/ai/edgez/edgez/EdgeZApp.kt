@@ -45,6 +45,7 @@ private const val RECONNECT_DELAY_MS = 2_000L
 private const val TAG_USERS = "EdgeZUsers"
 private const val HALOW_BROADCAST_NODE_48 = 0xffffffffffffL
 private const val HALOW_BROADCAST_NODE_32 = 0xffffffffL
+private const val LOCATION_FRESH_MS = 10 * 60 * 1000L
 
 private data class MessageUuid(
     val high: Long,
@@ -851,7 +852,22 @@ private fun Context.getBestKnownLocation(): Location? {
                 null
             }
         }.getOrNull()
-    }.maxByOrNull { it.time }
+    }.maxByOrNull { location ->
+        locationQualityScore(location, System.currentTimeMillis())
+    }
+}
+
+private fun locationQualityScore(location: Location, nowMs: Long): Double {
+    val ageMs = (nowMs - location.time).coerceAtLeast(0L)
+    val ageMinutes = ageMs / 60_000.0
+    val accuracyMeters = if (location.hasAccuracy()) location.accuracy.toDouble() else 1_000.0
+    val providerBonus = when (location.provider) {
+        LocationManager.GPS_PROVIDER -> 50.0
+        LocationManager.NETWORK_PROVIDER -> 10.0
+        else -> 0.0
+    }
+    val stalePenalty = if (ageMs > LOCATION_FRESH_MS) 200.0 else 0.0
+    return providerBonus - accuracyMeters - (ageMinutes * 3.0) - stalePenalty
 }
 
 private enum class AppDestination(

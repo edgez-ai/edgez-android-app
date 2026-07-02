@@ -1,4 +1,4 @@
 [submodule "third_party/organicmaps"]
 	path = third_party/organicmaps
-	url = https://github.com/organicmaps/organicmaps.git
+	url = https://github.com/edgez-ai/organicmaps.git
 	shallow = true
