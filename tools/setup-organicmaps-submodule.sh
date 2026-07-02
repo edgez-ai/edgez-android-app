@@ -95,6 +95,7 @@ git -C "$BOOST_PATH" submodule update --init --depth 1 --filter=blob:none \
   libs/move \
   libs/mp11 \
   libs/mpl \
+  libs/multi_index \
   libs/multiprecision \
   libs/numeric/conversion \
   libs/optional \
@@ -117,6 +118,7 @@ git -C "$BOOST_PATH" submodule update --init --depth 1 --filter=blob:none \
   libs/throw_exception \
   libs/tokenizer \
   libs/tuple \
+  libs/tti \
   libs/type_index \
   libs/type_traits \
   libs/typeof \
