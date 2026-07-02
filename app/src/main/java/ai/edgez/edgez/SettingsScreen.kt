@@ -7,7 +7,10 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.hardware.usb.UsbManager
+import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -102,9 +105,47 @@ fun SettingsScreen(
     val executor = remember { Executors.newSingleThreadExecutor() }
 
     fun requestBlePermissions() {
-        val required = bleClient.requiredPermissions()
+        val required = if (Build.VERSION.SDK_INT >= 33) {
+            bleClient.requiredPermissions() + Manifest.permission.POST_NOTIFICATIONS
+        } else {
+            bleClient.requiredPermissions()
+        }
         activity?.requestPermissions(required, 2001)
         status = "Requesting BLE permission"
+    }
+
+    fun isIgnoringBatteryOptimizations(): Boolean {
+        val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return false
+        return powerManager.isIgnoringBatteryOptimizations(context.packageName)
+    }
+
+    fun requestNotificationPermissionIfNeeded(): Boolean {
+        if (Build.VERSION.SDK_INT < 33) return false
+        if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+            return false
+        }
+        activity?.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 2003)
+        status = "Requesting notification permission"
+        return true
+    }
+
+    fun requestIgnoreBatteryOptimizations() {
+        if (requestNotificationPermissionIfNeeded()) return
+        if (isIgnoringBatteryOptimizations()) {
+            status = "Battery optimization already disabled"
+            return
+        }
+        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+            data = Uri.parse("package:${context.packageName}")
+        }
+        runCatching {
+            context.startActivity(intent)
+        }.onSuccess {
+            status = "Battery optimization prompt opened"
+        }.onFailure {
+            context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            status = "Battery optimization settings opened"
+        }
     }
 
     fun hasLocationPermission(): Boolean {
@@ -218,8 +259,13 @@ fun SettingsScreen(
                 Spacer(Modifier.height(6.dp))
                 Text(status, style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(10.dp))
-                Button(onClick = { showDebugPopup = true }) {
-                    Text("Debug")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { showDebugPopup = true }) {
+                        Text("Debug")
+                    }
+                    Button(onClick = { requestIgnoreBatteryOptimizations() }) {
+                        Text("Allow background connection")
+                    }
                 }
             }
 

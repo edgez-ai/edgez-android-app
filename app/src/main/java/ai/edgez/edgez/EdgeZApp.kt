@@ -145,9 +145,14 @@ fun EdgeZApp() {
         resetHaLowInitTrigger()
         lastConnectionPreferences.setLastSuccessfulConnection(connection)
         when (connection) {
-            ActiveConnection.USB -> bleClient.close()
+            ActiveConnection.USB -> {
+                bleClient.close()
+            }
             ActiveConnection.BLE -> usbClient.close()
             ActiveConnection.NONE -> Unit
+        }
+        if (connection != ActiveConnection.NONE) {
+            BleForegroundService.start(context.applicationContext)
         }
     }
 
@@ -213,6 +218,7 @@ fun EdgeZApp() {
             haLowStatus = null
             selectedConversationUser = null
             resetHaLowInitTrigger()
+            BleForegroundService.stop(context.applicationContext)
             scheduleReconnect(connection)
         }
     }
@@ -556,6 +562,7 @@ fun EdgeZApp() {
             removeUsbDebugListener()
             removeBleDebugListener()
             mainHandler.removeCallbacks(beaconRunnable)
+            BleForegroundService.stop(context.applicationContext)
             usbClient.close()
             bleClient.close()
             edgeZDatabase.close()
