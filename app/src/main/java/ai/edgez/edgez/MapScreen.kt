@@ -44,7 +44,7 @@ import app.organicmaps.sdk.util.ConnectionState
 import kotlinx.coroutines.delay
 
 private const val TAG_MAP = "EdgeZMap"
-private const val DEFAULT_MAP_ZOOM = 12
+private const val DEFAULT_MAP_ZOOM = 11
 private const val REGION_AUTOCACHE_INTERVAL_MS = 3_500L
 private const val REGION_AUTOCACHE_INITIAL_DELAY_MS = 5_000L
 private const val MAP_REFRESH_DELAY_MS = 250L
