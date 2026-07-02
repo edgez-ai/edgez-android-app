@@ -31,6 +31,7 @@ android {
         }
     }
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
@@ -53,6 +54,7 @@ dependencies {
     implementation(project(":organicmaps-maps-world"))
     implementation(libs.protobuf.javalite)
     implementation(libs.usbSerialForAndroid)
+    coreLibraryDesugaring(libs.android.tools.desugaring)
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

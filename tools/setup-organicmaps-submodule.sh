@@ -11,6 +11,7 @@ git -C "$SUBMODULE_PATH" sparse-checkout init --no-cone
 git -C "$SUBMODULE_PATH" sparse-checkout set --no-cone \
   /.gitmodules \
   /CMakeLists.txt \
+  /private.h \
   /3party/ \
   /android/sdk/ \
   /cmake/ \
