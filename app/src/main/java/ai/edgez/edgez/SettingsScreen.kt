@@ -79,6 +79,7 @@ fun SettingsScreen(
     }
     var userIdentity by remember { mutableStateOf(connectionPreferences.getOrCreateUserIdentity()) }
     var userName by rememberSaveable { mutableStateOf(userIdentity.name) }
+    var autoReplayReceivedVoice by rememberSaveable { mutableStateOf(connectionPreferences.getAutoReplayReceivedVoice()) }
     var showDebugPopup by rememberSaveable { mutableStateOf(false) }
     var status by remember { mutableStateOf("Connect the ESP32-S3 USB port, then scan.") }
     val activity = context as? ComponentActivity
@@ -425,6 +426,29 @@ fun SettingsScreen(
                     Spacer(Modifier.height(10.dp))
                     Button(onClick = { saveMeshPreferences() }) {
                         Text("Save settings")
+                    }
+                }
+            }
+
+            item {
+                SettingsCard(title = "Chat") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Auto replay received voice", style = MaterialTheme.typography.titleSmall)
+                            Text("Play new incoming voice messages automatically", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Switch(
+                            checked = autoReplayReceivedVoice,
+                            onCheckedChange = { enabled ->
+                                autoReplayReceivedVoice = enabled
+                                connectionPreferences.setAutoReplayReceivedVoice(enabled)
+                                status = if (enabled) "Auto replay enabled" else "Auto replay disabled"
+                            },
+                        )
                     }
                 }
             }

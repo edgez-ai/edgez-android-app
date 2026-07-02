@@ -16,6 +16,7 @@ private const val KEY_USER_NAME = "user_name"
 private const val KEY_USER_PRIVATE_KEY = "user_private_key"
 private const val KEY_USER_PUBLIC_KEY = "user_public_key"
 private const val KEY_SHARE_LOCATION = "share_location"
+private const val KEY_AUTO_REPLAY_RECEIVED_VOICE = "auto_replay_received_voice"
 private const val DEFAULT_MESH_ID = "edgez"
 private const val DEFAULT_MESH_MAX_HOP = 2
 const val DEFAULT_BEACON_INTERVAL_SECONDS = 30
@@ -105,9 +106,17 @@ class LastConnectionPreferences(context: Context) {
 
     fun getShareLocation(): Boolean = prefs.getBoolean(KEY_SHARE_LOCATION, false)
 
+    fun getAutoReplayReceivedVoice(): Boolean = prefs.getBoolean(KEY_AUTO_REPLAY_RECEIVED_VOICE, false)
+
     fun setShareLocation(enabled: Boolean) {
         prefs.edit()
             .putBoolean(KEY_SHARE_LOCATION, enabled)
+            .apply()
+    }
+
+    fun setAutoReplayReceivedVoice(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(KEY_AUTO_REPLAY_RECEIVED_VOICE, enabled)
             .apply()
     }
 

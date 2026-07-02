@@ -378,6 +378,11 @@ fun EdgeZApp() {
                                         } else {
                                             pendingVoiceMessages.remove(key)
                                             val path = saveVoiceMessage(context.applicationContext, pending.bytes(), pending.codec)
+                                            if (lastConnectionPreferences.getAutoReplayReceivedVoice()) {
+                                                VoiceMessagePlayer.play(path).onFailure {
+                                                    Log.w(TAG_USERS, "auto replay received voice failed path=$path", it)
+                                                }
+                                            }
                                             ConversationEntry(
                                                 text = "Voice message",
                                                 mine = false,
