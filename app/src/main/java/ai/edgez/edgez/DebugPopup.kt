@@ -28,7 +28,16 @@ import ai.edgez.edgez.usb.EDGEZ_HEADER_LEN
 import ai.edgez.edgez.usb.EDGEZ_MAGIC_0
 import ai.edgez.edgez.usb.EDGEZ_MAGIC_1
 import ai.edgez.edgez.usb.EDGEZ_MAX_PAYLOAD
+import ai.edgez.edgez.usb.EDGEZ_TYPE_CONTROL_RESP
+import ai.edgez.edgez.usb.EDGEZ_TYPE_ECHO_RESP
+import ai.edgez.edgez.usb.EDGEZ_TYPE_ERROR
+import ai.edgez.edgez.usb.EDGEZ_VERSION
 import ai.edgez.edgez.usb.EdgezUsbClient
+import ai.edgez.edgez.usb.EdgezUsbControlProto
+import ai.edgez.edgez.usb.USB_CONTROL_ACTION_ECHO
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.charset.StandardCharsets
 import java.util.concurrent.Executors
 
 @Composable
@@ -54,11 +63,14 @@ fun DebugScreen(
     fun handleFrame(source: ActiveConnection, frame: ByteArray) {
         if (frame.size < EDGEZ_HEADER_LEN ||
             frame[0] != EDGEZ_MAGIC_0 ||
-            frame[1] != EDGEZ_MAGIC_1) {
+            frame[1] != EDGEZ_MAGIC_1 ||
+            frame[2] != EDGEZ_VERSION) {
             return
         }
 
-        val responseLen = (frame[2].toInt() and 0xff) or ((frame[3].toInt() and 0xff) shl 8)
+        val responseType = frame[3].toInt() and 0xff
+        val responseSeq = ByteBuffer.wrap(frame, 4, 2).order(ByteOrder.LITTLE_ENDIAN).short.toInt() and 0xffff
+        val responseLen = ByteBuffer.wrap(frame, 6, 2).order(ByteOrder.LITTLE_ENDIAN).short.toInt() and 0xffff
         if (responseLen > EDGEZ_MAX_PAYLOAD || EDGEZ_HEADER_LEN + responseLen > frame.size) {
             return
         }
@@ -73,15 +85,37 @@ fun DebugScreen(
             return
         }
 
+        val payload = frame.copyOfRange(EDGEZ_HEADER_LEN, EDGEZ_HEADER_LEN + responseLen)
+        val text = String(payload, StandardCharsets.UTF_8)
         activity?.runOnUiThread {
-            val halowMessage = decodeHaLowSyncFrame(frame)
-            val halowStatus = halowMessage?.halowStatus ?: decodeHaLowStatusFrame(frame)
-            status = if (halowMessage != null) {
-                "${source.name} protobuf RX: ${halowMessage.summary()}"
-            } else if (halowStatus != null) {
-                "${source.name} protobuf RX: ${halowStatus.summary()}"
-            } else {
-                "${source.name} malformed protobuf RX len=$responseLen"
+            when (responseType) {
+                EDGEZ_TYPE_CONTROL_RESP -> {
+                    val control = EdgezUsbControlProto.decodeResponse(payload)
+                    if (control?.action == USB_CONTROL_ACTION_ECHO) {
+                        response = control.echoPayload
+                        status = "${source.name} protobuf echo RX seq=$responseSeq: ${control.echoPayload}"
+                    } else {
+                        status = "${source.name} control seq=$responseSeq: ${control?.message ?: "malformed"}"
+                    }
+                }
+                EDGEZ_TYPE_ECHO_RESP -> {
+                    response = text
+                    status = "${source.name} echo RX seq=$responseSeq: $text"
+                }
+                EDGEZ_TYPE_ERROR -> {
+                    status = "${source.name} device error on seq=$responseSeq: $text"
+                }
+                else -> {
+                    val halowMessage = decodeHaLowSyncFrame(frame)
+                    val halowStatus = halowMessage?.halowStatus ?: decodeHaLowStatusFrame(frame)
+                    status = if (halowMessage != null) {
+                        "${source.name} protobuf RX: ${halowMessage.summary()}"
+                    } else if (halowStatus != null) {
+                        "${source.name} protobuf RX: ${halowStatus.summary()}"
+                    } else {
+                        "${source.name} malformed protobuf RX type=$responseType len=$responseLen"
+                    }
+                }
             }
             appendLog(status)
         }

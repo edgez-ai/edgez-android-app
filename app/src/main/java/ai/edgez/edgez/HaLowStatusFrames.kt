@@ -105,7 +105,7 @@ private fun decodeHaLowSyncPayload(frame: ByteArray): ByteArray? {
         return null
     }
 
-    val payloadLen = (frame[2].toInt() and 0xff) or ((frame[3].toInt() and 0xff) shl 8)
+    val payloadLen = (frame[6].toInt() and 0xff) or ((frame[7].toInt() and 0xff) shl 8)
     if (payloadLen > EDGEZ_MAX_PAYLOAD || EDGEZ_HEADER_LEN + payloadLen > frame.size) {
         return null
     }
