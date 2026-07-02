@@ -195,7 +195,11 @@ private fun NodeCard(user: HaLowUser) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column {
-                    Text(user.displayName, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        text = user.displayName,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = user.markerTintColor() ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     Text("Node ${user.nodeId}", style = MaterialTheme.typography.bodyMedium)
                     Text("User ${user.userIdText}", style = MaterialTheme.typography.bodySmall)
                 }
