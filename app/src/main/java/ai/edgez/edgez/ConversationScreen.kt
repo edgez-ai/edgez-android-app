@@ -92,6 +92,7 @@ fun ConversationScreen(
                             Icon(
                                 painter = painterResource(R.drawable.ic_location),
                                 contentDescription = "Open location in map",
+                                tint = user.markerTintColor() ?: MaterialTheme.colorScheme.onSurface,
                             )
                         }
                     }

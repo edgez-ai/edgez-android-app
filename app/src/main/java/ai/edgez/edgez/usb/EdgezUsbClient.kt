@@ -12,6 +12,7 @@ import android.hardware.usb.UsbManager
 import android.os.Build
 import android.util.Log
 import ai.edgez.halow.UsbControl
+import ai.edgez.edgez.NodeMapMarker
 import com.google.protobuf.ByteString
 import com.google.protobuf.InvalidProtocolBufferException
 import java.io.ByteArrayOutputStream
@@ -100,6 +101,7 @@ data class EdgeZAssocMetadata(
     val latitude: Double? = null,
     val longitude: Double? = null,
     val locationTimestampMs: Long = 0,
+    val marker: String = NodeMapMarker.DEFAULT.id,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -112,7 +114,8 @@ data class EdgeZAssocMetadata(
             userPublicKey.contentEquals(other.userPublicKey) &&
             latitude == other.latitude &&
             longitude == other.longitude &&
-            locationTimestampMs == other.locationTimestampMs
+            locationTimestampMs == other.locationTimestampMs &&
+            marker == other.marker
     }
 
     override fun hashCode(): Int {
@@ -123,6 +126,7 @@ data class EdgeZAssocMetadata(
         result = 31 * result + (latitude?.hashCode() ?: 0)
         result = 31 * result + (longitude?.hashCode() ?: 0)
         result = 31 * result + locationTimestampMs.hashCode()
+        result = 31 * result + marker.hashCode()
         return result
     }
 }
@@ -398,8 +402,19 @@ object EdgezUsbControlProto {
         latitude: Double? = null,
         longitude: Double? = null,
         locationTimestampMs: Long = 0,
+        marker: String = NodeMapMarker.DEFAULT.id,
     ): ByteArray {
-        val beacon = encodeBeacon(userIdHigh, userIdLow, userName, userPublicKey, meshPassphrase, latitude, longitude, locationTimestampMs)
+        val beacon = encodeBeacon(
+            userIdHigh,
+            userIdLow,
+            userName,
+            userPublicKey,
+            meshPassphrase,
+            latitude,
+            longitude,
+            locationTimestampMs,
+            marker,
+        )
         return encodeNetworkPacketBuilder(
             userIdHigh = userIdHigh,
             userIdLow = userIdLow,
@@ -655,12 +670,14 @@ object EdgezUsbControlProto {
         latitude: Double?,
         longitude: Double?,
         locationTimestampMs: Long,
+        marker: String,
     ): String {
         val beacon = UsbControl.Beacon.newBuilder()
             .setUserIdHigh(userIdHigh)
             .setUserIdLow(userIdLow)
             .setUserName(userName.take(64))
             .setUserPublicKey(ByteString.copyFrom(userPublicKey.copyOf(minOf(userPublicKey.size, 32))))
+            .setMarker(NodeMapMarker.normalize(marker))
         if (latitude != null && longitude != null) {
             beacon.setAttitude(latitude.toFloat())
             beacon.setLongitude(longitude.toFloat())
@@ -770,6 +787,7 @@ object EdgezUsbControlProto {
             latitude = attitude.toDouble().takeIf { attitude != 0f },
             longitude = longitude.toDouble().takeIf { longitude != 0f },
             locationTimestampMs = 0,
+            marker = NodeMapMarker.normalize(marker),
         )
     }
 
@@ -976,6 +994,7 @@ class EdgezUsbClient(private val context: Context) {
         latitude: Double? = null,
         longitude: Double? = null,
         locationTimestampMs: Long = 0,
+        marker: String = NodeMapMarker.DEFAULT.id,
         timeoutMs: Int = 1500,
     ): Result<String> {
         return sendFrame(
@@ -988,6 +1007,7 @@ class EdgezUsbClient(private val context: Context) {
                 latitude,
                 longitude,
                 locationTimestampMs,
+                marker,
             ),
             timeoutMs,
         )

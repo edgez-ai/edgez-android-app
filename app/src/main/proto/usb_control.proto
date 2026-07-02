@@ -57,6 +57,7 @@ message Beacon {
   bytes user_public_key = 4;
   float attitude = 5;
   float longitude = 6;
+  string marker = 7;
 }
 
 message HaLowInterfaceStatus {

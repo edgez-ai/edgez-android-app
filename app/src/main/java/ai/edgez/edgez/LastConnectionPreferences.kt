@@ -13,6 +13,7 @@ private const val KEY_MESH_MAX_HOP = "mesh_max_hop"
 private const val KEY_BEACON_INTERVAL_SECONDS = "beacon_interval_seconds"
 private const val KEY_USER_UUID = "user_uuid"
 private const val KEY_USER_NAME = "user_name"
+private const val KEY_USER_MARKER = "user_marker"
 private const val KEY_USER_PRIVATE_KEY = "user_private_key"
 private const val KEY_USER_PUBLIC_KEY = "user_public_key"
 private const val KEY_SHARE_LOCATION = "share_location"
@@ -104,6 +105,8 @@ class LastConnectionPreferences(context: Context) {
 
     fun getUserName(): String = prefs.getString(KEY_USER_NAME, DEFAULT_USER_NAME) ?: DEFAULT_USER_NAME
 
+    fun getUserMarker(): String = NodeMapMarker.normalize(prefs.getString(KEY_USER_MARKER, NodeMapMarker.DEFAULT.id))
+
     fun getShareLocation(): Boolean = prefs.getBoolean(KEY_SHARE_LOCATION, false)
 
     fun getAutoReplayReceivedVoice(): Boolean = prefs.getBoolean(KEY_AUTO_REPLAY_RECEIVED_VOICE, false)
@@ -123,6 +126,12 @@ class LastConnectionPreferences(context: Context) {
     fun setUserName(name: String) {
         prefs.edit()
             .putString(KEY_USER_NAME, name.ifBlank { DEFAULT_USER_NAME }.take(64))
+            .apply()
+    }
+
+    fun setUserMarker(marker: String) {
+        prefs.edit()
+            .putString(KEY_USER_MARKER, NodeMapMarker.normalize(marker))
             .apply()
     }
 

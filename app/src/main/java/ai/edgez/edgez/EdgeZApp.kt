@@ -473,6 +473,7 @@ fun EdgeZApp() {
                 if (source != ActiveConnection.NONE && status != null && status.supported && status.stackInitialized && status.meshMode) {
                     val userIdentity = lastConnectionPreferences.getOrCreateUserIdentity()
                     val meshPassphrase = lastConnectionPreferences.getMeshPassphrase()
+                    val marker = lastConnectionPreferences.getUserMarker()
                     val shareLocationEnabled = lastConnectionPreferences.getShareLocation()
                     val location = if (shareLocationEnabled) {
                         context.applicationContext.getBestKnownLocation()
@@ -481,7 +482,7 @@ fun EdgeZApp() {
                     }
                     Log.d(
                         TAG_USERS,
-                        "beacon location share=$shareLocationEnabled hasLocation=${location != null} lat=${location?.latitude} lon=${location?.longitude}",
+                        "beacon location share=$shareLocationEnabled marker=$marker hasLocation=${location != null} lat=${location?.latitude} lon=${location?.longitude}",
                     )
                     beaconExecutor.execute {
                         when (source) {
@@ -494,6 +495,7 @@ fun EdgeZApp() {
                                                 location?.latitude,
                                                 location?.longitude,
                                                 location?.time ?: 0L,
+                                                marker,
                             )
                             ActiveConnection.BLE -> bleClient.sendHaLowBeacon(
                                 userIdentity.userIdHigh,
@@ -504,6 +506,7 @@ fun EdgeZApp() {
                                                 location?.latitude,
                                                 location?.longitude,
                                                 location?.time ?: 0L,
+                                                marker,
                             )
                             ActiveConnection.NONE -> Unit
                         }

@@ -69,7 +69,9 @@ fun SettingsScreen(
     var selectedBle by remember { mutableStateOf<BleCandidate?>(null) }
     var bleReady by remember { mutableStateOf(false) }
     val countryOptions = remember { listOf("US", "JP", "EU") }
+    val markerOptions = remember { NodeMapMarker.values().toList() }
     var countryDropdownExpanded by remember { mutableStateOf(false) }
+    var markerDropdownExpanded by remember { mutableStateOf(false) }
     var meshCountry by rememberSaveable { mutableStateOf(connectionPreferences.getMeshCountry()) }
     var meshId by rememberSaveable { mutableStateOf(connectionPreferences.getMeshId()) }
     var passphrase by rememberSaveable { mutableStateOf(connectionPreferences.getMeshPassphrase()) }
@@ -79,6 +81,7 @@ fun SettingsScreen(
     }
     var userIdentity by remember { mutableStateOf(connectionPreferences.getOrCreateUserIdentity()) }
     var userName by rememberSaveable { mutableStateOf(userIdentity.name) }
+    var userMarker by rememberSaveable { mutableStateOf(connectionPreferences.getUserMarker()) }
     var autoReplayReceivedVoice by rememberSaveable { mutableStateOf(connectionPreferences.getAutoReplayReceivedVoice()) }
     var showDebugPopup by rememberSaveable { mutableStateOf(false) }
     var status by remember { mutableStateOf("Connect the ESP32-S3 USB port, then scan.") }
@@ -131,6 +134,7 @@ fun SettingsScreen(
         maxHop = connectionPreferences.getMeshMaxHop().toString()
         beaconIntervalSeconds = connectionPreferences.getBeaconIntervalSeconds().toString()
         connectionPreferences.setUserName(userName)
+        connectionPreferences.setUserMarker(userMarker)
         connectionPreferences.setShareLocation(shareLocation)
         userIdentity = connectionPreferences.getOrCreateUserIdentity()
         status = "Settings saved"
@@ -328,12 +332,38 @@ fun SettingsScreen(
                     Spacer(Modifier.height(10.dp))
                     Button(onClick = {
                         connectionPreferences.setUserName(userName)
+                        connectionPreferences.setUserMarker(userMarker)
                         connectionPreferences.setShareLocation(shareLocation)
                         userIdentity = connectionPreferences.regenerateUserKeyPair()
                         userName = userIdentity.name
                         status = "X25519 key pair regenerated"
                     }) {
                         Text("Generate key pair")
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { markerDropdownExpanded = true },
+                        ) {
+                            Text("Marker: ${NodeMapMarker.fromId(userMarker).label}")
+                        }
+                        DropdownMenu(
+                            expanded = markerDropdownExpanded,
+                            onDismissRequest = { markerDropdownExpanded = false },
+                        ) {
+                            markerOptions.forEach { marker ->
+                                DropdownMenuItem(
+                                    text = { Text(marker.label) },
+                                    onClick = {
+                                        userMarker = marker.id
+                                        markerDropdownExpanded = false
+                                        connectionPreferences.setUserMarker(marker.id)
+                                        status = "Marker set to ${marker.label}"
+                                    },
+                                )
+                            }
+                        }
                     }
                     Spacer(Modifier.height(10.dp))
                     Row(

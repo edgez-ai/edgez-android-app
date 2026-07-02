@@ -20,6 +20,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.ParcelUuid
 import androidx.core.content.ContextCompat
+import ai.edgez.edgez.NodeMapMarker
 import ai.edgez.edgez.usb.EDGEZ_HEADER_LEN
 import ai.edgez.edgez.usb.EDGEZ_MAGIC_0
 import ai.edgez.edgez.usb.EDGEZ_MAGIC_1
@@ -200,6 +201,7 @@ class EdgezBleClient(private val context: Context) {
         latitude: Double? = null,
         longitude: Double? = null,
         locationTimestampMs: Long = 0,
+        marker: String = NodeMapMarker.DEFAULT.id,
     ): Result<String> {
         return sendFrame(
             EdgezUsbControlProto.encodeHaLowBeacon(
@@ -211,6 +213,7 @@ class EdgezBleClient(private val context: Context) {
                 latitude,
                 longitude,
                 locationTimestampMs,
+                marker,
             ),
         )
     }

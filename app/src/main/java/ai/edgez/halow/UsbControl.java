@@ -103,13 +103,13 @@ public final class UsbControl {
             }
           };
 
-    public static com.google.protobuf.Internal.EnumVerifier 
+    public static com.google.protobuf.Internal.EnumVerifier
         internalGetVerifier() {
       return OperationVerifier.INSTANCE;
     }
 
-    private static final class OperationVerifier implements 
-         com.google.protobuf.Internal.EnumVerifier { 
+    private static final class OperationVerifier implements
+         com.google.protobuf.Internal.EnumVerifier {
             static final com.google.protobuf.Internal.EnumVerifier           INSTANCE = new OperationVerifier();
             @java.lang.Override
             public boolean isInRange(int number) {
@@ -237,13 +237,13 @@ public final class UsbControl {
             }
           };
 
-    public static com.google.protobuf.Internal.EnumVerifier 
+    public static com.google.protobuf.Internal.EnumVerifier
         internalGetVerifier() {
       return InterfaceVerifier.INSTANCE;
     }
 
-    private static final class InterfaceVerifier implements 
-         com.google.protobuf.Internal.EnumVerifier { 
+    private static final class InterfaceVerifier implements
+         com.google.protobuf.Internal.EnumVerifier {
             static final com.google.protobuf.Internal.EnumVerifier           INSTANCE = new InterfaceVerifier();
             @java.lang.Override
             public boolean isInRange(int number) {
@@ -362,13 +362,13 @@ public final class UsbControl {
             }
           };
 
-    public static com.google.protobuf.Internal.EnumVerifier 
+    public static com.google.protobuf.Internal.EnumVerifier
         internalGetVerifier() {
       return MimeVerifier.INSTANCE;
     }
 
-    private static final class MimeVerifier implements 
-         com.google.protobuf.Internal.EnumVerifier { 
+    private static final class MimeVerifier implements
+         com.google.protobuf.Internal.EnumVerifier {
             static final com.google.protobuf.Internal.EnumVerifier           INSTANCE = new MimeVerifier();
             @java.lang.Override
             public boolean isInRange(int number) {
@@ -594,7 +594,7 @@ public final class UsbControl {
      * @param value The messageIdHigh to set.
      */
     private void setMessageIdHigh(long value) {
-      
+
       messageIdHigh_ = value;
     }
     /**
@@ -620,7 +620,7 @@ public final class UsbControl {
      * @param value The messageIdLow to set.
      */
     private void setMessageIdLow(long value) {
-      
+
       messageIdLow_ = value;
     }
     /**
@@ -646,7 +646,7 @@ public final class UsbControl {
      * @param value The from to set.
      */
     private void setFrom(long value) {
-      
+
       from_ = value;
     }
     /**
@@ -672,7 +672,7 @@ public final class UsbControl {
      * @param value The to to set.
      */
     private void setTo(long value) {
-      
+
       to_ = value;
     }
     /**
@@ -782,7 +782,7 @@ public final class UsbControl {
      * @param value The sequence to set.
      */
     private void setSequence(int value) {
-      
+
       sequence_ = value;
     }
     /**
@@ -808,7 +808,7 @@ public final class UsbControl {
      * @param value The userHigh to set.
      */
     private void setUserHigh(long value) {
-      
+
       userHigh_ = value;
     }
     /**
@@ -834,7 +834,7 @@ public final class UsbControl {
      * @param value The userLow to set.
      */
     private void setUserLow(long value) {
-      
+
       userLow_ = value;
     }
     /**
@@ -902,7 +902,7 @@ public final class UsbControl {
      * @param value The maxHop to set.
      */
     private void setMaxHop(int value) {
-      
+
       maxHop_ = value;
     }
     /**
@@ -1916,6 +1916,18 @@ public final class UsbControl {
      * @return The longitude.
      */
     float getLongitude();
+
+    /**
+     * <code>string marker = 7;</code>
+     * @return The marker.
+     */
+    java.lang.String getMarker();
+    /**
+     * <code>string marker = 7;</code>
+     * @return The bytes for marker.
+     */
+    com.google.protobuf.ByteString
+        getMarkerBytes();
   }
   /**
    * Protobuf type {@code ai.edgez.halow.Beacon}
@@ -1928,6 +1940,7 @@ public final class UsbControl {
     private Beacon() {
       userName_ = "";
       userPublicKey_ = com.google.protobuf.ByteString.EMPTY;
+      marker_ = "";
     }
     public static final int USER_ID_HIGH_FIELD_NUMBER = 1;
     private long userIdHigh_;
@@ -1944,7 +1957,7 @@ public final class UsbControl {
      * @param value The userIdHigh to set.
      */
     private void setUserIdHigh(long value) {
-      
+
       userIdHigh_ = value;
     }
     /**
@@ -1970,7 +1983,7 @@ public final class UsbControl {
      * @param value The userIdLow to set.
      */
     private void setUserIdLow(long value) {
-      
+
       userIdLow_ = value;
     }
     /**
@@ -2045,7 +2058,7 @@ public final class UsbControl {
      */
     private void setUserPublicKey(com.google.protobuf.ByteString value) {
       java.lang.Class<?> valueClass = value.getClass();
-  
+
       userPublicKey_ = value;
     }
     /**
@@ -2071,7 +2084,7 @@ public final class UsbControl {
      * @param value The attitude to set.
      */
     private void setAttitude(float value) {
-      
+
       attitude_ = value;
     }
     /**
@@ -2097,7 +2110,7 @@ public final class UsbControl {
      * @param value The longitude to set.
      */
     private void setLongitude(float value) {
-      
+
       longitude_ = value;
     }
     /**
@@ -2106,6 +2119,54 @@ public final class UsbControl {
     private void clearLongitude() {
 
       longitude_ = 0F;
+    }
+
+    public static final int MARKER_FIELD_NUMBER = 7;
+    private java.lang.String marker_;
+    /**
+     * <code>string marker = 7;</code>
+     * @return The marker.
+     */
+    @java.lang.Override
+    public java.lang.String getMarker() {
+      return marker_;
+    }
+    /**
+     * <code>string marker = 7;</code>
+     * @return The bytes for marker.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getMarkerBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(marker_);
+    }
+    /**
+     * <code>string marker = 7;</code>
+     * @param value The marker to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setMarker(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      marker_ = value;
+    }
+    /**
+     * <code>string marker = 7;</code>
+     */
+    private void clearMarker() {
+
+      marker_ = getDefaultInstance().getMarker();
+    }
+    /**
+     * <code>string marker = 7;</code>
+     * @param value The bytes for marker to set.
+     */
+    private void setMarkerBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      marker_ = value.toStringUtf8();
+
     }
 
     public static ai.edgez.halow.UsbControl.Beacon parseFrom(
@@ -2394,6 +2455,55 @@ public final class UsbControl {
         return this;
       }
 
+      /**
+       * <code>string marker = 7;</code>
+       * @return The marker.
+       */
+      @java.lang.Override
+      public java.lang.String getMarker() {
+        return instance.getMarker();
+      }
+      /**
+       * <code>string marker = 7;</code>
+       * @return The bytes for marker.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getMarkerBytes() {
+        return instance.getMarkerBytes();
+      }
+      /**
+       * <code>string marker = 7;</code>
+       * @param value The marker to set.
+       * @return This builder for chaining.
+       */
+      public Builder setMarker(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setMarker(value);
+        return this;
+      }
+      /**
+       * <code>string marker = 7;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearMarker() {
+        copyOnWrite();
+        instance.clearMarker();
+        return this;
+      }
+      /**
+       * <code>string marker = 7;</code>
+       * @param value The bytes for marker to set.
+       * @return This builder for chaining.
+       */
+      public Builder setMarkerBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setMarkerBytes(value);
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:ai.edgez.halow.Beacon)
     }
     @java.lang.Override
@@ -2416,10 +2526,11 @@ public final class UsbControl {
               "userPublicKey_",
               "attitude_",
               "longitude_",
+              "marker_",
             };
             java.lang.String info =
-                "\u0000\u0006\u0000\u0000\u0001\u0006\u0006\u0000\u0000\u0000\u0001\u0003\u0002\u0003" +
-                "\u0003\u0208\u0004\n\u0005\u0001\u0006\u0001";
+                "\u0000\u0007\u0000\u0000\u0001\u0007\u0007\u0000\u0000\u0000\u0001\u0003\u0002\u0003" +
+                "\u0003\u0208\u0004\n\u0005\u0001\u0006\u0001\u0007\u0208";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         // fall through
@@ -2590,7 +2701,7 @@ public final class UsbControl {
      * @param value The supported to set.
      */
     private void setSupported(boolean value) {
-      
+
       supported_ = value;
     }
     /**
@@ -2616,7 +2727,7 @@ public final class UsbControl {
      * @param value The stackInitialized to set.
      */
     private void setStackInitialized(boolean value) {
-      
+
       stackInitialized_ = value;
     }
     /**
@@ -2642,7 +2753,7 @@ public final class UsbControl {
      * @param value The meshMode to set.
      */
     private void setMeshMode(boolean value) {
-      
+
       meshMode_ = value;
     }
     /**
@@ -2668,7 +2779,7 @@ public final class UsbControl {
      * @param value The linkUp to set.
      */
     private void setLinkUp(boolean value) {
-      
+
       linkUp_ = value;
     }
     /**
@@ -2694,7 +2805,7 @@ public final class UsbControl {
      * @param value The routeReady to set.
      */
     private void setRouteReady(boolean value) {
-      
+
       routeReady_ = value;
     }
     /**
@@ -2720,7 +2831,7 @@ public final class UsbControl {
      * @param value The readyForReport to set.
      */
     private void setReadyForReport(boolean value) {
-      
+
       readyForReport_ = value;
     }
     /**
@@ -2746,7 +2857,7 @@ public final class UsbControl {
      * @param value The ethertype to set.
      */
     private void setEthertype(int value) {
-      
+
       ethertype_ = value;
     }
     /**
@@ -2916,7 +3027,7 @@ public final class UsbControl {
      * @param value The macAddress to set.
      */
     private void setMacAddress(long value) {
-      
+
       macAddress_ = value;
     }
     /**
@@ -3731,7 +3842,7 @@ public final class UsbControl {
      * @param value The maxHop to set.
      */
     private void setMaxHop(int value) {
-      
+
       maxHop_ = value;
     }
     /**
@@ -3757,7 +3868,7 @@ public final class UsbControl {
      * @param value The userIdHigh to set.
      */
     private void setUserIdHigh(long value) {
-      
+
       userIdHigh_ = value;
     }
     /**
@@ -3783,7 +3894,7 @@ public final class UsbControl {
      * @param value The userIdLow to set.
      */
     private void setUserIdLow(long value) {
-      
+
       userIdLow_ = value;
     }
     /**
@@ -3858,7 +3969,7 @@ public final class UsbControl {
      */
     private void setUserPublicKey(com.google.protobuf.ByteString value) {
       java.lang.Class<?> valueClass = value.getClass();
-  
+
       userPublicKey_ = value;
     }
     /**

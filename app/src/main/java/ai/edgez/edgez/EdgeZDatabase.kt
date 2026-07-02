@@ -8,7 +8,7 @@ import android.util.Log
 import ai.edgez.edgez.usb.PacketMime
 
 private const val DATABASE_NAME = "edgez_local.db"
-private const val DATABASE_VERSION = 2
+private const val DATABASE_VERSION = 3
 private const val TABLE_USERS = "halow_users"
 private const val TABLE_MESSAGES = "conversation_messages"
 private const val TAG_USERS = "EdgeZUsers"
@@ -32,7 +32,8 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 public_key BLOB NOT NULL,
                 latitude REAL,
                 longitude REAL,
-                location_timestamp_ms INTEGER NOT NULL DEFAULT 0
+                location_timestamp_ms INTEGER NOT NULL DEFAULT 0,
+                marker TEXT NOT NULL DEFAULT 'default'
             )
             """.trimIndent(),
         )
@@ -62,6 +63,9 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
             db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN audio_path TEXT NOT NULL DEFAULT ''")
             db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0")
         }
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE $TABLE_USERS ADD COLUMN marker TEXT NOT NULL DEFAULT 'default'")
+        }
     }
 
     override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -83,6 +87,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 "latitude",
                 "longitude",
                 "location_timestamp_ms",
+                "marker",
             ),
             null,
             null,
@@ -100,6 +105,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
             val latitudeIndex = cursor.getColumnIndexOrThrow("latitude")
             val longitudeIndex = cursor.getColumnIndexOrThrow("longitude")
             val locationTimestampIndex = cursor.getColumnIndexOrThrow("location_timestamp_ms")
+            val markerIndex = cursor.getColumnIndexOrThrow("marker")
             while (cursor.moveToNext()) {
                 val userUuid = cursor.getString(userUuidIndex)
                 val user = HaLowUser(
@@ -114,6 +120,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                     latitude = cursor.getNullableDouble(latitudeIndex),
                     longitude = cursor.getNullableDouble(longitudeIndex),
                     locationTimestampMs = cursor.getLong(locationTimestampIndex),
+                    marker = NodeMapMarker.normalize(cursor.getString(markerIndex)),
                 )
                 Log.d(
                     TAG_USERS,
@@ -190,6 +197,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 putNullableDouble("latitude", user.latitude)
                 putNullableDouble("longitude", user.longitude)
                 put("location_timestamp_ms", user.locationTimestampMs)
+                put("marker", NodeMapMarker.normalize(user.marker))
             },
             SQLiteDatabase.CONFLICT_REPLACE,
         )

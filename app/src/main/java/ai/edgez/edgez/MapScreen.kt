@@ -96,7 +96,7 @@ fun MapScreen(users: List<HaLowUser>) {
         users.filter { it.hasValidMapLocation() }
     }
     val markerSignature = markerUsers.joinToString(separator = "|") { user ->
-        "${user.nodeNum}:${user.displayName}:${user.latitude}:${user.longitude}"
+        "${user.nodeNum}:${user.displayName}:${user.latitude}:${user.longitude}:${user.marker}"
     }
 
     var initialized by remember { mutableStateOf(application.organicMaps.arePlatformAndCoreInitialized()) }
@@ -281,18 +281,24 @@ fun MapScreen(users: List<HaLowUser>) {
         ) {
             if (initialized) {
                 AndroidView(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize(),
                     factory = { viewContext ->
                         MapView(viewContext).also { mapView ->
                             renderingReady = false
                             mapView.setOnTouchListener { _, event ->
-                                if (event.actionMasked == MotionEvent.ACTION_UP) {
-                                    if (renderingReady) {
-                                        refreshDownloadPrompt()
-                                        mapView.postDelayed(
-                                            { refreshDownloadPrompt() },
-                                            DOWNLOAD_PROMPT_GESTURE_DELAY_MS,
-                                        )
+                                when (event.actionMasked) {
+                                    MotionEvent.ACTION_UP,
+                                    MotionEvent.ACTION_CANCEL -> {
+                                        if (renderingReady) {
+                                            refreshDownloadPrompt()
+                                            mapView.postDelayed(
+                                                {
+                                                    refreshDownloadPrompt()
+                                                },
+                                                DOWNLOAD_PROMPT_GESTURE_DELAY_MS,
+                                            )
+                                        }
                                     }
                                 }
                                 false
@@ -509,7 +515,9 @@ private fun buildUserMarkerApiUrl(users: List<HaLowUser>): String {
         val point = String.format(Locale.US, "%.7f,%.7f", latitude, longitude)
         val markerId = Uri.encode("edgez-${user.nodeNum}")
         val name = Uri.encode(user.displayName)
-        "ll=$point&n=$name&id=$markerId"
+        val markerStyle = NodeMapMarker.fromId(user.marker).organicMapsStyle
+        val style = markerStyle?.let { "&style=${Uri.encode(it)}" }.orEmpty()
+        "ll=$point&n=$name&id=$markerId$style"
     }
 }
 
