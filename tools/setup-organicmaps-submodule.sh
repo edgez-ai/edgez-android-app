@@ -11,6 +11,7 @@ git -C "$SUBMODULE_PATH" sparse-checkout init --no-cone
 git -C "$SUBMODULE_PATH" sparse-checkout set --no-cone \
   /.gitmodules \
   /CMakeLists.txt \
+  /defines.hpp \
   /private.h \
   /3party/ \
   /android/sdk/ \
@@ -71,6 +72,7 @@ git -C "$BOOST_PATH" submodule update --init --depth 1 --filter=blob:none \
   libs/date_time \
   libs/detail \
   libs/describe \
+  libs/endian \
   libs/exception \
   libs/function \
   libs/function_types \
@@ -79,6 +81,7 @@ git -C "$BOOST_PATH" submodule update --init --depth 1 --filter=blob:none \
   libs/graph \
   libs/headers \
   libs/integer \
+  libs/intrusive \
   libs/io \
   libs/iterator \
   libs/lambda \
@@ -90,11 +93,13 @@ git -C "$BOOST_PATH" submodule update --init --depth 1 --filter=blob:none \
   libs/multiprecision \
   libs/numeric/conversion \
   libs/optional \
+  libs/parameter \
   libs/phoenix \
   libs/polygon \
   libs/pool \
   libs/predef \
   libs/preprocessor \
+  libs/property_map \
   libs/proto \
   libs/qvm \
   libs/range \
@@ -107,6 +112,7 @@ git -C "$BOOST_PATH" submodule update --init --depth 1 --filter=blob:none \
   libs/throw_exception \
   libs/tokenizer \
   libs/tuple \
+  libs/type_index \
   libs/type_traits \
   libs/typeof \
   libs/unordered \
