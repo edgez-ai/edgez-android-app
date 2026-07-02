@@ -385,6 +385,230 @@ public final class UsbControl {
     // @@protoc_insertion_point(enum_scope:ai.edgez.halow.Mime)
   }
 
+  /**
+   * Protobuf enum {@code ai.edgez.halow.MarkerColor}
+   */
+  public enum MarkerColor
+      implements com.google.protobuf.Internal.EnumLite {
+    /**
+     * <code>MARKER_DEFAULT = 0;</code>
+     */
+    MARKER_DEFAULT(0),
+    /**
+     * <code>MARKER_RED = 1;</code>
+     */
+    MARKER_RED(1),
+    /**
+     * <code>MARKER_BLUE = 2;</code>
+     */
+    MARKER_BLUE(2),
+    /**
+     * <code>MARKER_PURPLE = 3;</code>
+     */
+    MARKER_PURPLE(3),
+    /**
+     * <code>MARKER_YELLOW = 4;</code>
+     */
+    MARKER_YELLOW(4),
+    /**
+     * <code>MARKER_PINK = 5;</code>
+     */
+    MARKER_PINK(5),
+    /**
+     * <code>MARKER_BROWN = 6;</code>
+     */
+    MARKER_BROWN(6),
+    /**
+     * <code>MARKER_GREEN = 7;</code>
+     */
+    MARKER_GREEN(7),
+    /**
+     * <code>MARKER_ORANGE = 8;</code>
+     */
+    MARKER_ORANGE(8),
+    /**
+     * <code>MARKER_DEEP_PURPLE = 9;</code>
+     */
+    MARKER_DEEP_PURPLE(9),
+    /**
+     * <code>MARKER_LIGHT_BLUE = 10;</code>
+     */
+    MARKER_LIGHT_BLUE(10),
+    /**
+     * <code>MARKER_CYAN = 11;</code>
+     */
+    MARKER_CYAN(11),
+    /**
+     * <code>MARKER_TEAL = 12;</code>
+     */
+    MARKER_TEAL(12),
+    /**
+     * <code>MARKER_LIME = 13;</code>
+     */
+    MARKER_LIME(13),
+    /**
+     * <code>MARKER_DEEP_ORANGE = 14;</code>
+     */
+    MARKER_DEEP_ORANGE(14),
+    /**
+     * <code>MARKER_GRAY = 15;</code>
+     */
+    MARKER_GRAY(15),
+    /**
+     * <code>MARKER_BLUE_GRAY = 16;</code>
+     */
+    MARKER_BLUE_GRAY(16),
+    UNRECOGNIZED(-1),
+    ;
+
+    /**
+     * <code>MARKER_DEFAULT = 0;</code>
+     */
+    public static final int MARKER_DEFAULT_VALUE = 0;
+    /**
+     * <code>MARKER_RED = 1;</code>
+     */
+    public static final int MARKER_RED_VALUE = 1;
+    /**
+     * <code>MARKER_BLUE = 2;</code>
+     */
+    public static final int MARKER_BLUE_VALUE = 2;
+    /**
+     * <code>MARKER_PURPLE = 3;</code>
+     */
+    public static final int MARKER_PURPLE_VALUE = 3;
+    /**
+     * <code>MARKER_YELLOW = 4;</code>
+     */
+    public static final int MARKER_YELLOW_VALUE = 4;
+    /**
+     * <code>MARKER_PINK = 5;</code>
+     */
+    public static final int MARKER_PINK_VALUE = 5;
+    /**
+     * <code>MARKER_BROWN = 6;</code>
+     */
+    public static final int MARKER_BROWN_VALUE = 6;
+    /**
+     * <code>MARKER_GREEN = 7;</code>
+     */
+    public static final int MARKER_GREEN_VALUE = 7;
+    /**
+     * <code>MARKER_ORANGE = 8;</code>
+     */
+    public static final int MARKER_ORANGE_VALUE = 8;
+    /**
+     * <code>MARKER_DEEP_PURPLE = 9;</code>
+     */
+    public static final int MARKER_DEEP_PURPLE_VALUE = 9;
+    /**
+     * <code>MARKER_LIGHT_BLUE = 10;</code>
+     */
+    public static final int MARKER_LIGHT_BLUE_VALUE = 10;
+    /**
+     * <code>MARKER_CYAN = 11;</code>
+     */
+    public static final int MARKER_CYAN_VALUE = 11;
+    /**
+     * <code>MARKER_TEAL = 12;</code>
+     */
+    public static final int MARKER_TEAL_VALUE = 12;
+    /**
+     * <code>MARKER_LIME = 13;</code>
+     */
+    public static final int MARKER_LIME_VALUE = 13;
+    /**
+     * <code>MARKER_DEEP_ORANGE = 14;</code>
+     */
+    public static final int MARKER_DEEP_ORANGE_VALUE = 14;
+    /**
+     * <code>MARKER_GRAY = 15;</code>
+     */
+    public static final int MARKER_GRAY_VALUE = 15;
+    /**
+     * <code>MARKER_BLUE_GRAY = 16;</code>
+     */
+    public static final int MARKER_BLUE_GRAY_VALUE = 16;
+
+
+    @java.lang.Override
+    public final int getNumber() {
+      if (this == UNRECOGNIZED) {
+        throw new java.lang.IllegalArgumentException(
+            "Can't get the number of an unknown enum value.");
+      }
+      return value;
+    }
+
+    /**
+     * @param value The number of the enum to look for.
+     * @return The enum associated with the given number.
+     * @deprecated Use {@link #forNumber(int)} instead.
+     */
+    @java.lang.Deprecated
+    public static MarkerColor valueOf(int value) {
+      return forNumber(value);
+    }
+
+    public static MarkerColor forNumber(int value) {
+      switch (value) {
+        case 0: return MARKER_DEFAULT;
+        case 1: return MARKER_RED;
+        case 2: return MARKER_BLUE;
+        case 3: return MARKER_PURPLE;
+        case 4: return MARKER_YELLOW;
+        case 5: return MARKER_PINK;
+        case 6: return MARKER_BROWN;
+        case 7: return MARKER_GREEN;
+        case 8: return MARKER_ORANGE;
+        case 9: return MARKER_DEEP_PURPLE;
+        case 10: return MARKER_LIGHT_BLUE;
+        case 11: return MARKER_CYAN;
+        case 12: return MARKER_TEAL;
+        case 13: return MARKER_LIME;
+        case 14: return MARKER_DEEP_ORANGE;
+        case 15: return MARKER_GRAY;
+        case 16: return MARKER_BLUE_GRAY;
+        default: return null;
+      }
+    }
+
+    public static com.google.protobuf.Internal.EnumLiteMap<MarkerColor>
+        internalGetValueMap() {
+      return internalValueMap;
+    }
+    private static final com.google.protobuf.Internal.EnumLiteMap<
+        MarkerColor> internalValueMap =
+          new com.google.protobuf.Internal.EnumLiteMap<MarkerColor>() {
+            @java.lang.Override
+            public MarkerColor findValueByNumber(int number) {
+              return MarkerColor.forNumber(number);
+            }
+          };
+
+    public static com.google.protobuf.Internal.EnumVerifier
+        internalGetVerifier() {
+      return MarkerColorVerifier.INSTANCE;
+    }
+
+    private static final class MarkerColorVerifier implements
+         com.google.protobuf.Internal.EnumVerifier {
+            static final com.google.protobuf.Internal.EnumVerifier           INSTANCE = new MarkerColorVerifier();
+            @java.lang.Override
+            public boolean isInRange(int number) {
+              return MarkerColor.forNumber(number) != null;
+            }
+          };
+
+    private final int value;
+
+    private MarkerColor(int value) {
+      this.value = value;
+    }
+
+    // @@protoc_insertion_point(enum_scope:ai.edgez.halow.MarkerColor)
+  }
+
   public interface NetworkPacketOrBuilder extends
       // @@protoc_insertion_point(interface_extends:ai.edgez.halow.NetworkPacket)
       com.google.protobuf.MessageLiteOrBuilder {
@@ -1918,16 +2142,15 @@ public final class UsbControl {
     float getLongitude();
 
     /**
-     * <code>string marker = 7;</code>
+     * <code>.ai.edgez.halow.MarkerColor marker = 7;</code>
+     * @return The enum numeric value on the wire for marker.
+     */
+    int getMarkerValue();
+    /**
+     * <code>.ai.edgez.halow.MarkerColor marker = 7;</code>
      * @return The marker.
      */
-    java.lang.String getMarker();
-    /**
-     * <code>string marker = 7;</code>
-     * @return The bytes for marker.
-     */
-    com.google.protobuf.ByteString
-        getMarkerBytes();
+    ai.edgez.halow.UsbControl.MarkerColor getMarker();
   }
   /**
    * Protobuf type {@code ai.edgez.halow.Beacon}
@@ -1940,7 +2163,6 @@ public final class UsbControl {
     private Beacon() {
       userName_ = "";
       userPublicKey_ = com.google.protobuf.ByteString.EMPTY;
-      marker_ = "";
     }
     public static final int USER_ID_HIGH_FIELD_NUMBER = 1;
     private long userIdHigh_;
@@ -2122,51 +2344,45 @@ public final class UsbControl {
     }
 
     public static final int MARKER_FIELD_NUMBER = 7;
-    private java.lang.String marker_;
+    private int marker_;
     /**
-     * <code>string marker = 7;</code>
-     * @return The marker.
+     * <code>.ai.edgez.halow.MarkerColor marker = 7;</code>
+     * @return The enum numeric value on the wire for marker.
      */
     @java.lang.Override
-    public java.lang.String getMarker() {
+    public int getMarkerValue() {
       return marker_;
     }
     /**
-     * <code>string marker = 7;</code>
-     * @return The bytes for marker.
+     * <code>.ai.edgez.halow.MarkerColor marker = 7;</code>
+     * @return The marker.
      */
     @java.lang.Override
-    public com.google.protobuf.ByteString
-        getMarkerBytes() {
-      return com.google.protobuf.ByteString.copyFromUtf8(marker_);
+    public ai.edgez.halow.UsbControl.MarkerColor getMarker() {
+      ai.edgez.halow.UsbControl.MarkerColor result = ai.edgez.halow.UsbControl.MarkerColor.forNumber(marker_);
+      return result == null ? ai.edgez.halow.UsbControl.MarkerColor.UNRECOGNIZED : result;
     }
     /**
-     * <code>string marker = 7;</code>
+     * <code>.ai.edgez.halow.MarkerColor marker = 7;</code>
+     * @param value The enum numeric value on the wire for marker to set.
+     */
+    private void setMarkerValue(int value) {
+        marker_ = value;
+    }
+    /**
+     * <code>.ai.edgez.halow.MarkerColor marker = 7;</code>
      * @param value The marker to set.
      */
-    @java.lang.SuppressWarnings("ReturnValueIgnored")
-    private void setMarker(
-        java.lang.String value) {
-      value.getClass();  // minimal bytecode null check
+    private void setMarker(ai.edgez.halow.UsbControl.MarkerColor value) {
+      marker_ = value.getNumber();
 
-      marker_ = value;
     }
     /**
-     * <code>string marker = 7;</code>
+     * <code>.ai.edgez.halow.MarkerColor marker = 7;</code>
      */
     private void clearMarker() {
 
-      marker_ = getDefaultInstance().getMarker();
-    }
-    /**
-     * <code>string marker = 7;</code>
-     * @param value The bytes for marker to set.
-     */
-    private void setMarkerBytes(
-        com.google.protobuf.ByteString value) {
-      checkByteStringIsUtf8(value);
-      marker_ = value.toStringUtf8();
-
+      marker_ = 0;
     }
 
     public static ai.edgez.halow.UsbControl.Beacon parseFrom(
@@ -2456,51 +2672,48 @@ public final class UsbControl {
       }
 
       /**
-       * <code>string marker = 7;</code>
-       * @return The marker.
+       * <code>.ai.edgez.halow.MarkerColor marker = 7;</code>
+       * @return The enum numeric value on the wire for marker.
        */
       @java.lang.Override
-      public java.lang.String getMarker() {
-        return instance.getMarker();
+      public int getMarkerValue() {
+        return instance.getMarkerValue();
       }
       /**
-       * <code>string marker = 7;</code>
-       * @return The bytes for marker.
-       */
-      @java.lang.Override
-      public com.google.protobuf.ByteString
-          getMarkerBytes() {
-        return instance.getMarkerBytes();
-      }
-      /**
-       * <code>string marker = 7;</code>
+       * <code>.ai.edgez.halow.MarkerColor marker = 7;</code>
        * @param value The marker to set.
        * @return This builder for chaining.
        */
-      public Builder setMarker(
-          java.lang.String value) {
+      public Builder setMarkerValue(int value) {
+        copyOnWrite();
+        instance.setMarkerValue(value);
+        return this;
+      }
+      /**
+       * <code>.ai.edgez.halow.MarkerColor marker = 7;</code>
+       * @return The marker.
+       */
+      @java.lang.Override
+      public ai.edgez.halow.UsbControl.MarkerColor getMarker() {
+        return instance.getMarker();
+      }
+      /**
+       * <code>.ai.edgez.halow.MarkerColor marker = 7;</code>
+       * @param value The enum numeric value on the wire for marker to set.
+       * @return This builder for chaining.
+       */
+      public Builder setMarker(ai.edgez.halow.UsbControl.MarkerColor value) {
         copyOnWrite();
         instance.setMarker(value);
         return this;
       }
       /**
-       * <code>string marker = 7;</code>
+       * <code>.ai.edgez.halow.MarkerColor marker = 7;</code>
        * @return This builder for chaining.
        */
       public Builder clearMarker() {
         copyOnWrite();
         instance.clearMarker();
-        return this;
-      }
-      /**
-       * <code>string marker = 7;</code>
-       * @param value The bytes for marker to set.
-       * @return This builder for chaining.
-       */
-      public Builder setMarkerBytes(
-          com.google.protobuf.ByteString value) {
-        copyOnWrite();
-        instance.setMarkerBytes(value);
         return this;
       }
 
@@ -2530,7 +2743,7 @@ public final class UsbControl {
             };
             java.lang.String info =
                 "\u0000\u0007\u0000\u0000\u0001\u0007\u0007\u0000\u0000\u0000\u0001\u0003\u0002\u0003" +
-                "\u0003\u0208\u0004\n\u0005\u0001\u0006\u0001\u0007\u0208";
+                "\u0003\u0208\u0004\n\u0005\u0001\u0006\u0001\u0007\f";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         // fall through

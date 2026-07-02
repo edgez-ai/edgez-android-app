@@ -51,6 +51,7 @@ private const val EDGEZ_MAX_FRAME = EDGEZ_HEADER_LEN + EDGEZ_MAX_PAYLOAD
 private const val USB_CONTROL_STATUS_OK = 1
 private const val TAG = "EdgezUsbClient"
 private const val USB_READ_TIMEOUT_MS = 200
+private const val BEACON_MARKER_SEPARATOR = "|m="
 
 data class UsbCandidate(
     val device: UsbDevice,
@@ -612,7 +613,12 @@ object EdgezUsbControlProto {
 
     fun decodeEdgeZAssocMetadata(payload: ByteArray): EdgeZAssocMetadata? {
         return try {
-            UsbControl.Beacon.parseFrom(payload).toAppBeacon()
+            val beacon = UsbControl.Beacon.parseFrom(payload)
+            Log.d(
+                TAG,
+                "decoded beacon payload bytes=${payload.size} user=${beacon.userName} marker=${beacon.marker.toNodeMarkerId()}",
+            )
+            beacon.toAppBeacon()
         } catch (_: InvalidProtocolBufferException) {
             null
         }
@@ -672,17 +678,23 @@ object EdgezUsbControlProto {
         locationTimestampMs: Long,
         marker: String,
     ): String {
+        val normalizedMarker = NodeMapMarker.normalize(marker)
         val beacon = UsbControl.Beacon.newBuilder()
             .setUserIdHigh(userIdHigh)
             .setUserIdLow(userIdLow)
-            .setUserName(userName.take(64))
+            .setUserName(encodeBeaconUserName(userName, normalizedMarker))
             .setUserPublicKey(ByteString.copyFrom(userPublicKey.copyOf(minOf(userPublicKey.size, 32))))
-            .setMarker(NodeMapMarker.normalize(marker))
+            .setMarker(NodeMapMarker.fromId(normalizedMarker).toProtoMarkerColor())
         if (latitude != null && longitude != null) {
             beacon.setAttitude(latitude.toFloat())
             beacon.setLongitude(longitude.toFloat())
         }
-        val beaconBytes = beacon.build().toByteArray()
+        val builtBeacon = beacon.build()
+        val beaconBytes = builtBeacon.toByteArray()
+        Log.d(
+            TAG,
+            "encoded beacon payload bytes=${beaconBytes.size} user=${builtBeacon.userName} marker=${builtBeacon.marker.toNodeMarkerId()} encrypted=${meshPassphrase.isNotBlank()}",
+        )
         val payload = if (meshPassphrase.isNotBlank()) {
             encryptBeacon(beaconBytes, meshPassphrase)
         } else {
@@ -776,19 +788,91 @@ object EdgezUsbControlProto {
     }
 
     private fun UsbControl.Beacon.toAppBeacon(): EdgeZAssocMetadata? {
-        if (userIdHigh == 0L && userIdLow == 0L && userName.isBlank() && userPublicKey.isEmpty) {
+        val decodedUserName = decodeBeaconUserName(userName, marker.toNodeMarkerId())
+        if (userIdHigh == 0L && userIdLow == 0L && decodedUserName.name.isBlank() && userPublicKey.isEmpty) {
             return null
         }
         return EdgeZAssocMetadata(
             userIdHigh = userIdHigh,
             userIdLow = userIdLow,
-            userName = userName,
+            userName = decodedUserName.name,
             userPublicKey = userPublicKey.toByteArray(),
             latitude = attitude.toDouble().takeIf { attitude != 0f },
             longitude = longitude.toDouble().takeIf { longitude != 0f },
             locationTimestampMs = 0,
-            marker = NodeMapMarker.normalize(marker),
+            marker = decodedUserName.marker,
         )
+    }
+
+    private fun encodeBeaconUserName(userName: String, marker: String): String {
+        val normalizedName = userName.ifBlank { "EdgeZ User" }
+        if (marker == NodeMapMarker.DEFAULT.id) return normalizedName.take(64)
+        val suffix = "$BEACON_MARKER_SEPARATOR$marker"
+        return normalizedName.take((64 - suffix.length).coerceAtLeast(0)) + suffix
+    }
+
+    private fun decodeBeaconUserName(userName: String, protoMarker: String): BeaconUserName {
+        val separatorIndex = userName.lastIndexOf(BEACON_MARKER_SEPARATOR)
+        if (separatorIndex < 0) {
+            return BeaconUserName(userName, protoMarker)
+        }
+        val marker = NodeMapMarker.fromId(userName.substring(separatorIndex + BEACON_MARKER_SEPARATOR.length))
+        if (marker == NodeMapMarker.DEFAULT) {
+            return BeaconUserName(userName, protoMarker)
+        }
+        val decodedMarker = if (protoMarker == NodeMapMarker.DEFAULT.id) marker.id else protoMarker
+        return BeaconUserName(userName.substring(0, separatorIndex), decodedMarker)
+    }
+
+    private data class BeaconUserName(
+        val name: String,
+        val marker: String,
+    )
+
+    private fun NodeMapMarker.toProtoMarkerColor(): UsbControl.MarkerColor {
+        return when (this) {
+            NodeMapMarker.DEFAULT -> UsbControl.MarkerColor.MARKER_DEFAULT
+            NodeMapMarker.RED -> UsbControl.MarkerColor.MARKER_RED
+            NodeMapMarker.BLUE -> UsbControl.MarkerColor.MARKER_BLUE
+            NodeMapMarker.PURPLE -> UsbControl.MarkerColor.MARKER_PURPLE
+            NodeMapMarker.YELLOW -> UsbControl.MarkerColor.MARKER_YELLOW
+            NodeMapMarker.PINK -> UsbControl.MarkerColor.MARKER_PINK
+            NodeMapMarker.BROWN -> UsbControl.MarkerColor.MARKER_BROWN
+            NodeMapMarker.GREEN -> UsbControl.MarkerColor.MARKER_GREEN
+            NodeMapMarker.ORANGE -> UsbControl.MarkerColor.MARKER_ORANGE
+            NodeMapMarker.DEEP_PURPLE -> UsbControl.MarkerColor.MARKER_DEEP_PURPLE
+            NodeMapMarker.LIGHT_BLUE -> UsbControl.MarkerColor.MARKER_LIGHT_BLUE
+            NodeMapMarker.CYAN -> UsbControl.MarkerColor.MARKER_CYAN
+            NodeMapMarker.TEAL -> UsbControl.MarkerColor.MARKER_TEAL
+            NodeMapMarker.LIME -> UsbControl.MarkerColor.MARKER_LIME
+            NodeMapMarker.DEEP_ORANGE -> UsbControl.MarkerColor.MARKER_DEEP_ORANGE
+            NodeMapMarker.GRAY -> UsbControl.MarkerColor.MARKER_GRAY
+            NodeMapMarker.BLUE_GRAY -> UsbControl.MarkerColor.MARKER_BLUE_GRAY
+        }
+    }
+
+    private fun UsbControl.MarkerColor.toNodeMarkerId(): String {
+        return when (this) {
+            UsbControl.MarkerColor.MARKER_RED -> NodeMapMarker.RED.id
+            UsbControl.MarkerColor.MARKER_BLUE -> NodeMapMarker.BLUE.id
+            UsbControl.MarkerColor.MARKER_PURPLE -> NodeMapMarker.PURPLE.id
+            UsbControl.MarkerColor.MARKER_YELLOW -> NodeMapMarker.YELLOW.id
+            UsbControl.MarkerColor.MARKER_PINK -> NodeMapMarker.PINK.id
+            UsbControl.MarkerColor.MARKER_BROWN -> NodeMapMarker.BROWN.id
+            UsbControl.MarkerColor.MARKER_GREEN -> NodeMapMarker.GREEN.id
+            UsbControl.MarkerColor.MARKER_ORANGE -> NodeMapMarker.ORANGE.id
+            UsbControl.MarkerColor.MARKER_DEEP_PURPLE -> NodeMapMarker.DEEP_PURPLE.id
+            UsbControl.MarkerColor.MARKER_LIGHT_BLUE -> NodeMapMarker.LIGHT_BLUE.id
+            UsbControl.MarkerColor.MARKER_CYAN -> NodeMapMarker.CYAN.id
+            UsbControl.MarkerColor.MARKER_TEAL -> NodeMapMarker.TEAL.id
+            UsbControl.MarkerColor.MARKER_LIME -> NodeMapMarker.LIME.id
+            UsbControl.MarkerColor.MARKER_DEEP_ORANGE -> NodeMapMarker.DEEP_ORANGE.id
+            UsbControl.MarkerColor.MARKER_GRAY -> NodeMapMarker.GRAY.id
+            UsbControl.MarkerColor.MARKER_BLUE_GRAY -> NodeMapMarker.BLUE_GRAY.id
+            UsbControl.MarkerColor.MARKER_DEFAULT,
+            UsbControl.MarkerColor.UNRECOGNIZED
+            -> NodeMapMarker.DEFAULT.id
+        }
     }
 
     private fun PacketMime.toProtoMime(): UsbControl.Mime {

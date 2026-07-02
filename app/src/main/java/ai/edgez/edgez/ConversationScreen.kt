@@ -100,6 +100,7 @@ fun ConversationScreen(
                         Text(user.displayName, style = MaterialTheme.typography.titleLarge)
                         Text("Node ${user.nodeId}", style = MaterialTheme.typography.bodySmall)
                         Text("User ${user.userIdText}", style = MaterialTheme.typography.bodySmall)
+                        Text("Marker ${NodeMapMarker.fromId(user.marker).label}", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }

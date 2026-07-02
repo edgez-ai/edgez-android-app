@@ -293,7 +293,7 @@ fun EdgeZApp() {
                     if (user != null) {
                         val userKey = conversationKey(user)
                         val previousUser = haLowUsers.values.firstOrNull { conversationKey(it) == userKey }
-                        val updatedUser = user.withFallbackLocation(previousUser)
+                        val updatedUser = user.withFallbackLocationAndMarker(previousUser)
                         val updatedUserKey = conversationKey(updatedUser)
                         Log.d(
                             TAG_USERS,
@@ -301,6 +301,7 @@ fun EdgeZApp() {
                                 "previousLastSeen=${previousUser?.lastSeenMs} newLastSeen=${updatedUser.lastSeenMs} " +
                                 "previousLat=${previousUser?.latitude} previousLon=${previousUser?.longitude} " +
                                 "newLat=${updatedUser.latitude} newLon=${updatedUser.longitude} locTs=${updatedUser.locationTimestampMs} " +
+                                "previousMarker=${previousUser?.marker} beaconMarker=${user.marker} marker=${updatedUser.marker} " +
                                 "selected=${selectedConversationUser?.let { conversationKey(it) } == updatedUserKey}",
                         )
                         edgeZDatabase.upsertUser(updatedUser)

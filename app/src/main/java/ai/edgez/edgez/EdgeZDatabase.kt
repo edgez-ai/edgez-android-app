@@ -125,7 +125,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 Log.d(
                     TAG_USERS,
                     "loaded user node=${user.nodeId} uuid=${user.userUuid} name=${user.displayName} " +
-                        "lastSeen=${user.lastSeenMs} lat=${user.latitude} lon=${user.longitude} locTs=${user.locationTimestampMs}",
+                        "lastSeen=${user.lastSeenMs} lat=${user.latitude} lon=${user.longitude} locTs=${user.locationTimestampMs} marker=${user.marker}",
                 )
                 users[user.nodeNum] = user
             }
@@ -204,7 +204,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
         Log.d(
             TAG_USERS,
             "upsert user rowId=$rowId node=${user.nodeId} uuid=${user.userUuid} name=${user.displayName} " +
-                "lastSeen=${user.lastSeenMs} lat=${user.latitude} lon=${user.longitude} locTs=${user.locationTimestampMs}",
+                "lastSeen=${user.lastSeenMs} lat=${user.latitude} lon=${user.longitude} locTs=${user.locationTimestampMs} marker=${user.marker}",
         )
     }
 

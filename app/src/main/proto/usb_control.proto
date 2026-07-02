@@ -29,6 +29,26 @@ enum Mime {
   MIME_BINARY = 5;
 }
 
+enum MarkerColor {
+  MARKER_DEFAULT = 0;
+  MARKER_RED = 1;
+  MARKER_BLUE = 2;
+  MARKER_PURPLE = 3;
+  MARKER_YELLOW = 4;
+  MARKER_PINK = 5;
+  MARKER_BROWN = 6;
+  MARKER_GREEN = 7;
+  MARKER_ORANGE = 8;
+  MARKER_DEEP_PURPLE = 9;
+  MARKER_LIGHT_BLUE = 10;
+  MARKER_CYAN = 11;
+  MARKER_TEAL = 12;
+  MARKER_LIME = 13;
+  MARKER_DEEP_ORANGE = 14;
+  MARKER_GRAY = 15;
+  MARKER_BLUE_GRAY = 16;
+}
+
 message NetworkPacket {
   uint64 message_id_high = 1;
   uint64 message_id_low = 2;
@@ -57,7 +77,7 @@ message Beacon {
   bytes user_public_key = 4;
   float attitude = 5;
   float longitude = 6;
-  string marker = 7;
+  MarkerColor marker = 7;
 }
 
 message HaLowInterfaceStatus {

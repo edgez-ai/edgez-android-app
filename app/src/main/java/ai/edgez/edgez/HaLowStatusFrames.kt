@@ -167,7 +167,7 @@ fun NetworkPacket.toHaLowUser(route: String): HaLowUser? {
         Log.d(
             TAG_USERS,
             "decoded beacon node=${user.nodeId} uuid=${user.userUuid} name=${user.displayName} " +
-                "lastSeen=${user.lastSeenMs} lat=${user.latitude} lon=${user.longitude} locTs=${user.locationTimestampMs} " +
+                "lastSeen=${user.lastSeenMs} lat=${user.latitude} lon=${user.longitude} locTs=${user.locationTimestampMs} marker=${user.marker} " +
                 "publicKeyBytes=${user.publicKey.size} route=$route",
         )
         return user
@@ -176,17 +176,19 @@ fun NetworkPacket.toHaLowUser(route: String): HaLowUser? {
     return null
 }
 
-fun HaLowUser.withFallbackLocation(previous: HaLowUser?): HaLowUser {
-    if (latitude != null && longitude != null) return this
-    if (previous?.latitude == null || previous.longitude == null) return this
+fun HaLowUser.withFallbackLocationAndMarker(previous: HaLowUser?): HaLowUser {
+    val resolvedMarker = NodeMapMarker.normalize(marker)
+    if (latitude != null && longitude != null) return copy(marker = resolvedMarker)
+    if (previous?.latitude == null || previous.longitude == null) return copy(marker = resolvedMarker)
     val updated = copy(
         latitude = previous.latitude,
         longitude = previous.longitude,
         locationTimestampMs = previous.locationTimestampMs,
+        marker = resolvedMarker,
     )
     Log.d(
         TAG_USERS,
-        "kept previous location node=${updated.nodeId} lat=${updated.latitude} lon=${updated.longitude} locTs=${updated.locationTimestampMs}",
+        "kept previous location node=${updated.nodeId} lat=${updated.latitude} lon=${updated.longitude} locTs=${updated.locationTimestampMs} marker=${updated.marker}",
     )
     return updated
 }
