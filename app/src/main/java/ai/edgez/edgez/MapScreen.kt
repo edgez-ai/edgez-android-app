@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationManager
+import android.net.Uri
 import android.util.Log
 import android.view.MotionEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -37,12 +38,14 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import app.organicmaps.sdk.Framework
+import app.organicmaps.sdk.Map as OrganicMap
 import app.organicmaps.sdk.MapController
 import app.organicmaps.sdk.MapRenderingListener
 import app.organicmaps.sdk.MapView
 import app.organicmaps.sdk.downloader.CountryItem
 import app.organicmaps.sdk.downloader.MapManager
 import app.organicmaps.sdk.util.ConnectionState
+import java.util.Locale
 import kotlinx.coroutines.delay
 
 private const val TAG_MAP = "EdgeZMap"
@@ -51,7 +54,6 @@ private const val MIN_DOWNLOAD_PROMPT_ZOOM = 9
 private const val REGION_AUTOCACHE_INTERVAL_MS = 3_500L
 private const val REGION_AUTOCACHE_INITIAL_DELAY_MS = 5_000L
 private const val MAP_REFRESH_DELAY_MS = 250L
-private const val MAP_INITIAL_RENDER_DELAY_MS = 750L
 private const val DOWNLOAD_PROMPT_GESTURE_DELAY_MS = 500L
 
 private data class MapTarget(
@@ -90,8 +92,15 @@ fun MapScreen(users: List<HaLowUser>) {
         MapTarget(location.latitude, location.longitude, "phone location")
     }
     val targetState by rememberUpdatedState(target)
+    val markerUsers = remember(users) {
+        users.filter { it.hasValidMapLocation() }
+    }
+    val markerSignature = markerUsers.joinToString(separator = "|") { user ->
+        "${user.nodeNum}:${user.displayName}:${user.latitude}:${user.longitude}"
+    }
 
     var initialized by remember { mutableStateOf(application.organicMaps.arePlatformAndCoreInitialized()) }
+    var renderingReady by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Starting offline map") }
     var controller by remember { mutableStateOf<MapController?>(null) }
     var pendingRegionId by remember { mutableStateOf<String?>(null) }
@@ -166,8 +175,8 @@ fun MapScreen(users: List<HaLowUser>) {
         }
     }
 
-    LaunchedEffect(initialized, controller) {
-        if (!initialized || controller == null) {
+    LaunchedEffect(initialized, renderingReady, controller) {
+        if (!initialized || !renderingReady || controller == null) {
             return@LaunchedEffect
         }
 
@@ -179,11 +188,18 @@ fun MapScreen(users: List<HaLowUser>) {
         }
     }
 
-    LaunchedEffect(initialized, controller, target?.latitude, target?.longitude) {
-        if (initialized && controller != null) {
+    LaunchedEffect(initialized, renderingReady, controller, target?.latitude, target?.longitude) {
+        if (initialized && renderingReady && controller != null) {
             centerOnTarget(target, controller)
             delay(MAP_REFRESH_DELAY_MS)
             centerOnTarget(target, controller)
+        }
+    }
+
+    LaunchedEffect(initialized, renderingReady, controller, markerSignature) {
+        if (initialized && renderingReady && controller != null) {
+            delay(MAP_REFRESH_DELAY_MS)
+            syncUserMapMarkers(markerUsers, controller)
         }
     }
 
@@ -268,13 +284,16 @@ fun MapScreen(users: List<HaLowUser>) {
                     modifier = Modifier.fillMaxSize(),
                     factory = { viewContext ->
                         MapView(viewContext).also { mapView ->
+                            renderingReady = false
                             mapView.setOnTouchListener { _, event ->
                                 if (event.actionMasked == MotionEvent.ACTION_UP) {
-                                    refreshDownloadPrompt()
-                                    mapView.postDelayed(
-                                        { refreshDownloadPrompt() },
-                                        DOWNLOAD_PROMPT_GESTURE_DELAY_MS,
-                                    )
+                                    if (renderingReady) {
+                                        refreshDownloadPrompt()
+                                        mapView.postDelayed(
+                                            { refreshDownloadPrompt() },
+                                            DOWNLOAD_PROMPT_GESTURE_DELAY_MS,
+                                        )
+                                    }
                                 }
                                 false
                             }
@@ -285,14 +304,15 @@ fun MapScreen(users: List<HaLowUser>) {
                                 object : MapRenderingListener {
                                     override fun onRenderingCreated() {
                                         status = "Offline map ready"
-                                        centerOnTarget(targetState, mapController)
                                     }
 
                                     override fun onRenderingRestored() {
+                                        renderingReady = true
                                         centerOnTarget(targetState, mapController)
                                     }
 
                                     override fun onRenderingInitializationFinished() {
+                                        renderingReady = true
                                         centerOnTarget(targetState, mapController)
                                     }
                                 },
@@ -302,11 +322,6 @@ fun MapScreen(users: List<HaLowUser>) {
                                 false,
                             )
                             controller = mapController
-                            mapView.post { centerOnTarget(targetState, mapController) }
-                            mapView.postDelayed(
-                                { centerOnTarget(targetState, mapController) },
-                                MAP_INITIAL_RENDER_DELAY_MS,
-                            )
                         }
                     },
                 )
@@ -457,6 +472,51 @@ private fun refreshCurrentViewport() {
 private fun forceMapRefresh(controller: MapController?) {
     controller?.updateCompassOffset(0, 0)
     controller?.view?.postInvalidate()
+}
+
+private fun syncUserMapMarkers(users: List<HaLowUser>, controller: MapController?) {
+    runCatching {
+        val center = Framework.nativeGetScreenRectCenter()
+        val latitude = center.getOrNull(0)
+        val longitude = center.getOrNull(1)
+        val zoom = Framework.nativeGetDrawScale().takeIf { it > 0 } ?: DEFAULT_MAP_ZOOM
+
+        if (users.isEmpty()) {
+            Framework.nativeClearApiPoints()
+        } else {
+            val url = buildUserMarkerApiUrl(users)
+            Framework.nativeParseAndSetApiUrl(url)
+            OrganicMap.executeMapApiRequest()
+            Framework.nativeDeactivatePopup()
+        }
+
+        if (latitude != null && longitude != null) {
+            Framework.nativeZoomToPoint(latitude, longitude, zoom, false)
+        }
+        forceMapRefresh(controller)
+    }.onFailure { error ->
+        Log.w(TAG_MAP, "Unable to update user map markers", error)
+    }
+}
+
+private fun buildUserMarkerApiUrl(users: List<HaLowUser>): String {
+    return users.joinToString(
+        separator = "&",
+        prefix = "om://map?",
+    ) { user ->
+        val latitude = user.latitude ?: 0.0
+        val longitude = user.longitude ?: 0.0
+        val point = String.format(Locale.US, "%.7f,%.7f", latitude, longitude)
+        val markerId = Uri.encode("edgez-${user.nodeNum}")
+        val name = Uri.encode(user.displayName)
+        "ll=$point&n=$name&id=$markerId"
+    }
+}
+
+private fun HaLowUser.hasValidMapLocation(): Boolean {
+    val latitude = latitude ?: return false
+    val longitude = longitude ?: return false
+    return latitude in -90.0..90.0 && longitude in -180.0..180.0
 }
 
 private fun Context.hasMapLocationPermission(): Boolean {
