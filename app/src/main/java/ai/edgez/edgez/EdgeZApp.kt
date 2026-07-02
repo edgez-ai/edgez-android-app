@@ -1,10 +1,5 @@
 package ai.edgez.edgez
 
-import android.Manifest
-import android.content.Context
-import android.content.pm.PackageManager
-import android.location.Location
-import android.location.LocationManager
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -45,8 +40,6 @@ private const val RECONNECT_DELAY_MS = 2_000L
 private const val TAG_USERS = "EdgeZUsers"
 private const val HALOW_BROADCAST_NODE_48 = 0xffffffffffffL
 private const val HALOW_BROADCAST_NODE_32 = 0xffffffffL
-private const val LOCATION_FRESH_MS = 10 * 60 * 1000L
-
 private data class MessageUuid(
     val high: Long,
     val low: Long,
@@ -144,6 +137,8 @@ fun EdgeZApp() {
         selectedConversationUser = null
         resetHaLowInitTrigger()
         lastConnectionPreferences.setLastSuccessfulConnection(connection)
+        EdgeZBeaconRunner.setActiveConnection(connection)
+        EdgeZBeaconRunner.setHaLowStatus(null)
         when (connection) {
             ActiveConnection.USB -> {
                 bleClient.close()
@@ -218,6 +213,7 @@ fun EdgeZApp() {
             haLowStatus = null
             selectedConversationUser = null
             resetHaLowInitTrigger()
+            EdgeZBeaconRunner.setActiveConnection(ActiveConnection.NONE)
             BleForegroundService.stop(context.applicationContext)
             scheduleReconnect(connection)
         }
@@ -226,8 +222,9 @@ fun EdgeZApp() {
         setTransportConnected(connection, connected)
     }
     val currentActiveConnection by rememberUpdatedState(activeConnection)
-    val currentHaLowStatus by rememberUpdatedState(haLowStatus)
     DisposableEffect(Unit) {
+        EdgeZBeaconRunner.attach(context.applicationContext, usbClient, bleClient)
+
         fun triggerHaLowInitIfNeeded(source: ActiveConnection, status: HaLowInterfaceStatus) {
             if (status.stackInitialized) {
                 resetHaLowInitTrigger()
@@ -295,6 +292,7 @@ fun EdgeZApp() {
                 if (source == currentActiveConnection) {
                     if (status != null) {
                         haLowStatus = status
+                        EdgeZBeaconRunner.setHaLowStatus(status)
                     }
                     if (user != null) {
                         val userKey = conversationKey(user)
@@ -471,62 +469,6 @@ fun EdgeZApp() {
             }
         }
 
-        val beaconRunnable = object : Runnable {
-            override fun run() {
-                if (shuttingDown.get()) return
-                val beaconIntervalMs = lastConnectionPreferences.getBeaconIntervalSeconds() * 1_000L
-                val source = currentActiveConnection
-                val status = currentHaLowStatus
-                if (source != ActiveConnection.NONE && status != null && status.supported && status.stackInitialized && status.meshMode) {
-                    val userIdentity = lastConnectionPreferences.getOrCreateUserIdentity()
-                    val meshPassphrase = lastConnectionPreferences.getMeshPassphrase()
-                    val marker = lastConnectionPreferences.getUserMarker()
-                    val shareLocationEnabled = lastConnectionPreferences.getShareLocation()
-                    val location = if (shareLocationEnabled) {
-                        context.applicationContext.getBestKnownLocation()
-                    } else {
-                        null
-                    }
-                    Log.d(
-                        TAG_USERS,
-                        "beacon location share=$shareLocationEnabled marker=$marker hasLocation=${location != null} lat=${location?.latitude} lon=${location?.longitude}",
-                    )
-                    beaconExecutor.execute {
-                        when (source) {
-                            ActiveConnection.USB -> usbClient.sendHaLowBeacon(
-                                userIdentity.userIdHigh,
-                                                userIdentity.userIdLow,
-                                                userIdentity.name,
-                                                userIdentity.publicKey,
-                                                meshPassphrase,
-                                                location?.latitude,
-                                                location?.longitude,
-                                                location?.time ?: 0L,
-                                                marker,
-                            )
-                            ActiveConnection.BLE -> bleClient.sendHaLowBeacon(
-                                userIdentity.userIdHigh,
-                                                userIdentity.userIdLow,
-                                                userIdentity.name,
-                                                userIdentity.publicKey,
-                                                meshPassphrase,
-                                                location?.latitude,
-                                                location?.longitude,
-                                                location?.time ?: 0L,
-                                                marker,
-                            )
-                            ActiveConnection.NONE -> Unit
-                        }
-                    }
-                }
-                mainHandler.postDelayed(this, beaconIntervalMs)
-            }
-        }
-        mainHandler.postDelayed(
-            beaconRunnable,
-            lastConnectionPreferences.getBeaconIntervalSeconds() * 1_000L,
-        )
-
         val removeUsbFrameListener = usbClient.addFrameListener { frame ->
             handleTransportFrame(ActiveConnection.USB, frame)
         }
@@ -561,7 +503,7 @@ fun EdgeZApp() {
             removeBleFrameListener()
             removeUsbDebugListener()
             removeBleDebugListener()
-            mainHandler.removeCallbacks(beaconRunnable)
+            EdgeZBeaconRunner.setActiveConnection(ActiveConnection.NONE)
             BleForegroundService.stop(context.applicationContext)
             usbClient.close()
             bleClient.close()
@@ -843,42 +785,6 @@ fun EdgeZApp() {
             )
         }
     }
-}
-
-private fun Context.getBestKnownLocation(): Location? {
-    val hasFine = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-    val hasCoarse = checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-    if (!hasFine && !hasCoarse) return null
-    val locationManager = getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
-    val providers = if (hasFine) {
-        listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER)
-    } else {
-        listOf(LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER)
-    }
-    return providers.mapNotNull { provider ->
-        runCatching {
-            if (locationManager.isProviderEnabled(provider)) {
-                locationManager.getLastKnownLocation(provider)
-            } else {
-                null
-            }
-        }.getOrNull()
-    }.maxByOrNull { location ->
-        locationQualityScore(location, System.currentTimeMillis())
-    }
-}
-
-private fun locationQualityScore(location: Location, nowMs: Long): Double {
-    val ageMs = (nowMs - location.time).coerceAtLeast(0L)
-    val ageMinutes = ageMs / 60_000.0
-    val accuracyMeters = if (location.hasAccuracy()) location.accuracy.toDouble() else 1_000.0
-    val providerBonus = when (location.provider) {
-        LocationManager.GPS_PROVIDER -> 50.0
-        LocationManager.NETWORK_PROVIDER -> 10.0
-        else -> 0.0
-    }
-    val stalePenalty = if (ageMs > LOCATION_FRESH_MS) 200.0 else 0.0
-    return providerBonus - accuracyMeters - (ageMinutes * 3.0) - stalePenalty
 }
 
 private enum class AppDestination(

@@ -27,11 +27,15 @@ class BleForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP_CONNECTION_SERVICE -> {
+                EdgeZBeaconRunner.stop()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 return START_NOT_STICKY
             }
-            else -> startInForeground()
+            else -> {
+                startInForeground()
+                EdgeZBeaconRunner.start(applicationContext)
+            }
         }
         return START_STICKY
     }
