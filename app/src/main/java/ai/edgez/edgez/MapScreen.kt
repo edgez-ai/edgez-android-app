@@ -68,7 +68,10 @@ private data class MapDownloadProgress(
 )
 
 @Composable
-fun MapScreen(users: List<HaLowUser>) {
+fun MapScreen(
+    users: List<HaLowUser>,
+    gpsCursorMarker: String = NodeMapMarker.DEFAULT.id,
+) {
     val context = LocalContext.current
     val application = context.applicationContext as EdgeZApplication
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -172,6 +175,13 @@ fun MapScreen(users: List<HaLowUser>) {
             phoneLocation = application.organicMaps.locationHelper.savedLocation
                 ?: context.getBestKnownMapLocation()
             delay(PHONE_LOCATION_REFRESH_MS)
+        }
+    }
+
+    LaunchedEffect(initialized, gpsCursorMarker) {
+        if (initialized) {
+            Framework.nativeSetGpsCursorColor(NodeMapMarker.fromId(gpsCursorMarker).colorArgb ?: 0L)
+            forceMapRefresh(controller)
         }
     }
 

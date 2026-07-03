@@ -2,6 +2,8 @@ package ai.edgez.edgez
 
 import android.os.Handler
 import android.os.Looper
+import android.content.SharedPreferences
+import android.content.Context
 import android.util.Log
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -103,6 +105,8 @@ fun EdgeZApp() {
     val usbClient = remember { EdgezUsbClient(context.applicationContext) }
     val bleClient = remember { EdgezBleClient(context.applicationContext) }
     val lastConnectionPreferences = remember { LastConnectionPreferences(context.applicationContext) }
+    val connectionPrefs = remember { context.applicationContext.getSharedPreferences("edgez_connection", Context.MODE_PRIVATE) }
+    var mapCursorMarker by remember { mutableStateOf(lastConnectionPreferences.getUserMarker()) }
     val edgeZDatabase = remember { EdgeZDatabase(context.applicationContext) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val haLowInitExecutor = remember { Executors.newSingleThreadExecutor() }
@@ -238,11 +242,20 @@ fun EdgeZApp() {
         }
     }
 
+    val preferenceListener = remember {
+        SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == "user_marker") {
+                mapCursorMarker = lastConnectionPreferences.getUserMarker()
+            }
+        }
+    }
+
     val currentSetTransportConnected by rememberUpdatedState<(ActiveConnection, Boolean) -> Unit> { connection, connected ->
         setTransportConnected(connection, connected)
     }
     val currentActiveConnection by rememberUpdatedState(activeConnection)
     DisposableEffect(Unit) {
+        connectionPrefs.registerOnSharedPreferenceChangeListener(preferenceListener)
         EdgeZBeaconRunner.attach(context.applicationContext, usbClient, bleClient)
 
         fun triggerHaLowInitIfNeeded(source: ActiveConnection, status: HaLowInterfaceStatus) {
@@ -514,6 +527,7 @@ fun EdgeZApp() {
         onDispose {
             shuttingDown.set(true)
             clearReconnect()
+            connectionPrefs.unregisterOnSharedPreferenceChangeListener(preferenceListener)
             removeUsbFrameListener()
             removeBleFrameListener()
             removeUsbDebugListener()
@@ -573,7 +587,10 @@ fun EdgeZApp() {
         },
     ) {
         when (currentDestination) {
-            AppDestination.HOME -> MapScreen(users = haLowUsers.values.sortedByDescending { it.lastSeenMs })
+            AppDestination.HOME -> MapScreen(
+                users = haLowUsers.values.sortedByDescending { it.lastSeenMs },
+                gpsCursorMarker = mapCursorMarker,
+            )
             AppDestination.NODES -> {
                 val conversationUser = selectedConversationUser
                 if (conversationUser != null) {
