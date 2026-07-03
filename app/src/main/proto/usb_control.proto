@@ -127,4 +127,5 @@ message DeviceSettings {
   bytes user_private_key = 11;
   float latitude = 12;
   float longitude = 13;
+  uint32 max_hop = 14;
 }

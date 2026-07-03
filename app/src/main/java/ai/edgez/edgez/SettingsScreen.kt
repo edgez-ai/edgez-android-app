@@ -106,6 +106,7 @@ fun SettingsScreen(
     var deviceUserName by rememberSaveable { mutableStateOf("EdgeZ Device") }
     var deviceUserMarker by rememberSaveable { mutableStateOf(NodeMapMarker.DEFAULT.id) }
     var deviceMeshId by rememberSaveable { mutableStateOf("edgez") }
+    var deviceMaxHop by rememberSaveable { mutableStateOf(connectionPreferences.getMeshMaxHop().toString()) }
     var deviceBeaconIntervalSeconds by rememberSaveable { mutableStateOf(DEFAULT_BEACON_INTERVAL_SECONDS.toString()) }
     var deviceShareLocation by rememberSaveable { mutableStateOf(false) }
     var deviceLatitude by rememberSaveable { mutableStateOf<Double?>(null) }
@@ -250,6 +251,7 @@ fun SettingsScreen(
         if (settings.beaconIntervalSeconds > 0) {
             deviceBeaconIntervalSeconds = settings.beaconIntervalSeconds.toString()
         }
+        deviceMaxHop = settings.maxHop.coerceIn(0, 255).toString()
         if ((deviceLatitude == null || deviceLongitude == null) && settings.latitude != null && settings.longitude != null) {
             deviceLatitude = settings.latitude
             deviceLongitude = settings.longitude
@@ -289,6 +291,7 @@ fun SettingsScreen(
             userPrivateKey = identity.privateKey,
             latitude = deviceLatitude.takeIf { deviceShareLocation },
             longitude = deviceLongitude.takeIf { deviceShareLocation },
+            maxHop = deviceMaxHop.toIntOrNull() ?: connectionPreferences.getMeshMaxHop(),
         )
     }
 
@@ -798,18 +801,23 @@ fun SettingsScreen(
                             label = { Text("Passphrase") },
                             singleLine = true,
                         )
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = maxHop,
-                            onValueChange = { value ->
-                                maxHop = value.filter { it.isDigit() }.take(3)
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Max hop") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        )
                     }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = if (showDeviceSettingsOnly) deviceMaxHop else maxHop,
+                        onValueChange = { value ->
+                            val sanitized = value.filter { it.isDigit() }.take(3)
+                            if (showDeviceSettingsOnly) {
+                                deviceMaxHop = sanitized
+                            } else {
+                                maxHop = sanitized
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Max hop") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    )
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = if (showDeviceSettingsOnly) deviceBeaconIntervalSeconds else beaconIntervalSeconds,

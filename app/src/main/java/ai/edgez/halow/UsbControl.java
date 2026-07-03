@@ -103,13 +103,13 @@ public final class UsbControl {
             }
           };
 
-    public static com.google.protobuf.Internal.EnumVerifier
+    public static com.google.protobuf.Internal.EnumVerifier 
         internalGetVerifier() {
       return OperationVerifier.INSTANCE;
     }
 
-    private static final class OperationVerifier implements
-         com.google.protobuf.Internal.EnumVerifier {
+    private static final class OperationVerifier implements 
+         com.google.protobuf.Internal.EnumVerifier { 
             static final com.google.protobuf.Internal.EnumVerifier           INSTANCE = new OperationVerifier();
             @java.lang.Override
             public boolean isInRange(int number) {
@@ -237,13 +237,13 @@ public final class UsbControl {
             }
           };
 
-    public static com.google.protobuf.Internal.EnumVerifier
+    public static com.google.protobuf.Internal.EnumVerifier 
         internalGetVerifier() {
       return InterfaceVerifier.INSTANCE;
     }
 
-    private static final class InterfaceVerifier implements
-         com.google.protobuf.Internal.EnumVerifier {
+    private static final class InterfaceVerifier implements 
+         com.google.protobuf.Internal.EnumVerifier { 
             static final com.google.protobuf.Internal.EnumVerifier           INSTANCE = new InterfaceVerifier();
             @java.lang.Override
             public boolean isInRange(int number) {
@@ -362,13 +362,13 @@ public final class UsbControl {
             }
           };
 
-    public static com.google.protobuf.Internal.EnumVerifier
+    public static com.google.protobuf.Internal.EnumVerifier 
         internalGetVerifier() {
       return MimeVerifier.INSTANCE;
     }
 
-    private static final class MimeVerifier implements
-         com.google.protobuf.Internal.EnumVerifier {
+    private static final class MimeVerifier implements 
+         com.google.protobuf.Internal.EnumVerifier { 
             static final com.google.protobuf.Internal.EnumVerifier           INSTANCE = new MimeVerifier();
             @java.lang.Override
             public boolean isInRange(int number) {
@@ -586,13 +586,13 @@ public final class UsbControl {
             }
           };
 
-    public static com.google.protobuf.Internal.EnumVerifier
+    public static com.google.protobuf.Internal.EnumVerifier 
         internalGetVerifier() {
       return MarkerColorVerifier.INSTANCE;
     }
 
-    private static final class MarkerColorVerifier implements
-         com.google.protobuf.Internal.EnumVerifier {
+    private static final class MarkerColorVerifier implements 
+         com.google.protobuf.Internal.EnumVerifier { 
             static final com.google.protobuf.Internal.EnumVerifier           INSTANCE = new MarkerColorVerifier();
             @java.lang.Override
             public boolean isInRange(int number) {
@@ -693,13 +693,13 @@ public final class UsbControl {
             }
           };
 
-    public static com.google.protobuf.Internal.EnumVerifier
+    public static com.google.protobuf.Internal.EnumVerifier 
         internalGetVerifier() {
       return DeviceSettingsActionVerifier.INSTANCE;
     }
 
-    private static final class DeviceSettingsActionVerifier implements
-         com.google.protobuf.Internal.EnumVerifier {
+    private static final class DeviceSettingsActionVerifier implements 
+         com.google.protobuf.Internal.EnumVerifier { 
             static final com.google.protobuf.Internal.EnumVerifier           INSTANCE = new DeviceSettingsActionVerifier();
             @java.lang.Override
             public boolean isInRange(int number) {
@@ -938,7 +938,7 @@ public final class UsbControl {
      * @param value The messageIdHigh to set.
      */
     private void setMessageIdHigh(long value) {
-
+      
       messageIdHigh_ = value;
     }
     /**
@@ -964,7 +964,7 @@ public final class UsbControl {
      * @param value The messageIdLow to set.
      */
     private void setMessageIdLow(long value) {
-
+      
       messageIdLow_ = value;
     }
     /**
@@ -990,7 +990,7 @@ public final class UsbControl {
      * @param value The from to set.
      */
     private void setFrom(long value) {
-
+      
       from_ = value;
     }
     /**
@@ -1016,7 +1016,7 @@ public final class UsbControl {
      * @param value The to to set.
      */
     private void setTo(long value) {
-
+      
       to_ = value;
     }
     /**
@@ -1126,7 +1126,7 @@ public final class UsbControl {
      * @param value The sequence to set.
      */
     private void setSequence(int value) {
-
+      
       sequence_ = value;
     }
     /**
@@ -1152,7 +1152,7 @@ public final class UsbControl {
      * @param value The userHigh to set.
      */
     private void setUserHigh(long value) {
-
+      
       userHigh_ = value;
     }
     /**
@@ -1178,7 +1178,7 @@ public final class UsbControl {
      * @param value The userLow to set.
      */
     private void setUserLow(long value) {
-
+      
       userLow_ = value;
     }
     /**
@@ -1246,7 +1246,7 @@ public final class UsbControl {
      * @param value The maxHop to set.
      */
     private void setMaxHop(int value) {
-
+      
       maxHop_ = value;
     }
     /**
@@ -2400,7 +2400,7 @@ public final class UsbControl {
      * @param value The userIdHigh to set.
      */
     private void setUserIdHigh(long value) {
-
+      
       userIdHigh_ = value;
     }
     /**
@@ -2426,7 +2426,7 @@ public final class UsbControl {
      * @param value The userIdLow to set.
      */
     private void setUserIdLow(long value) {
-
+      
       userIdLow_ = value;
     }
     /**
@@ -2501,7 +2501,7 @@ public final class UsbControl {
      */
     private void setUserPublicKey(com.google.protobuf.ByteString value) {
       java.lang.Class<?> valueClass = value.getClass();
-
+  
       userPublicKey_ = value;
     }
     /**
@@ -2527,7 +2527,7 @@ public final class UsbControl {
      * @param value The attitude to set.
      */
     private void setAttitude(float value) {
-
+      
       attitude_ = value;
     }
     /**
@@ -2553,7 +2553,7 @@ public final class UsbControl {
      * @param value The longitude to set.
      */
     private void setLongitude(float value) {
-
+      
       longitude_ = value;
     }
     /**
@@ -3135,7 +3135,7 @@ public final class UsbControl {
      * @param value The supported to set.
      */
     private void setSupported(boolean value) {
-
+      
       supported_ = value;
     }
     /**
@@ -3161,7 +3161,7 @@ public final class UsbControl {
      * @param value The stackInitialized to set.
      */
     private void setStackInitialized(boolean value) {
-
+      
       stackInitialized_ = value;
     }
     /**
@@ -3187,7 +3187,7 @@ public final class UsbControl {
      * @param value The meshMode to set.
      */
     private void setMeshMode(boolean value) {
-
+      
       meshMode_ = value;
     }
     /**
@@ -3213,7 +3213,7 @@ public final class UsbControl {
      * @param value The linkUp to set.
      */
     private void setLinkUp(boolean value) {
-
+      
       linkUp_ = value;
     }
     /**
@@ -3239,7 +3239,7 @@ public final class UsbControl {
      * @param value The routeReady to set.
      */
     private void setRouteReady(boolean value) {
-
+      
       routeReady_ = value;
     }
     /**
@@ -3265,7 +3265,7 @@ public final class UsbControl {
      * @param value The readyForReport to set.
      */
     private void setReadyForReport(boolean value) {
-
+      
       readyForReport_ = value;
     }
     /**
@@ -3291,7 +3291,7 @@ public final class UsbControl {
      * @param value The ethertype to set.
      */
     private void setEthertype(int value) {
-
+      
       ethertype_ = value;
     }
     /**
@@ -3461,7 +3461,7 @@ public final class UsbControl {
      * @param value The macAddress to set.
      */
     private void setMacAddress(long value) {
-
+      
       macAddress_ = value;
     }
     /**
@@ -4276,7 +4276,7 @@ public final class UsbControl {
      * @param value The maxHop to set.
      */
     private void setMaxHop(int value) {
-
+      
       maxHop_ = value;
     }
     /**
@@ -4302,7 +4302,7 @@ public final class UsbControl {
      * @param value The userIdHigh to set.
      */
     private void setUserIdHigh(long value) {
-
+      
       userIdHigh_ = value;
     }
     /**
@@ -4328,7 +4328,7 @@ public final class UsbControl {
      * @param value The userIdLow to set.
      */
     private void setUserIdLow(long value) {
-
+      
       userIdLow_ = value;
     }
     /**
@@ -4403,7 +4403,7 @@ public final class UsbControl {
      */
     private void setUserPublicKey(com.google.protobuf.ByteString value) {
       java.lang.Class<?> valueClass = value.getClass();
-
+  
       userPublicKey_ = value;
     }
     /**
@@ -5004,6 +5004,12 @@ public final class UsbControl {
      * @return The longitude.
      */
     float getLongitude();
+
+    /**
+     * <code>uint32 max_hop = 14;</code>
+     * @return The maxHop.
+     */
+    int getMaxHop();
   }
   /**
    * Protobuf type {@code ai.edgez.halow.DeviceSettings}
@@ -5076,7 +5082,7 @@ public final class UsbControl {
      * @param value The deviceModeEnabled to set.
      */
     private void setDeviceModeEnabled(boolean value) {
-
+      
       deviceModeEnabled_ = value;
     }
     /**
@@ -5150,7 +5156,7 @@ public final class UsbControl {
      * @param value The shareLocation to set.
      */
     private void setShareLocation(boolean value) {
-
+      
       shareLocation_ = value;
     }
     /**
@@ -5266,7 +5272,7 @@ public final class UsbControl {
      * @param value The beaconIntervalSeconds to set.
      */
     private void setBeaconIntervalSeconds(int value) {
-
+      
       beaconIntervalSeconds_ = value;
     }
     /**
@@ -5292,7 +5298,7 @@ public final class UsbControl {
      * @param value The userIdHigh to set.
      */
     private void setUserIdHigh(long value) {
-
+      
       userIdHigh_ = value;
     }
     /**
@@ -5318,7 +5324,7 @@ public final class UsbControl {
      * @param value The userIdLow to set.
      */
     private void setUserIdLow(long value) {
-
+      
       userIdLow_ = value;
     }
     /**
@@ -5345,7 +5351,7 @@ public final class UsbControl {
      */
     private void setUserPublicKey(com.google.protobuf.ByteString value) {
       java.lang.Class<?> valueClass = value.getClass();
-
+  
       userPublicKey_ = value;
     }
     /**
@@ -5372,7 +5378,7 @@ public final class UsbControl {
      */
     private void setUserPrivateKey(com.google.protobuf.ByteString value) {
       java.lang.Class<?> valueClass = value.getClass();
-
+  
       userPrivateKey_ = value;
     }
     /**
@@ -5398,7 +5404,7 @@ public final class UsbControl {
      * @param value The latitude to set.
      */
     private void setLatitude(float value) {
-
+      
       latitude_ = value;
     }
     /**
@@ -5424,7 +5430,7 @@ public final class UsbControl {
      * @param value The longitude to set.
      */
     private void setLongitude(float value) {
-
+      
       longitude_ = value;
     }
     /**
@@ -5433,6 +5439,32 @@ public final class UsbControl {
     private void clearLongitude() {
 
       longitude_ = 0F;
+    }
+
+    public static final int MAX_HOP_FIELD_NUMBER = 14;
+    private int maxHop_;
+    /**
+     * <code>uint32 max_hop = 14;</code>
+     * @return The maxHop.
+     */
+    @java.lang.Override
+    public int getMaxHop() {
+      return maxHop_;
+    }
+    /**
+     * <code>uint32 max_hop = 14;</code>
+     * @param value The maxHop to set.
+     */
+    private void setMaxHop(int value) {
+      
+      maxHop_ = value;
+    }
+    /**
+     * <code>uint32 max_hop = 14;</code>
+     */
+    private void clearMaxHop() {
+
+      maxHop_ = 0;
     }
 
     public static ai.edgez.halow.UsbControl.DeviceSettings parseFrom(
@@ -5974,6 +6006,34 @@ public final class UsbControl {
         return this;
       }
 
+      /**
+       * <code>uint32 max_hop = 14;</code>
+       * @return The maxHop.
+       */
+      @java.lang.Override
+      public int getMaxHop() {
+        return instance.getMaxHop();
+      }
+      /**
+       * <code>uint32 max_hop = 14;</code>
+       * @param value The maxHop to set.
+       * @return This builder for chaining.
+       */
+      public Builder setMaxHop(int value) {
+        copyOnWrite();
+        instance.setMaxHop(value);
+        return this;
+      }
+      /**
+       * <code>uint32 max_hop = 14;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearMaxHop() {
+        copyOnWrite();
+        instance.clearMaxHop();
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:ai.edgez.halow.DeviceSettings)
     }
     @java.lang.Override
@@ -6003,11 +6063,12 @@ public final class UsbControl {
               "userPrivateKey_",
               "latitude_",
               "longitude_",
+              "maxHop_",
             };
             java.lang.String info =
-                "\u0000\r\u0000\u0000\u0001\r\r\u0000\u0000\u0000\u0001\f\u0002\u0007\u0003\u0208" +
-                "\u0004\u0007\u0005\u0208\u0006\f\u0007\u000b\b\u0003\t\u0003\n\n\u000b\n\f\u0001" +
-                "\r\u0001";
+                "\u0000\u000e\u0000\u0000\u0001\u000e\u000e\u0000\u0000\u0000\u0001\f\u0002\u0007" +
+                "\u0003\u0208\u0004\u0007\u0005\u0208\u0006\f\u0007\u000b\b\u0003\t\u0003\n\n\u000b" +
+                "\n\f\u0001\r\u0001\u000e\u000b";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         // fall through

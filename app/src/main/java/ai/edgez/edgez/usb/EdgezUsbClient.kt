@@ -184,6 +184,7 @@ data class DeviceSettings(
     val userPrivateKey: ByteArray = ByteArray(0),
     val latitude: Double? = null,
     val longitude: Double? = null,
+    val maxHop: Int = 0,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -202,7 +203,8 @@ data class DeviceSettings(
             userPublicKey.contentEquals(other.userPublicKey) &&
             userPrivateKey.contentEquals(other.userPrivateKey) &&
             latitude == other.latitude &&
-            longitude == other.longitude
+            longitude == other.longitude &&
+            maxHop == other.maxHop
     }
 
     override fun hashCode(): Int {
@@ -219,6 +221,7 @@ data class DeviceSettings(
         result = 31 * result + userPrivateKey.contentHashCode()
         result = 31 * result + (latitude?.hashCode() ?: 0)
         result = 31 * result + (longitude?.hashCode() ?: 0)
+        result = 31 * result + maxHop
         return result
     }
 }
@@ -508,6 +511,7 @@ object EdgezUsbControlProto {
             .setUserIdLow(settings.userIdLow)
             .setUserPublicKey(ByteString.copyFrom(settings.userPublicKey.copyOf(minOf(settings.userPublicKey.size, 32))))
             .setUserPrivateKey(ByteString.copyFrom(settings.userPrivateKey.copyOf(minOf(settings.userPrivateKey.size, 32))))
+            .setMaxHop(settings.maxHop.coerceIn(0, 255))
         if (settings.latitude != null && settings.longitude != null) {
             protoSettings.setLatitude(settings.latitude.toFloat())
             protoSettings.setLongitude(settings.longitude.toFloat())
@@ -897,6 +901,7 @@ object EdgezUsbControlProto {
             userPrivateKey = userPrivateKey.toByteArray(),
             latitude = latitude.toDouble().takeIf { latitude != 0f },
             longitude = longitude.toDouble().takeIf { longitude != 0f },
+            maxHop = maxHop.coerceIn(0, 255),
         )
     }
 
