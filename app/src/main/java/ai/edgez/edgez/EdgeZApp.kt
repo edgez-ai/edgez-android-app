@@ -33,19 +33,40 @@ import ai.edgez.edgez.usb.NETWORK_OPERATION_ACK
 import ai.edgez.edgez.usb.PacketMime
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.Collections
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 private const val RECONNECT_DELAY_MS = 2_000L
 private const val TAG_USERS = "EdgeZUsers"
 private const val HALOW_BROADCAST_NODE_48 = 0xffffffffffffL
 private const val HALOW_BROADCAST_NODE_32 = 0xffffffffL
+private const val RELIABLE_ACK_TIMEOUT_MS = 800L
+private const val RELIABLE_MAX_ATTEMPTS = 5
 private data class MessageUuid(
     val high: Long,
     val low: Long,
     val text: String,
+)
+
+private data class ReliablePacketKey(
+    val messageIdHigh: Long,
+    val messageIdLow: Long,
+    val sequence: Int,
+)
+
+private data class PendingReliablePacket(
+    val key: ReliablePacketKey,
+    val conversationKey: String,
+    val messageUuid: String,
+    val send: () -> Result<String>,
+    val attempts: AtomicInteger = AtomicInteger(0),
+    val failed: AtomicBoolean = AtomicBoolean(false),
 )
 
 private fun formatMessageUuid(high: Long, low: Long): String {
@@ -112,8 +133,13 @@ fun EdgeZApp() {
     val haLowInitExecutor = remember { Executors.newSingleThreadExecutor() }
     val reconnectExecutor = remember { Executors.newSingleThreadExecutor() }
     val beaconExecutor = remember { Executors.newSingleThreadExecutor() }
+    val reliableExecutor = remember { Executors.newSingleThreadScheduledExecutor() }
     val pendingHaLowInitKey = remember { AtomicReference<String?>(null) }
     val pendingVoiceMessages = remember { mutableMapOf<String, PendingVoiceMessage>() }
+    val pendingReliablePackets = remember { ConcurrentHashMap<ReliablePacketKey, PendingReliablePacket>() }
+    val receivedConversationPackets = remember {
+        Collections.newSetFromMap(ConcurrentHashMap<ReliablePacketKey, Boolean>())
+    }
     val reconnectRequested = remember { AtomicReference<ActiveConnection?>(null) }
     val reconnectAttemptRunning = remember { AtomicBoolean(false) }
     val shuttingDown = remember { AtomicBoolean(false) }
@@ -137,8 +163,79 @@ fun EdgeZApp() {
         reconnectAttemptRunning.set(false)
     }
 
+    fun updateOutgoingMessageStatus(conversationKey: String, messageUuid: String, status: String) {
+        if (messageUuid.isBlank()) return
+        edgeZDatabase.updateMessageStatusByUuid(conversationKey, messageUuid, status)
+        conversations = conversations + (
+            conversationKey to ((conversations[conversationKey] ?: emptyList()).map {
+                if (it.mine && it.messageUuid == messageUuid) {
+                    it.copy(status = status)
+                } else {
+                    it
+                }
+            })
+            )
+    }
+
+    fun pendingReliableMessageKeys(messageIdHigh: Long, messageIdLow: Long): List<ReliablePacketKey> {
+        return pendingReliablePackets.keys.filter {
+            it.messageIdHigh == messageIdHigh && it.messageIdLow == messageIdLow
+        }
+    }
+
+    fun failReliableMessage(packet: PendingReliablePacket, reason: String) {
+        if (!packet.failed.compareAndSet(false, true)) return
+        pendingReliableMessageKeys(packet.key.messageIdHigh, packet.key.messageIdLow).forEach {
+            pendingReliablePackets.remove(it)
+        }
+        mainHandler.post {
+            updateOutgoingMessageStatus(packet.conversationKey, packet.messageUuid, "Delivery failed: $reason")
+        }
+    }
+
+    fun transmitReliablePacket(key: ReliablePacketKey): Result<String> {
+        val packet = pendingReliablePackets[key] ?: return Result.success("Already acknowledged")
+        val attempt = packet.attempts.incrementAndGet()
+        val result = packet.send()
+        if (result.isFailure) {
+            Log.w(TAG_USERS, "conversation send attempt failed messageId=${packet.messageUuid} seq=${key.sequence} attempt=$attempt", result.exceptionOrNull())
+        } else {
+            Log.d(TAG_USERS, "conversation send attempt queued messageId=${packet.messageUuid} seq=${key.sequence} attempt=$attempt")
+        }
+        reliableExecutor.schedule({
+            val pending = pendingReliablePackets[key] ?: return@schedule
+            if (pending.attempts.get() >= RELIABLE_MAX_ATTEMPTS) {
+                failReliableMessage(pending, "no ACK after ${RELIABLE_MAX_ATTEMPTS} attempts")
+            } else {
+                transmitReliablePacket(key)
+            }
+        }, RELIABLE_ACK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        return result
+    }
+
+    fun sendReliableConversationPacket(
+        key: ReliablePacketKey,
+        conversationKey: String,
+        messageUuid: String,
+        send: () -> Result<String>,
+    ): Result<String> {
+        pendingReliablePackets[key] = PendingReliablePacket(
+            key = key,
+            conversationKey = conversationKey,
+            messageUuid = messageUuid,
+            send = send,
+        )
+        return transmitReliablePacket(key)
+    }
+
+    fun clearReliablePackets() {
+        pendingReliablePackets.clear()
+        receivedConversationPackets.clear()
+    }
+
     fun markTransportConnected(connection: ActiveConnection) {
         clearReconnect()
+        clearReliablePackets()
         activeConnection = connection
         haLowStatus = null
         selectedConversationUser = null
@@ -217,6 +314,7 @@ fun EdgeZApp() {
             markTransportConnected(connection)
         } else if (activeConnection == connection) {
             DeviceModeState.enabled = false
+            clearReliablePackets()
             activeConnection = ActiveConnection.NONE
             haLowStatus = null
             selectedConversationUser = null
@@ -236,6 +334,7 @@ fun EdgeZApp() {
         }
         if (activeConnection == connection || connection == ActiveConnection.NONE) {
             DeviceModeState.enabled = false
+            clearReliablePackets()
             activeConnection = ActiveConnection.NONE
             haLowStatus = null
             selectedConversationUser = null
@@ -373,16 +472,29 @@ fun EdgeZApp() {
                         } else {
                             val senderKey = conversationKey(ackUser)
                             val messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow)
-                            edgeZDatabase.updateMessageStatusByUuid(senderKey, messageUuid, "Delivered")
-                            conversations = conversations + (
-                                senderKey to ((conversations[senderKey] ?: emptyList()).map {
-                                    if (it.mine && it.messageUuid == messageUuid) {
-                                        it.copy(status = "Delivered")
-                                    } else {
-                                        it
-                                    }
-                                })
+                            val ackKey = ReliablePacketKey(message.messageIdHigh, message.messageIdLow, message.sequence)
+                            val matchedPacket = pendingReliablePackets.remove(ackKey)
+                                ?: if (message.sequence == 0) {
+                                    pendingReliableMessageKeys(message.messageIdHigh, message.messageIdLow)
+                                        .firstNotNullOfOrNull { pendingReliablePackets.remove(it) }
+                                } else {
+                                    null
+                                }
+                            if (message.sequence == 0) {
+                                pendingReliableMessageKeys(message.messageIdHigh, message.messageIdLow).forEach {
+                                    pendingReliablePackets.remove(it)
+                                }
+                            }
+                            if (matchedPacket != null) {
+                                Log.d(TAG_USERS, "conversation ack received messageId=$messageUuid seq=${message.sequence}")
+                            }
+                            if (matchedPacket == null || pendingReliableMessageKeys(message.messageIdHigh, message.messageIdLow).isEmpty()) {
+                                updateOutgoingMessageStatus(
+                                    matchedPacket?.conversationKey ?: senderKey,
+                                    matchedPacket?.messageUuid ?: messageUuid,
+                                    "Delivered",
                                 )
+                            }
                         }
                     }
                     if (message != null && conversationMessage != null && !isConversationAck) {
@@ -402,68 +514,8 @@ fun EdgeZApp() {
                             )
                         } else {
                             val senderNodeNum = senderUser.nodeNum
-                            val entry = runCatching {
-                                when (message.mime) {
-                                    PacketMime.VOICE -> {
-                                        val payload = decryptConversationPayload(identity, senderUser, message)
-                                        val chunk = requireNotNull(decodeVoiceChunk(payload)) { "Voice chunk is malformed" }
-                                        val key = "${senderNodeNum}:${chunk.groupId}"
-                                        val pending = pendingVoiceMessages.getOrPut(key) {
-                                            PendingVoiceMessage(
-                                                durationMs = chunk.durationMs,
-                                                codec = chunk.codec,
-                                                chunks = arrayOfNulls(chunk.totalChunks),
-                                            )
-                                        }
-                                        pending.put(chunk.index, chunk.audio)
-                                        if (!pending.complete()) {
-                                            null
-                                        } else {
-                                            pendingVoiceMessages.remove(key)
-                                            val path = saveVoiceMessage(context.applicationContext, pending.bytes(), pending.codec)
-                                            if (lastConnectionPreferences.getAutoReplayReceivedVoice()) {
-                                                VoiceMessagePlayer.play(path).onFailure {
-                                                    Log.w(TAG_USERS, "auto replay received voice failed path=$path", it)
-                                                }
-                                            }
-                                            ConversationEntry(
-                                                text = "Voice message",
-                                                mine = false,
-                                                timestampMs = System.currentTimeMillis(),
-                                                mime = PacketMime.VOICE,
-                                                audioPath = path,
-                                                durationMs = pending.durationMs,
-                                                messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow),
-                                            )
-                                        }
-                                    }
-                                    else -> ConversationEntry(
-                                        text = decryptConversationText(identity, senderUser, message),
-                                        mine = false,
-                                        timestampMs = System.currentTimeMillis(),
-                                        messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow),
-                                    )
-                                }
-                            }.getOrElse {
-                                Log.w(
-                                    TAG_USERS,
-                                    "conversation decrypt failed mime=${message.mime} from=0x%012x to=0x%012x seq=${message.sequence} payload=${message.payload.size} nonce=${conversationMessage.nonce.size} cipher=${conversationMessage.ciphertext.size}",
-                                    it,
-                                )
-                                ConversationEntry(
-                                    text = "Unable to decrypt message",
-                                    mine = false,
-                                    timestampMs = System.currentTimeMillis(),
-                                    status = it.message.orEmpty(),
-                                    messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow),
-                                )
-                            }
-                            if (entry != null) {
-                                val senderKey = conversationKey(senderUser)
-                                edgeZDatabase.insertMessage(senderKey, entry)
-                                conversations = conversations + (
-                                    senderKey to ((conversations[senderKey] ?: emptyList()) + entry)
-                                    )
+                            val receivedKey = ReliablePacketKey(message.messageIdHigh, message.messageIdLow, message.sequence)
+                            fun sendAckForPacket() {
                                 val localNode = haLowStatus?.macAddress?.takeIf { it != 0L }
                                 val directToLocal = message.to != 0L &&
                                     message.to != HALOW_BROADCAST_NODE_48 &&
@@ -481,6 +533,7 @@ fun EdgeZApp() {
                                                 localNode,
                                                 message.from,
                                                 maxHop,
+                                                message.sequence,
                                                 identity.userIdHigh,
                                                 identity.userIdLow,
                                             )
@@ -490,14 +543,96 @@ fun EdgeZApp() {
                                                 localNode,
                                                 message.from,
                                                 maxHop,
+                                                message.sequence,
                                                 identity.userIdHigh,
                                                 identity.userIdLow,
                                             )
                                             ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
                                         }.onFailure {
-                                            Log.w(TAG_USERS, "conversation ack send failed messageId=${entry.messageUuid}", it)
+                                            Log.w(TAG_USERS, "conversation ack send failed messageId=${formatMessageUuid(message.messageIdHigh, message.messageIdLow)} seq=${message.sequence}", it)
                                         }
                                     }
+                                }
+                            }
+                            if (!receivedConversationPackets.add(receivedKey)) {
+                                Log.d(TAG_USERS, "duplicate conversation packet messageId=${formatMessageUuid(message.messageIdHigh, message.messageIdLow)} seq=${message.sequence}; ack again")
+                                sendAckForPacket()
+                            } else {
+                                reliableExecutor.schedule({
+                                    receivedConversationPackets.remove(receivedKey)
+                                }, 10, TimeUnit.MINUTES)
+                                var shouldAck = false
+                                val entry = runCatching {
+                                    when (message.mime) {
+                                        PacketMime.VOICE -> {
+                                            val payload = decryptConversationPayload(identity, senderUser, message)
+                                            val chunk = requireNotNull(decodeVoiceChunk(payload)) { "Voice chunk is malformed" }
+                                            val key = "${senderNodeNum}:${chunk.groupId}"
+                                            val pending = pendingVoiceMessages.getOrPut(key) {
+                                                PendingVoiceMessage(
+                                                    durationMs = chunk.durationMs,
+                                                    codec = chunk.codec,
+                                                    chunks = arrayOfNulls(chunk.totalChunks),
+                                                )
+                                            }
+                                            pending.put(chunk.index, chunk.audio)
+                                            shouldAck = true
+                                            if (!pending.complete()) {
+                                                null
+                                            } else {
+                                                pendingVoiceMessages.remove(key)
+                                                val path = saveVoiceMessage(context.applicationContext, pending.bytes(), pending.codec)
+                                                if (lastConnectionPreferences.getAutoReplayReceivedVoice()) {
+                                                    VoiceMessagePlayer.play(path).onFailure {
+                                                        Log.w(TAG_USERS, "auto replay received voice failed path=$path", it)
+                                                    }
+                                                }
+                                                ConversationEntry(
+                                                    text = "Voice message",
+                                                    mine = false,
+                                                    timestampMs = System.currentTimeMillis(),
+                                                    mime = PacketMime.VOICE,
+                                                    audioPath = path,
+                                                    durationMs = pending.durationMs,
+                                                    messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow),
+                                                )
+                                            }
+                                        }
+                                        else -> {
+                                            val text = decryptConversationText(identity, senderUser, message)
+                                            shouldAck = true
+                                            ConversationEntry(
+                                                text = text,
+                                                mine = false,
+                                                timestampMs = System.currentTimeMillis(),
+                                                messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow),
+                                            )
+                                        }
+                                    }
+                                }.getOrElse {
+                                    receivedConversationPackets.remove(receivedKey)
+                                    Log.w(
+                                        TAG_USERS,
+                                        "conversation decrypt failed mime=${message.mime} from=0x%012x to=0x%012x seq=${message.sequence} payload=${message.payload.size} nonce=${conversationMessage.nonce.size} cipher=${conversationMessage.ciphertext.size}",
+                                        it,
+                                    )
+                                    ConversationEntry(
+                                        text = "Unable to decrypt message",
+                                        mine = false,
+                                        timestampMs = System.currentTimeMillis(),
+                                        status = it.message.orEmpty(),
+                                        messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow),
+                                    )
+                                }
+                                if (shouldAck) {
+                                    sendAckForPacket()
+                                }
+                                if (entry != null) {
+                                    val senderKey = conversationKey(senderUser)
+                                    edgeZDatabase.insertMessage(senderKey, entry)
+                                    conversations = conversations + (
+                                        senderKey to ((conversations[senderKey] ?: emptyList()) + entry)
+                                        )
                                 }
                             }
                         }
@@ -543,6 +678,7 @@ fun EdgeZApp() {
             haLowInitExecutor.shutdownNow()
             reconnectExecutor.shutdownNow()
             beaconExecutor.shutdownNow()
+            reliableExecutor.shutdownNow()
         }
     }
 
@@ -630,17 +766,24 @@ fun EdgeZApp() {
                                     onSuccess = { encryptedMessage ->
                                         val maxHop = lastConnectionPreferences.getMeshMaxHop()
                                         val messageUuid = newMessageUuid()
-                                        val result = when (activeConnection) {
-                                            ActiveConnection.USB -> usbClient.sendConversationMessage(encryptedMessage, fromNode, toNode, PacketMime.TEXT, maxHop, messageIdHigh = messageUuid.high, messageIdLow = messageUuid.low, userIdHigh = identity.userIdHigh, userIdLow = identity.userIdLow)
-                                            ActiveConnection.BLE -> bleClient.sendConversationMessage(encryptedMessage, fromNode, toNode, PacketMime.TEXT, maxHop, messageIdHigh = messageUuid.high, messageIdLow = messageUuid.low, userIdHigh = identity.userIdHigh, userIdLow = identity.userIdLow)
-                                            ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+                                        val sendConnection = activeConnection
+                                        val result = sendReliableConversationPacket(
+                                            key = ReliablePacketKey(messageUuid.high, messageUuid.low, 0),
+                                            conversationKey = conversationUserKey,
+                                            messageUuid = messageUuid.text,
+                                        ) {
+                                            when (sendConnection) {
+                                                ActiveConnection.USB -> usbClient.sendConversationMessage(encryptedMessage, fromNode, toNode, PacketMime.TEXT, maxHop, messageIdHigh = messageUuid.high, messageIdLow = messageUuid.low, userIdHigh = identity.userIdHigh, userIdLow = identity.userIdLow)
+                                                ActiveConnection.BLE -> bleClient.sendConversationMessage(encryptedMessage, fromNode, toNode, PacketMime.TEXT, maxHop, messageIdHigh = messageUuid.high, messageIdLow = messageUuid.low, userIdHigh = identity.userIdHigh, userIdLow = identity.userIdLow)
+                                                ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+                                            }
                                         }
                                         result.onSuccess {
                                             val entry = ConversationEntry(
                                                 text = text,
                                                 mine = true,
                                                 timestampMs = System.currentTimeMillis(),
-                                                status = "Sent via ${activeConnection.name}",
+                                                status = "Sent via ${sendConnection.name}",
                                                 messageUuid = messageUuid.text,
                                             )
                                             edgeZDatabase.insertMessage(conversationUserKey, entry)
@@ -696,6 +839,7 @@ fun EdgeZApp() {
                                     val maxHop = lastConnectionPreferences.getMeshMaxHop()
                                     val groupId = timestampMs
                                     val chunks = voiceBytes.asList().chunked(VOICE_CHUNK_AUDIO_BYTES)
+                                    val sendConnection = activeConnection
                                     chunks.forEachIndexed { index, chunkBytes ->
                                             val voicePayload = encodeVoiceChunk(
                                                 VoiceChunk(
@@ -708,10 +852,17 @@ fun EdgeZApp() {
                                                 ),
                                             )
                                             val encrypted = encryptConversationPayload(identity, conversationUser, voicePayload, fromNode)
-                                            val sendResult = when (activeConnection) {
-                                                ActiveConnection.USB -> usbClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, index + 1, messageUuid.high, messageUuid.low, identity.userIdHigh, identity.userIdLow)
-                                                ActiveConnection.BLE -> bleClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, index + 1, messageUuid.high, messageUuid.low, identity.userIdHigh, identity.userIdLow)
-                                                ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+                                            val sequence = index + 1
+                                            val sendResult = sendReliableConversationPacket(
+                                                key = ReliablePacketKey(messageUuid.high, messageUuid.low, sequence),
+                                                conversationKey = conversationUserKey,
+                                                messageUuid = messageUuid.text,
+                                            ) {
+                                                when (sendConnection) {
+                                                    ActiveConnection.USB -> usbClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, sequence, messageUuid.high, messageUuid.low, identity.userIdHigh, identity.userIdLow)
+                                                    ActiveConnection.BLE -> bleClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, sequence, messageUuid.high, messageUuid.low, identity.userIdHigh, identity.userIdLow)
+                                                    ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+                                                }
                                             }
                                             sendResult.getOrThrow()
                                     }
@@ -764,6 +915,7 @@ fun EdgeZApp() {
                                     val codec = voiceCodecFromPath(entry.audioPath)
                                     val resendMessageUuid = parseMessageUuid(entry.messageUuid) ?: newMessageUuid()
                                     val chunks = voiceBytes.asList().chunked(VOICE_CHUNK_AUDIO_BYTES)
+                                    val sendConnection = activeConnection
                                     chunks.forEachIndexed { index, chunkBytes ->
                                         val voicePayload = encodeVoiceChunk(
                                             VoiceChunk(
@@ -776,10 +928,17 @@ fun EdgeZApp() {
                                             ),
                                         )
                                         val encrypted = encryptConversationPayload(identity, conversationUser, voicePayload, fromNode)
-                                        val sendResult = when (activeConnection) {
-                                            ActiveConnection.USB -> usbClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, index + 1, resendMessageUuid.high, resendMessageUuid.low, identity.userIdHigh, identity.userIdLow)
-                                            ActiveConnection.BLE -> bleClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, index + 1, resendMessageUuid.high, resendMessageUuid.low, identity.userIdHigh, identity.userIdLow)
-                                            ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+                                        val sequence = index + 1
+                                        val sendResult = sendReliableConversationPacket(
+                                            key = ReliablePacketKey(resendMessageUuid.high, resendMessageUuid.low, sequence),
+                                            conversationKey = conversationUserKey,
+                                            messageUuid = resendMessageUuid.text,
+                                        ) {
+                                            when (sendConnection) {
+                                                ActiveConnection.USB -> usbClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, sequence, resendMessageUuid.high, resendMessageUuid.low, identity.userIdHigh, identity.userIdLow)
+                                                ActiveConnection.BLE -> bleClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, sequence, resendMessageUuid.high, resendMessageUuid.low, identity.userIdHigh, identity.userIdLow)
+                                                ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+                                            }
                                         }
                                         sendResult.getOrThrow()
                                     }

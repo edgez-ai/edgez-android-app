@@ -564,6 +564,7 @@ object EdgezUsbControlProto {
         from: Long,
         to: Long,
         maxHop: Int = 0,
+        sequence: Int = 0,
         userIdHigh: Long,
         userIdLow: Long,
     ): ByteArray {
@@ -583,6 +584,7 @@ object EdgezUsbControlProto {
             userIdLow = userIdLow,
             mime = PacketMime.TEXT,
             maxHop = maxHop,
+            sequence = sequence,
         ).setPayload(ByteString.EMPTY).build().toByteArray()
     }
 
@@ -1261,6 +1263,7 @@ class EdgezUsbClient(private val context: Context) {
         from: Long,
         to: Long,
         maxHop: Int = 0,
+        sequence: Int = 0,
         userIdHigh: Long,
         userIdLow: Long,
         timeoutMs: Int = 1500,
@@ -1272,6 +1275,7 @@ class EdgezUsbClient(private val context: Context) {
                 from = from,
                 to = to,
                 maxHop = maxHop,
+                sequence = sequence,
                 userIdHigh = userIdHigh,
                 userIdLow = userIdLow,
             )

@@ -264,6 +264,7 @@ class EdgezBleClient(private val context: Context) {
         from: Long,
         to: Long,
         maxHop: Int = 0,
+        sequence: Int = 0,
         userIdHigh: Long,
         userIdLow: Long,
     ): Result<String> {
@@ -274,6 +275,7 @@ class EdgezBleClient(private val context: Context) {
                 from = from,
                 to = to,
                 maxHop = maxHop,
+                sequence = sequence,
                 userIdHigh = userIdHigh,
                 userIdLow = userIdLow,
             )
