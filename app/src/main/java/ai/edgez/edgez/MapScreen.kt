@@ -91,8 +91,10 @@ fun MapScreen(
     ) { grants ->
         locationPermissionGranted = grants.values.any { it } || context.hasMapLocationPermission()
     }
-    val targetUser = users.firstOrNull { it.hasLocation() }
-    val target = targetUser?.let { user ->
+    val phoneTarget = phoneLocation?.let { location ->
+        MapTarget(location.latitude, location.longitude, "phone location")
+    }
+    val userTarget = users.firstOrNull { it.hasLocation() }?.let { user ->
         val latitude = user.latitude
         val longitude = user.longitude
         if (latitude != null && longitude != null) {
@@ -100,9 +102,8 @@ fun MapScreen(
         } else {
             null
         }
-    } ?: phoneLocation?.let { location ->
-        MapTarget(location.latitude, location.longitude, "phone location")
     }
+    val target = phoneTarget ?: if (locationPermissionGranted) null else userTarget
     val targetState by rememberUpdatedState(target)
     val savedCameraState by rememberUpdatedState(savedCamera)
     val onCameraChangedState by rememberUpdatedState(onCameraChanged)
