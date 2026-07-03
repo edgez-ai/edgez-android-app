@@ -456,6 +456,32 @@ fun EdgeZApp() {
                         }
                     }
                     if (message != null && isConversationAck) {
+                        val messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow)
+                        val ackKey = ReliablePacketKey(message.messageIdHigh, message.messageIdLow, message.sequence)
+                        val matchedPacket = pendingReliablePackets.remove(ackKey)
+                            ?: if (message.sequence == 0) {
+                                pendingReliableMessageKeys(message.messageIdHigh, message.messageIdLow)
+                                    .firstNotNullOfOrNull { pendingReliablePackets.remove(it) }
+                            } else {
+                                null
+                            }
+                        if (message.sequence == 0) {
+                            pendingReliableMessageKeys(message.messageIdHigh, message.messageIdLow).forEach {
+                                pendingReliablePackets.remove(it)
+                            }
+                        }
+                        if (matchedPacket != null) {
+                            Log.d(TAG_USERS, "conversation ack received messageId=$messageUuid seq=${message.sequence}")
+                            if (pendingReliableMessageKeys(message.messageIdHigh, message.messageIdLow).isEmpty()) {
+                                updateOutgoingMessageStatus(
+                                    matchedPacket.conversationKey,
+                                    matchedPacket.messageUuid,
+                                    "Delivered",
+                                )
+                            }
+                            return@post
+                        }
+
                         val ackUserUuid = packetUserUuid(message.userHigh, message.userLow)
                         val ackUser = if (ackUserUuid.isNotBlank()) {
                             haLowUsers.values.firstOrNull { it.userUuid == ackUserUuid }
@@ -471,30 +497,7 @@ fun EdgeZApp() {
                             )
                         } else {
                             val senderKey = conversationKey(ackUser)
-                            val messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow)
-                            val ackKey = ReliablePacketKey(message.messageIdHigh, message.messageIdLow, message.sequence)
-                            val matchedPacket = pendingReliablePackets.remove(ackKey)
-                                ?: if (message.sequence == 0) {
-                                    pendingReliableMessageKeys(message.messageIdHigh, message.messageIdLow)
-                                        .firstNotNullOfOrNull { pendingReliablePackets.remove(it) }
-                                } else {
-                                    null
-                                }
-                            if (message.sequence == 0) {
-                                pendingReliableMessageKeys(message.messageIdHigh, message.messageIdLow).forEach {
-                                    pendingReliablePackets.remove(it)
-                                }
-                            }
-                            if (matchedPacket != null) {
-                                Log.d(TAG_USERS, "conversation ack received messageId=$messageUuid seq=${message.sequence}")
-                            }
-                            if (matchedPacket == null || pendingReliableMessageKeys(message.messageIdHigh, message.messageIdLow).isEmpty()) {
-                                updateOutgoingMessageStatus(
-                                    matchedPacket?.conversationKey ?: senderKey,
-                                    matchedPacket?.messageUuid ?: messageUuid,
-                                    "Delivered",
-                                )
-                            }
+                            updateOutgoingMessageStatus(senderKey, messageUuid, "Delivered")
                         }
                     }
                     if (message != null && conversationMessage != null && !isConversationAck) {
