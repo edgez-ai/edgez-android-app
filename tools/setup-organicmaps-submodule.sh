@@ -161,3 +161,5 @@ for INCLUDE_BOOST_DIR in "$BOOST_PATH"/libs/*/include/boost "$BOOST_PATH"/libs/n
     done
   ' "$BOOST_PATH" "$BOOST_PATH" {} +
 done
+
+"$ROOT_DIR/tools/apply-organicmaps-patches.sh"

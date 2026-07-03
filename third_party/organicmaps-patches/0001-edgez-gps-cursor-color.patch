@@ -1,0 +1,291 @@
+diff --git a/android/sdk/src/main/cpp/app/organicmaps/sdk/Framework.cpp b/android/sdk/src/main/cpp/app/organicmaps/sdk/Framework.cpp
+index 9dd15191bd..ccc5cf9a4a 100644
+--- a/android/sdk/src/main/cpp/app/organicmaps/sdk/Framework.cpp
++++ b/android/sdk/src/main/cpp/app/organicmaps/sdk/Framework.cpp
+@@ -27,6 +27,7 @@
+ 
+ #include "drape_frontend/user_event_stream.hpp"
+ #include "drape_frontend/visual_params.hpp"
++#include "drape_frontend/my_position.hpp"
+ 
+ #include "drape/pointers.hpp"
+ #include "drape/support_manager.hpp"
+@@ -1797,6 +1798,11 @@ JNIEXPORT void Java_app_organicmaps_sdk_Framework_nativeStopLocationFollow(JNIEn
+   frm()->StopLocationFollow();
+ }
+ 
++JNIEXPORT void Java_app_organicmaps_sdk_Framework_nativeSetGpsCursorColor(JNIEnv *, jclass, jlong argb)
++{
++  df::SetMyPositionColor(static_cast<uint32_t>(argb));
++}
++
+ JNIEXPORT void Java_app_organicmaps_sdk_Framework_nativeSetSearchViewport(JNIEnv *, jclass, jdouble lat, jdouble lon,
+                                                                           jint zoom)
+ {
+diff --git a/android/sdk/src/main/java/app/organicmaps/sdk/Framework.java b/android/sdk/src/main/java/app/organicmaps/sdk/Framework.java
+index 2ec88668c1..9574fdae43 100644
+--- a/android/sdk/src/main/java/app/organicmaps/sdk/Framework.java
++++ b/android/sdk/src/main/java/app/organicmaps/sdk/Framework.java
+@@ -381,6 +381,7 @@ public class Framework
+ 
+   public static native void nativeSetViewportCenter(double lat, double lon, int zoom);
+   public static native void nativeStopLocationFollow();
++  public static native void nativeSetGpsCursorColor(long argb);
+ 
+   public static native void nativeSetSearchViewport(double lat, double lon, int zoom);
+ 
+diff --git a/libs/drape_frontend/arrow3d.cpp b/libs/drape_frontend/arrow3d.cpp
+index 3ef62775c1..c03e69d3a7 100644
+--- a/libs/drape_frontend/arrow3d.cpp
++++ b/libs/drape_frontend/arrow3d.cpp
+@@ -370,6 +370,11 @@ void Arrow3d::SetPositionObsolete(bool obsolete)
+   m_obsoletePosition = obsolete;
+ }
+ 
++void Arrow3d::SetColorOverride(uint32_t argb)
++{
++  m_colorOverrideArgb = argb;
++}
++
+ void Arrow3d::SetMeshOffset(glsl::vec3 const & offset)
+ {
+   m_meshOffset = offset;
+@@ -415,19 +420,23 @@ void Arrow3d::Render(ref_ptr<dp::GraphicsContext> context, ref_ptr<gpu::ProgramM
+   }
+ 
+   // Render arrow.
++  std::optional<dp::Color> overrideColor;
++  if (m_colorOverrideArgb != 0)
++    overrideColor = dp::Color::FromARGB(m_colorOverrideArgb);
+   if (m_arrowMeshTexturingEnabled)
+   {
+     // Use only alpha channel from arrow color for textured meshes.
+-    auto const color = dp::Color(255, 255, 255,
++    auto const color = overrideColor.value_or(dp::Color(255, 255, 255,
+                                  m_obsoletePosition ? df::GetColorConstant(df::kArrow3DObsoleteColor).GetAlpha()
+-                                                    : df::GetColorConstant(df::kArrow3DColor).GetAlpha());
++                                                    : df::GetColorConstant(df::kArrow3DColor).GetAlpha()));
+ 
+     RenderArrow(context, mng, m_arrowMesh, screen, gpu::Program::Arrow3dTextured, color, 0.0f /* dz */,
+                 1.0f /* scaleFactor */);
+   }
+   else
+   {
+-    dp::Color const color = df::GetColorConstant(m_obsoletePosition ? df::kArrow3DObsoleteColor : df::kArrow3DColor);
++    dp::Color const color = overrideColor.value_or(
++        df::GetColorConstant(m_obsoletePosition ? df::kArrow3DObsoleteColor : df::kArrow3DColor));
+     RenderArrow(context, mng, m_arrowMesh, screen, gpu::Program::Arrow3d, color, 0.0f /* dz */, 1.0f /* scaleFactor */);
+   }
+ }
+diff --git a/libs/drape_frontend/arrow3d.hpp b/libs/drape_frontend/arrow3d.hpp
+index 4f9cf11765..6bcd9cd25b 100644
+--- a/libs/drape_frontend/arrow3d.hpp
++++ b/libs/drape_frontend/arrow3d.hpp
+@@ -9,6 +9,7 @@
+ 
+ #include "geometry/rect2d.hpp"
+ 
++#include <cstdint>
+ #include <optional>
+ #include <string>
+ #include <vector>
+@@ -67,6 +68,7 @@ public:
+   void SetPosition(m2::PointD const & position);
+   void SetAzimuth(double azimuth);
+   void SetPositionObsolete(bool obsolete);
++  void SetColorOverride(uint32_t argb);
+ 
+   // Leyout is axes (in the plane of map): x - right, y - up,
+   // -z - perpendicular to the map's plane directed towards the observer.
+@@ -100,6 +102,7 @@ private:
+   m2::PointD m_position;
+   double m_azimuth = 0.0;
+   bool m_obsoletePosition = false;
++  uint32_t m_colorOverrideArgb = 0;
+ 
+   dp::RenderState m_state;
+ 
+diff --git a/libs/drape_frontend/my_position.cpp b/libs/drape_frontend/my_position.cpp
+index 828c83ba97..e9279117c9 100644
+--- a/libs/drape_frontend/my_position.cpp
++++ b/libs/drape_frontend/my_position.cpp
+@@ -13,11 +13,15 @@
+ #include "drape/glsl_types.hpp"
+ #include "drape/render_bucket.hpp"
+ 
++#include <atomic>
++#include <optional>
++
+ namespace df
+ {
+ namespace mp
+ {
+ df::ColorConstant const kMyPositionAccuracyColor = "MyPositionAccuracy";
++std::atomic<uint32_t> g_myPositionColorArgb = 0;
+ 
+ struct MarkerVertex
+ {
+@@ -49,6 +53,20 @@ dp::BindingInfo GetMarkerBindingInfo()
+ }
+ }  // namespace mp
+ 
++void SetMyPositionColor(uint32_t argb)
++{
++  mp::g_myPositionColorArgb.store(argb, std::memory_order_relaxed);
++}
++
++std::optional<glsl::vec4> GetMyPositionColorOverride()
++{
++  auto const argb = mp::g_myPositionColorArgb.load(std::memory_order_relaxed);
++  if (argb == 0)
++    return std::nullopt;
++
++  return glsl::ToVec4(dp::Color::FromARGB(argb));
++}
++
+ MyPosition::MyPosition(ref_ptr<dp::GraphicsContext> context, ref_ptr<dp::TextureManager> mng)
+   : m_position(m2::PointF::Zero())
+   , m_azimuth(0.0f)
+@@ -116,6 +134,8 @@ void MyPosition::RenderAccuracy(ref_ptr<dp::GraphicsContext> context, ref_ptr<gp
+       static_cast<m2::PointF>(MapShape::ConvertToLocal(adjustedPos, key.GetGlobalRect().Center(), kShapeCoordScalar));
+   params.m_position = glsl::vec3(pos.x, pos.y, 0.0f);
+   params.m_accuracy = pixelAccuracy;
++  if (auto const color = GetMyPositionColorOverride())
++    params.m_color = *color;
+   RenderPart(context, mng, params, MyPositionAccuracy);
+ }
+ 
+@@ -129,6 +149,7 @@ void MyPosition::RenderMyPosition(ref_ptr<dp::GraphicsContext> context, ref_ptr<
+     CHECK(m_arrow3d != nullptr, ());
+     m_arrow3d->SetPosition(adjustedPos);
+     m_arrow3d->SetAzimuth(m_azimuth);
++    m_arrow3d->SetColorOverride(mp::g_myPositionColorArgb.load(std::memory_order_relaxed));
+     m_arrow3d->Render(context, mng, screen, m_isRoutingMode);
+   }
+   else
+@@ -143,6 +164,8 @@ void MyPosition::RenderMyPosition(ref_ptr<dp::GraphicsContext> context, ref_ptr<
+         static_cast<m2::PointF>(MapShape::ConvertToLocal(adjustedPos, key.GetGlobalRect().Center(), kShapeCoordScalar));
+     params.m_position = glsl::vec3(pos.x, pos.y, dp::depth::kMyPositionMarkDepth);
+     params.m_azimut = -(m_azimuth + static_cast<float>(screen.GetAngle()));
++    if (auto const color = GetMyPositionColorOverride())
++      params.m_color = *color;
+     RenderPart(context, mng, params, MyPositionPoint);
+   }
+ }
+diff --git a/libs/drape_frontend/my_position.hpp b/libs/drape_frontend/my_position.hpp
+index 7a11589759..ea30bf9ae9 100644
+--- a/libs/drape_frontend/my_position.hpp
++++ b/libs/drape_frontend/my_position.hpp
+@@ -12,6 +12,7 @@
+ 
+ #include "geometry/screenbase.hpp"
+ 
++#include <cstdint>
+ #include <optional>
+ #include <string>
+ #include <utility>
+@@ -19,6 +20,8 @@
+ 
+ namespace df
+ {
++void SetMyPositionColor(uint32_t argb);
++
+ class MyPosition
+ {
+ public:
+diff --git a/libs/shaders/GL/my_position.vsh.glsl b/libs/shaders/GL/my_position.vsh.glsl
+index 8489cc6ad6..2a238c75e6 100644
+--- a/libs/shaders/GL/my_position.vsh.glsl
++++ b/libs/shaders/GL/my_position.vsh.glsl
+@@ -9,6 +9,7 @@ layout (binding = 0) uniform UBO
+   mat4 u_projection;
+   mat4 u_pivotTransform;
+   vec4 u_position;
++  vec4 u_color;
+   vec2 u_lineParams;
+   float u_accuracy;
+   float u_zScale;
+diff --git a/libs/shaders/GL/position_accuracy3d.vsh.glsl b/libs/shaders/GL/position_accuracy3d.vsh.glsl
+index 196c6d7363..d4587578ac 100644
+--- a/libs/shaders/GL/position_accuracy3d.vsh.glsl
++++ b/libs/shaders/GL/position_accuracy3d.vsh.glsl
+@@ -9,6 +9,7 @@ layout (binding = 0) uniform UBO
+   mat4 u_projection;
+   mat4 u_pivotTransform;
+   vec4 u_position;
++  vec4 u_color;
+   vec2 u_lineParams;
+   float u_accuracy;
+   float u_zScale;
+diff --git a/libs/shaders/GL/texturing_position.fsh.glsl b/libs/shaders/GL/texturing_position.fsh.glsl
+index c5ad5a77e0..5a76bb6c9e 100644
+--- a/libs/shaders/GL/texturing_position.fsh.glsl
++++ b/libs/shaders/GL/texturing_position.fsh.glsl
+@@ -8,6 +8,7 @@ layout (binding = 0) uniform UBO
+   mat4 u_projection;
+   mat4 u_pivotTransform;
+   vec4 u_position;
++  vec4 u_color;
+   vec2 u_lineParams;
+   float u_accuracy;
+   float u_zScale;
+@@ -20,6 +21,7 @@ layout (binding = 1) uniform sampler2D u_colorTex;
+ void main()
+ {
+   vec4 finalColor = texture(u_colorTex, v_colorTexCoords);
++  finalColor.rgb = mix(finalColor.rgb, u_color.rgb, u_color.a);
+   finalColor.a *= u_opacity;
+   v_FragColor = finalColor;
+ }
+diff --git a/libs/shaders/Metal/shapes.metal b/libs/shaders/Metal/shapes.metal
+index 9b3cba892b..6b86d90e4c 100644
+--- a/libs/shaders/Metal/shapes.metal
++++ b/libs/shaders/Metal/shapes.metal
+@@ -11,6 +11,7 @@ typedef struct
+   float4x4 u_pivotTransform;
+   packed_float3 u_position;
+   float u_dummy1;
++  float4 u_color;
+   packed_float2 u_lineParams;
+   float u_accuracy;
+   float u_zScale;
+@@ -52,6 +53,7 @@ fragment float4 fsAccuracy(const FragmentAccuracy_T in [[stage_in]],
+                           sampler u_colorTexSampler [[sampler(0)]])
+ {
+   float4 color = u_colorTex.sample(u_colorTexSampler, in.colorTexCoords);
++  color.rgb = mix(color.rgb, uniforms.u_color.rgb, uniforms.u_color.a);
+   color.a *= uniforms.u_opacity;
+   return color;
+ }
+@@ -93,6 +95,7 @@ fragment float4 fsMyPosition(const FragmentMyPosition_T in [[stage_in]],
+                              sampler u_colorTexSampler [[sampler(0)]])
+ {
+   float4 color = u_colorTex.sample(u_colorTexSampler, in.colorTexCoords);
++  color.rgb = mix(color.rgb, uniforms.u_color.rgb, uniforms.u_color.a);
+   color.a *= uniforms.u_opacity;
+   return color;
+ }
+diff --git a/libs/shaders/gl_program_params.cpp b/libs/shaders/gl_program_params.cpp
+index 772a21b567..8b7b700713 100644
+--- a/libs/shaders/gl_program_params.cpp
++++ b/libs/shaders/gl_program_params.cpp
+@@ -199,6 +199,7 @@ void GLProgramParamsSetter::Apply(ref_ptr<dp::GraphicsContext> context, ref_ptr<
+   Parameter::CheckApply(guard, "u_zScale", params.m_zScale);
+   Parameter::CheckApply(guard, "u_opacity", params.m_opacity);
+   Parameter::CheckApply(guard, "u_azimut", params.m_azimut);
++  Parameter::CheckApply(guard, "u_color", params.m_color);
+ }
+ 
+ void GLProgramParamsSetter::Apply(ref_ptr<dp::GraphicsContext> context, ref_ptr<dp::GpuProgram> program,
+diff --git a/libs/shaders/program_params.hpp b/libs/shaders/program_params.hpp
+index 7c4ca2a5cf..fef3ebf993 100644
+--- a/libs/shaders/program_params.hpp
++++ b/libs/shaders/program_params.hpp
+@@ -178,6 +178,7 @@ struct ALIGNMENT ShapesProgramParams
+     glsl::vec4 m_positionAligned;
+     glsl::vec3 m_position;
+   };
++  glsl::vec4 m_color = glsl::vec4(0.0f, 0.0f, 0.0f, 0.0f);
+   glsl::vec2 m_lineParams;
+   float m_accuracy = 0.0;
+   float m_zScale = 1.0f;
