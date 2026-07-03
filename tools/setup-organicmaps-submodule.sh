@@ -2,131 +2,52 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SUBMODULE_PATH="third_party/organicmaps"
+ORGANICMAPS_DIR="$ROOT_DIR/third_party/organicmaps"
+BOOST_PATH="$ORGANICMAPS_DIR/3party/boost"
 
 cd "$ROOT_DIR"
 
-if git ls-files --error-unmatch "$SUBMODULE_PATH" >/dev/null 2>&1; then
-  git submodule update --init --depth 1 --filter=blob:none "$SUBMODULE_PATH"
-elif [ ! -d "$SUBMODULE_PATH/.git" ]; then
-  echo "error: $SUBMODULE_PATH is not a registered submodule and no local checkout exists there" >&2
+if [ ! -d "$ORGANICMAPS_DIR" ]; then
+  echo "error: $ORGANICMAPS_DIR is missing" >&2
+  echo "Organic Maps source is expected to be tracked by the root project." >&2
   exit 1
 fi
-git -C "$SUBMODULE_PATH" sparse-checkout init --no-cone
-git -C "$SUBMODULE_PATH" sparse-checkout set --no-cone \
-  /.gitmodules \
-  /CMakeLists.txt \
-  /defines.hpp \
-  /private.h \
-  /3party/ \
-  /android/sdk/ \
-  /cmake/ \
-  /libs/ \
-  /platform/ \
-  /tools/ \
-  /generator/ \
-  '/data/*.txt' \
-  '/data/*.json' \
-  '/data/*.csv' \
-  '/data/*.html' \
-  '/data/*.bin' \
-  '/data/*.dat' \
-  '/data/*.mwm' \
-  /data/editor.config \
-  /data/conf/ \
-  /data/countries-strings/ \
-  /data/fonts/ \
-  /data/organic_maps_emoji/ \
-  /data/sound-strings/ \
-  /data/strings/ \
-  /data/styles/ \
-  /data/symbols/ \
-  /data/symbols-svg/ \
-  /data/vulkan_shaders/
 
-git -C "$SUBMODULE_PATH" submodule update --init --depth 1 --filter=blob:none \
-  3party/BLAKE3 \
-  3party/Vulkan-Headers \
-  3party/boost \
-  3party/expat \
-  3party/fast_float \
-  3party/fast_obj \
-  3party/freetype/freetype \
-  3party/gflags \
-  3party/glm \
-  3party/glaze \
-  3party/harfbuzz/harfbuzz \
-  3party/icu/icu \
-  3party/just_gtfs \
-  3party/pugixml/pugixml \
-  3party/utfcpp
+submodules=(
+  third_party/organicmaps/3party/BLAKE3 \
+  third_party/organicmaps/3party/CMake-MetalShaderSupport \
+  third_party/organicmaps/3party/Vulkan-Headers \
+  third_party/organicmaps/3party/boost \
+  third_party/organicmaps/3party/expat \
+  third_party/organicmaps/3party/fast_float \
+  third_party/organicmaps/3party/fast_obj \
+  third_party/organicmaps/3party/freetype/freetype \
+  third_party/organicmaps/3party/gflags \
+  third_party/organicmaps/3party/glfw \
+  third_party/organicmaps/3party/glm \
+  third_party/organicmaps/3party/glaze \
+  third_party/organicmaps/3party/googletest \
+  third_party/organicmaps/3party/harfbuzz/harfbuzz \
+  third_party/organicmaps/3party/icu/icu \
+  third_party/organicmaps/3party/imgui/imgui \
+  third_party/organicmaps/3party/just_gtfs \
+  third_party/organicmaps/3party/pugixml/pugixml \
+  third_party/organicmaps/3party/utfcpp \
+  third_party/organicmaps/tools/kothic \
+  third_party/organicmaps/tools/osmctools \
+  third_party/organicmaps/tools/python/twine
+)
 
-BOOST_PATH="$SUBMODULE_PATH/3party/boost"
-git -C "$BOOST_PATH" submodule update --init --depth 1 --filter=blob:none \
-  libs/algorithm \
-  libs/any \
-  libs/array \
-  libs/assert \
-  libs/bind \
-  libs/circular_buffer \
-  libs/concept_check \
-  libs/config \
-  libs/container \
-  libs/container_hash \
-  libs/conversion \
-  libs/core \
-  libs/date_time \
-  libs/detail \
-  libs/describe \
-  libs/endian \
-  libs/exception \
-  libs/function \
-  libs/function_types \
-  libs/functional \
-  libs/geometry \
-  libs/graph \
-  libs/headers \
-  libs/integer \
-  libs/intrusive \
-  libs/io \
-  libs/iterator \
-  libs/lambda \
-  libs/lexical_cast \
-  libs/math \
-  libs/move \
-  libs/mp11 \
-  libs/mpl \
-  libs/multi_index \
-  libs/multiprecision \
-  libs/numeric/conversion \
-  libs/optional \
-  libs/parameter \
-  libs/phoenix \
-  libs/polygon \
-  libs/pool \
-  libs/predef \
-  libs/preprocessor \
-  libs/property_map \
-  libs/proto \
-  libs/qvm \
-  libs/range \
-  libs/rational \
-  libs/regex \
-  libs/serialization \
-  libs/smart_ptr \
-  libs/spirit \
-  libs/static_assert \
-  libs/throw_exception \
-  libs/tokenizer \
-  libs/tuple \
-  libs/tti \
-  libs/type_index \
-  libs/type_traits \
-  libs/typeof \
-  libs/unordered \
-  libs/utility \
-  libs/variant \
-  libs/variant2
+git submodule sync --recursive || true
+if ! git submodule update --init --recursive "${submodules[@]}"; then
+  echo "warning: root-owned Organic Maps submodules are not available from HEAD yet." >&2
+  echo "warning: falling back to recursive update inside already-present dependency checkouts." >&2
+  for submodule in "${submodules[@]}"; do
+    if git -C "$submodule" rev-parse --git-dir >/dev/null 2>&1; then
+      git -C "$submodule" submodule update --init --recursive
+    fi
+  done
+fi
 
 if [ -d "$BOOST_PATH/libs/spirit/include/boost/spirit" ] && [ ! -f "$BOOST_PATH/libs/spirit/include/boost/spirit/include/qi.hpp" ]; then
   mkdir -p "$BOOST_PATH/libs/spirit/include/boost/spirit/include"
@@ -161,5 +82,3 @@ for INCLUDE_BOOST_DIR in "$BOOST_PATH"/libs/*/include/boost "$BOOST_PATH"/libs/n
     done
   ' "$BOOST_PATH" "$BOOST_PATH" {} +
 done
-
-"$ROOT_DIR/tools/apply-organicmaps-patches.sh"

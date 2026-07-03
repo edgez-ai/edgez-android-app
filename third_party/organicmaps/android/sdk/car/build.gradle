@@ -1,0 +1,25 @@
+plugins {
+  id 'com.android.library'
+}
+
+apply from: "${rootProject.rootDir}/groovy/common-config.gradle"
+apply from: "${rootProject.rootDir}/groovy/publishing.gradle"
+
+android {
+  namespace 'app.organicmaps.sdk.car'
+  // enableKotlin = true  // see app/build.gradle
+}
+
+dependencies {
+  api project(':sdk')
+  api libs.androidx.car.app
+
+  implementation project(':sdk:widgets:speedlimit')
+  implementation project(':sdk:widgets:lanes')
+}
+
+Publish(project, [
+    'artifactId' : 'car',
+    'name'       : 'Organic Maps SDK for Android Auto and Android Automotive',
+    'description': 'A library that provides Organic Maps integration for Android Auto and Android Automotive'
+])

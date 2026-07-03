@@ -1,4 +1,88 @@
-[submodule "third_party/organicmaps"]
-	path = third_party/organicmaps
-	url = https://github.com/organicmaps/organicmaps.git
-	shallow = true
+[submodule "third_party/organicmaps/tools/osmctools"]
+	path = third_party/organicmaps/tools/osmctools
+	url = https://github.com/organicmaps/osmctools.git
+	branch = master
+[submodule "third_party/organicmaps/tools/kothic"]
+	path = third_party/organicmaps/tools/kothic
+	url = https://github.com/organicmaps/kothic.git
+	branch = master
+[submodule "third_party/organicmaps/3party/Vulkan-Headers"]
+	path = third_party/organicmaps/3party/Vulkan-Headers
+	url = https://github.com/KhronosGroup/Vulkan-Headers.git
+	branch = main
+[submodule "third_party/organicmaps/3party/boost"]
+	path = third_party/organicmaps/3party/boost
+	url = https://github.com/boostorg/boost.git
+	branch = boost-1.89.0
+	ignore = dirty
+[submodule "third_party/organicmaps/3party/just_gtfs"]
+	path = third_party/organicmaps/3party/just_gtfs
+	url = https://github.com/organicmaps/just_gtfs.git
+	branch = for-usage-as-submodule
+[submodule "third_party/organicmaps/3party/expat"]
+	path = third_party/organicmaps/3party/expat
+	url = https://github.com/libexpat/libexpat.git
+	branch = R_2_7_4
+[submodule "third_party/organicmaps/3party/glm"]
+	path = third_party/organicmaps/3party/glm
+	url = https://github.com/g-truc/glm.git
+	branch = master
+[submodule "third_party/organicmaps/3party/icu/icu"]
+	path = third_party/organicmaps/3party/icu/icu
+	url = https://github.com/unicode-org/icu.git
+	branch = main
+[submodule "third_party/organicmaps/3party/freetype/freetype"]
+	path = third_party/organicmaps/3party/freetype/freetype
+	url = https://github.com/organicmaps/freetype.git
+	branch = master
+[submodule "third_party/organicmaps/3party/googletest"]
+	path = third_party/organicmaps/3party/googletest
+	url = https://github.com/google/googletest.git
+	branch = main
+[submodule "third_party/organicmaps/3party/pugixml/pugixml"]
+	path = third_party/organicmaps/3party/pugixml/pugixml
+	url = https://github.com/zeux/pugixml.git
+	branch = master
+[submodule "third_party/organicmaps/3party/gflags"]
+	path = third_party/organicmaps/3party/gflags
+	url = https://github.com/gflags/gflags
+	branch = master
+[submodule "third_party/organicmaps/3party/fast_obj"]
+	path = third_party/organicmaps/3party/fast_obj
+	url = https://github.com/thisistherk/fast_obj
+	branch = master
+[submodule "third_party/organicmaps/3party/harfbuzz/harfbuzz"]
+	path = third_party/organicmaps/3party/harfbuzz/harfbuzz
+	url = https://github.com/harfbuzz/harfbuzz.git
+	branch = main
+[submodule "third_party/organicmaps/3party/utfcpp"]
+	path = third_party/organicmaps/3party/utfcpp
+	url = https://github.com/nemtrif/utfcpp.git
+	branch = master
+[submodule "third_party/organicmaps/3party/glfw"]
+	path = third_party/organicmaps/3party/glfw
+	url = https://github.com/glfw/glfw.git
+	branch = master
+[submodule "third_party/organicmaps/3party/CMake-MetalShaderSupport"]
+	path = third_party/organicmaps/3party/CMake-MetalShaderSupport
+	url = https://github.com/dpogue/CMake-MetalShaderSupport.git
+	branch = main
+[submodule "third_party/organicmaps/3party/imgui/imgui"]
+	path = third_party/organicmaps/3party/imgui/imgui
+	url = https://github.com/ocornut/imgui
+	branch = master
+[submodule "third_party/organicmaps/3party/glaze"]
+	path = third_party/organicmaps/3party/glaze
+	url = https://github.com/stephenberry/glaze
+	branch = main
+[submodule "third_party/organicmaps/3party/fast_float"]
+	path = third_party/organicmaps/3party/fast_float
+	url = https://github.com/fastfloat/fast_float.git
+	branch = main
+[submodule "third_party/organicmaps/tools/python/twine"]
+	path = third_party/organicmaps/tools/python/twine
+	url = https://github.com/organicmaps/twine.git
+	branch = organicmaps
+[submodule "third_party/organicmaps/3party/BLAKE3"]
+	path = third_party/organicmaps/3party/BLAKE3
+	url = https://github.com/BLAKE3-team/BLAKE3
