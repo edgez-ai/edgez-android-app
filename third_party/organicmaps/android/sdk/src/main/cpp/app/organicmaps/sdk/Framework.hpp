@@ -147,6 +147,7 @@ public:
   bool IsDownloadingActive();
 
   void ExecuteMapApiRequest();
+  void SetApiMarksFromParsedMapApi();
 
   bool DeactivatePopup();
   void DeactivateMapSelectionCircle(bool restoreViewport);

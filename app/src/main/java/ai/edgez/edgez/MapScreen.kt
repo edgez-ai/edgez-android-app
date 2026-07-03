@@ -38,7 +38,6 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import app.organicmaps.sdk.Framework
-import app.organicmaps.sdk.Map as OrganicMap
 import app.organicmaps.sdk.MapController
 import app.organicmaps.sdk.MapRenderingListener
 import app.organicmaps.sdk.MapView
@@ -55,11 +54,19 @@ private const val REGION_AUTOCACHE_INTERVAL_MS = 3_500L
 private const val REGION_AUTOCACHE_INITIAL_DELAY_MS = 5_000L
 private const val MAP_REFRESH_DELAY_MS = 250L
 private const val DOWNLOAD_PROMPT_GESTURE_DELAY_MS = 500L
+private const val MAP_SCALE_READY_RETRY_COUNT = 20
+private const val MAP_SCALE_READY_RETRY_DELAY_MS = 100L
 
 private data class MapTarget(
     val latitude: Double,
     val longitude: Double,
     val label: String,
+)
+
+data class EdgeZMapCamera(
+    val latitude: Double,
+    val longitude: Double,
+    val zoom: Int,
 )
 
 private data class MapDownloadProgress(
@@ -71,6 +78,8 @@ private data class MapDownloadProgress(
 fun MapScreen(
     users: List<HaLowUser>,
     gpsCursorMarker: String = NodeMapMarker.DEFAULT.id,
+    savedCamera: EdgeZMapCamera? = null,
+    onCameraChanged: (EdgeZMapCamera) -> Unit = {},
 ) {
     val context = LocalContext.current
     val application = context.applicationContext as EdgeZApplication
@@ -95,6 +104,8 @@ fun MapScreen(
         MapTarget(location.latitude, location.longitude, "phone location")
     }
     val targetState by rememberUpdatedState(target)
+    val savedCameraState by rememberUpdatedState(savedCamera)
+    val onCameraChangedState by rememberUpdatedState(onCameraChanged)
     val markerUsers = remember(users) {
         users.filter { it.hasValidMapLocation() }
     }
@@ -104,6 +115,7 @@ fun MapScreen(
 
     var initialized by remember { mutableStateOf(application.organicMaps.arePlatformAndCoreInitialized()) }
     var renderingReady by remember { mutableStateOf(false) }
+    var initialCameraApplied by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Starting offline map") }
     var controller by remember { mutableStateOf<MapController?>(null) }
     var pendingRegionId by remember { mutableStateOf<String?>(null) }
@@ -118,6 +130,12 @@ fun MapScreen(
             }
         } else {
             pendingRegionId = null
+        }
+    }
+
+    fun saveCurrentCamera() {
+        readCurrentMapCamera()?.let { camera ->
+            onCameraChangedState(camera)
         }
     }
 
@@ -199,10 +217,24 @@ fun MapScreen(
     }
 
     LaunchedEffect(initialized, renderingReady, controller, target?.latitude, target?.longitude) {
-        if (initialized && renderingReady && controller != null) {
-            centerOnTarget(target, controller)
-            delay(MAP_REFRESH_DELAY_MS)
-            centerOnTarget(target, controller)
+        val initialTarget = target
+        val initialCamera = savedCameraState
+        if (initialized && renderingReady && controller != null && !initialCameraApplied && (initialCamera != null || initialTarget != null)) {
+            if (!waitForValidMapScale()) {
+                Log.w(TAG_MAP, "Skipping initial camera move until native map scale is ready")
+                return@LaunchedEffect
+            }
+            initialCamera?.let { camera ->
+                restoreMapCamera(camera, controller)
+                initialCameraApplied = true
+                return@LaunchedEffect
+            }
+            if (initialTarget != null) {
+                centerOnTarget(initialTarget, controller)
+                delay(MAP_REFRESH_DELAY_MS)
+                centerOnTarget(initialTarget, controller)
+                initialCameraApplied = true
+            }
         }
     }
 
@@ -277,6 +309,7 @@ fun MapScreen(
             lifecycle.addObserver(activeController)
         }
         onDispose {
+            saveCurrentCamera()
             if (activeController != null) {
                 lifecycle.removeObserver(activeController)
             }
@@ -300,6 +333,7 @@ fun MapScreen(
                                 when (event.actionMasked) {
                                     MotionEvent.ACTION_UP,
                                     MotionEvent.ACTION_CANCEL -> {
+                                        saveCurrentCamera()
                                         if (renderingReady) {
                                             refreshDownloadPrompt()
                                             mapView.postDelayed(
@@ -324,12 +358,10 @@ fun MapScreen(
 
                                     override fun onRenderingRestored() {
                                         renderingReady = true
-                                        centerOnTarget(targetState, mapController)
                                     }
 
                                     override fun onRenderingInitializationFinished() {
                                         renderingReady = true
-                                        centerOnTarget(targetState, mapController)
                                     }
                                 },
                                 {
@@ -461,6 +493,22 @@ private fun MapDownloadPrompt(
 
 private const val PHONE_LOCATION_REFRESH_MS = 1_000L
 
+private suspend fun waitForValidMapScale(): Boolean {
+    repeat(MAP_SCALE_READY_RETRY_COUNT) {
+        if (isMapScaleReady()) {
+            return true
+        }
+        delay(MAP_SCALE_READY_RETRY_DELAY_MS)
+    }
+    return isMapScaleReady()
+}
+
+private fun isMapScaleReady(): Boolean {
+    return runCatching {
+        Framework.nativeGetDrawScale() > 0
+    }.getOrDefault(false)
+}
+
 private fun centerOnTarget(target: MapTarget?, controller: MapController?) {
     val latitude = target?.latitude
     val longitude = target?.longitude
@@ -485,6 +533,28 @@ private fun refreshCurrentViewport() {
     Framework.nativeZoomToPoint(latitude, longitude, zoom, false)
 }
 
+private fun readCurrentMapCamera(): EdgeZMapCamera? {
+    return runCatching {
+        val center = Framework.nativeGetScreenRectCenter()
+        val latitude = center.getOrNull(0) ?: return@runCatching null
+        val longitude = center.getOrNull(1) ?: return@runCatching null
+        val zoom = Framework.nativeGetDrawScale().takeIf { it > 0 } ?: return@runCatching null
+        EdgeZMapCamera(latitude, longitude, zoom)
+    }.onFailure { error ->
+        Log.w(TAG_MAP, "Unable to read map camera", error)
+    }.getOrNull()
+}
+
+private fun restoreMapCamera(camera: EdgeZMapCamera, controller: MapController?) {
+    runCatching {
+        Framework.nativeStopLocationFollow()
+        Framework.nativeZoomToPoint(camera.latitude, camera.longitude, camera.zoom, false)
+        forceMapRefresh(controller)
+    }.onFailure { error ->
+        Log.w(TAG_MAP, "Unable to restore map camera", error)
+    }
+}
+
 private fun forceMapRefresh(controller: MapController?) {
     controller?.updateCompassOffset(0, 0)
     controller?.view?.postInvalidate()
@@ -492,11 +562,6 @@ private fun forceMapRefresh(controller: MapController?) {
 
 private fun syncUserMapMarkers(users: List<HaLowUser>, controller: MapController?) {
     runCatching {
-        val center = Framework.nativeGetScreenRectCenter()
-        val latitude = center.getOrNull(0)
-        val longitude = center.getOrNull(1)
-        val zoom = Framework.nativeGetDrawScale().takeIf { it > 0 } ?: DEFAULT_MAP_ZOOM
-
         if (users.isEmpty()) {
             Framework.nativeClearApiPoints()
         } else {
@@ -504,13 +569,9 @@ private fun syncUserMapMarkers(users: List<HaLowUser>, controller: MapController
             Log.d(TAG_MAP, "sync user map markers count=${users.size} url=$url")
             Framework.nativeClearApiPoints()
             Framework.nativeParseAndSetApiUrl(url)
-            OrganicMap.executeMapApiRequest()
-            Framework.nativeDeactivatePopup()
+            Framework.nativeSetApiPointsFromUrl()
         }
 
-        if (latitude != null && longitude != null) {
-            Framework.nativeZoomToPoint(latitude, longitude, zoom, false)
-        }
         forceMapRefresh(controller)
     }.onFailure { error ->
         Log.w(TAG_MAP, "Unable to update user map markers", error)

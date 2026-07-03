@@ -118,6 +118,9 @@ fun EdgeZApp() {
     val reconnectAttemptRunning = remember { AtomicBoolean(false) }
     val shuttingDown = remember { AtomicBoolean(false) }
     var currentDestination by rememberSaveable { mutableStateOf(AppDestination.HOME) }
+    var mapCameraLatitude by rememberSaveable { mutableStateOf<Double?>(null) }
+    var mapCameraLongitude by rememberSaveable { mutableStateOf<Double?>(null) }
+    var mapCameraZoom by rememberSaveable { mutableStateOf<Int?>(null) }
     var activeConnection by rememberSaveable { mutableStateOf(ActiveConnection.NONE) }
     var haLowStatus by remember { mutableStateOf<HaLowInterfaceStatus?>(null) }
     var haLowUsers by remember { mutableStateOf(edgeZDatabase.getUsers()) }
@@ -590,6 +593,20 @@ fun EdgeZApp() {
             AppDestination.HOME -> MapScreen(
                 users = haLowUsers.values.sortedByDescending { it.lastSeenMs },
                 gpsCursorMarker = mapCursorMarker,
+                savedCamera = if (mapCameraLatitude != null && mapCameraLongitude != null && mapCameraZoom != null) {
+                    EdgeZMapCamera(
+                        latitude = mapCameraLatitude ?: 0.0,
+                        longitude = mapCameraLongitude ?: 0.0,
+                        zoom = mapCameraZoom ?: 0,
+                    )
+                } else {
+                    null
+                },
+                onCameraChanged = { camera ->
+                    mapCameraLatitude = camera.latitude
+                    mapCameraLongitude = camera.longitude
+                    mapCameraZoom = camera.zoom
+                },
             )
             AppDestination.NODES -> {
                 val conversationUser = selectedConversationUser

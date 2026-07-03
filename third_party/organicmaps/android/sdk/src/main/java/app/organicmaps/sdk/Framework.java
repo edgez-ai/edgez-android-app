@@ -152,6 +152,7 @@ public class Framework
 
   @NonNull
   public static native @RequestType int nativeParseAndSetApiUrl(String url);
+  public static native void nativeSetApiPointsFromUrl();
   public static native ParsedRoutingData nativeGetParsedRoutingData();
 
   // Custom raster background tiles (Settings -> Background Map tiles).

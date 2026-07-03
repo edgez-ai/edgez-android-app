@@ -609,6 +609,11 @@ void Framework::ExecuteMapApiRequest()
   return m_work.ExecuteMapApiRequest();
 }
 
+void Framework::SetApiMarksFromParsedMapApi()
+{
+  return m_work.SetApiMarksFromParsedMapApi();
+}
+
 bool Framework::DeactivatePopup()
 {
   return m_work.DeactivateMapSelection();
@@ -824,6 +829,11 @@ JNIEXPORT void Java_app_organicmaps_sdk_Framework_nativeClearApiPoints(JNIEnv * 
 JNIEXPORT jint Java_app_organicmaps_sdk_Framework_nativeParseAndSetApiUrl(JNIEnv * env, jclass clazz, jstring url)
 {
   return static_cast<jint>(frm()->ParseAndSetApiURL(jni::ToNativeString(env, url)));
+}
+
+JNIEXPORT void Java_app_organicmaps_sdk_Framework_nativeSetApiPointsFromUrl(JNIEnv * env, jclass clazz)
+{
+  frm()->SetApiMarksFromParsedMapApi();
 }
 
 JNIEXPORT jobject Java_app_organicmaps_sdk_Framework_nativeGetParsedRoutingData(JNIEnv * env, jclass clazz)

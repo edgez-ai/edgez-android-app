@@ -74,6 +74,7 @@ public:
   void Reset();
   bool GoBackOnBalloonClick() const { return m_goBackOnBalloonClick; }
 
+  void SetApiMarks(Framework & fm) const;
   void ExecuteMapApiRequest(Framework & fm) const;
 
   // Unit test only.

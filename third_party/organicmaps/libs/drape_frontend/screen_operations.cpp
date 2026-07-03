@@ -118,8 +118,7 @@ void ScaleInto(ScreenBase & screen, m2::RectD const & boundRect)
     }
     else
     {
-      // Will break in Debug, log in Release.
-      LOG(LERROR, ("Bad scale factor =", k, "Bound rect =", boundRect, "Clip rect =", clipRect));
+      LOG(LWARNING, ("Skip bad scale factor =", k, "Bound rect =", boundRect, "Clip rect =", clipRect));
     }
   };
 

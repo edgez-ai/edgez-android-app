@@ -427,7 +427,7 @@ void ParsedMapApi::Reset()
   m_inAppFeatureHighlightRequest = {};
 }
 
-void ParsedMapApi::ExecuteMapApiRequest(Framework & fm) const
+void ParsedMapApi::SetApiMarks(Framework & fm) const
 {
   ASSERT_EQUAL(m_requestType, UrlType::Map, ("Must be a Map API request"));
   VERIFY(m_mapPoints.size() > 0, ("Map API request must have at least one point"));
@@ -438,7 +438,6 @@ void ParsedMapApi::ExecuteMapApiRequest(Framework & fm) const
   editSession.SetIsVisible(UserMark::Type::API, true);
 
   // Add marks from the request.
-  m2::RectD viewport;
   for (auto const & [lat, lon, name, id, style] : m_mapPoints)
   {
     m2::PointD const glPoint(mercator::FromLatLon(lat, lon));
@@ -446,10 +445,21 @@ void ParsedMapApi::ExecuteMapApiRequest(Framework & fm) const
     mark->SetName(name);
     mark->SetApiID(id);
     mark->SetStyle(style::GetSupportedStyle(style));
-    viewport.Add(glPoint);
   }
+}
+
+void ParsedMapApi::ExecuteMapApiRequest(Framework & fm) const
+{
+  ASSERT_EQUAL(m_requestType, UrlType::Map, ("Must be a Map API request"));
+  VERIFY(m_mapPoints.size() > 0, ("Map API request must have at least one point"));
+
+  SetApiMarks(fm);
 
   // Calculate the optimal viewport.
+  m2::RectD viewport;
+  for (auto const & point : m_mapPoints)
+    viewport.Add(mercator::FromLatLon(point.m_lat, point.m_lon));
+
   VERIFY(viewport.IsValid(), ());
   m2::PointD const center = viewport.Center();
 

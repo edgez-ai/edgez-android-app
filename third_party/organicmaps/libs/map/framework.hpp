@@ -590,6 +590,7 @@ public:
 
   /// Set correct viewport, parse API, show balloon.
   void ExecuteMapApiRequest() { m_parsedMapApi.ExecuteMapApiRequest(*this); }
+  void SetApiMarksFromParsedMapApi() { m_parsedMapApi.SetApiMarks(*this); }
 
   url_scheme::ParsedMapApi::UrlType ParseAndSetApiURL(std::string const & url)
   {
