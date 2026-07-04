@@ -63,6 +63,7 @@ fun SettingsScreen(
     client: EdgezUsbClient,
     bleClient: EdgezBleClient,
     activeConnection: ActiveConnection,
+    edgeZDatabase: EdgeZDatabase,
     shareLocation: Boolean,
     onShareLocationChange: (Boolean) -> Unit,
     onTransportConnectionChange: (ActiveConnection, Boolean) -> Unit,
@@ -96,6 +97,17 @@ fun SettingsScreen(
     val rs485SensorOptions = remember(context) {
         DeviceSensorCatalog.sensorDefinitionsFor(context, DeviceSensorConnector.RS485)
     }
+    fun loadDeviceGeoFences(): List<DeviceGeoFence> {
+        val stored = edgeZDatabase.getGeoFences()
+        if (stored.isNotEmpty()) return stored
+        val legacy = connectionPreferences.getDeviceGeoFences()
+        if (legacy.isNotEmpty()) {
+            edgeZDatabase.upsertGeoFences(legacy)
+            return edgeZDatabase.getGeoFences()
+        }
+        return emptyList()
+    }
+
     var countryDropdownExpanded by remember { mutableStateOf(false) }
     var markerDropdownExpanded by remember { mutableStateOf(false) }
     var meshCountry by rememberSaveable { mutableStateOf(connectionPreferences.getMeshCountry()) }
@@ -117,7 +129,7 @@ fun SettingsScreen(
     var deviceShareLocation by rememberSaveable { mutableStateOf(false) }
     var deviceLatitude by rememberSaveable { mutableStateOf<Double?>(null) }
     var deviceLongitude by rememberSaveable { mutableStateOf<Double?>(null) }
-    var deviceGeoFences by remember { mutableStateOf(connectionPreferences.getDeviceGeoFences()) }
+    var deviceGeoFences by remember { mutableStateOf(loadDeviceGeoFences()) }
     var selectedDeviceGeoFenceKey by rememberSaveable { mutableStateOf(connectionPreferences.getSelectedDeviceGeoFenceKey() ?: "") }
     var showGeoFencePage by rememberSaveable { mutableStateOf(false) }
     var deviceUartI2cSensorType by rememberSaveable { mutableStateOf("") }
@@ -137,9 +149,13 @@ fun SettingsScreen(
             geoFences = deviceGeoFences,
             selectedKey = selectedDeviceGeoFenceKey,
             onGeoFencesChange = { updated ->
-                deviceGeoFences = updated
-                connectionPreferences.saveDeviceGeoFences(updated)
-                if (selectedDeviceGeoFenceKey.isNotBlank() && updated.none { it.key == selectedDeviceGeoFenceKey }) {
+                deviceGeoFences
+                    .filterNot { existing -> updated.any { it.key == existing.key } }
+                    .forEach(edgeZDatabase::deleteGeoFence)
+                edgeZDatabase.upsertGeoFences(updated)
+                val refreshed = edgeZDatabase.getGeoFences()
+                deviceGeoFences = refreshed
+                if (selectedDeviceGeoFenceKey.isNotBlank() && refreshed.none { it.key == selectedDeviceGeoFenceKey }) {
                     selectedDeviceGeoFenceKey = ""
                     connectionPreferences.setSelectedDeviceGeoFenceKey(null)
                 }
@@ -177,7 +193,7 @@ fun SettingsScreen(
         deviceMode = false
         DeviceModeState.enabled = false
         autoReplayReceivedVoice = connectionPreferences.getAutoReplayReceivedVoice()
-        deviceGeoFences = connectionPreferences.getDeviceGeoFences()
+        deviceGeoFences = loadDeviceGeoFences()
         selectedDeviceGeoFenceKey = connectionPreferences.getSelectedDeviceGeoFenceKey() ?: ""
         onShareLocationChange(connectionPreferences.getShareLocation())
     }
@@ -293,13 +309,8 @@ fun SettingsScreen(
             deviceLongitude = settings.longitude
         }
         settings.geoFence?.let { geoFence ->
-            val updatedGeoFences = if (deviceGeoFences.any { it.key == geoFence.key }) {
-                deviceGeoFences.map { if (it.key == geoFence.key) geoFence else it }
-            } else {
-                deviceGeoFences + geoFence
-            }
-            deviceGeoFences = updatedGeoFences
-            connectionPreferences.saveDeviceGeoFences(updatedGeoFences)
+            edgeZDatabase.upsertGeoFence(geoFence)
+            deviceGeoFences = edgeZDatabase.getGeoFences()
             selectedDeviceGeoFenceKey = geoFence.key
             connectionPreferences.setSelectedDeviceGeoFenceKey(geoFence.key)
         }
@@ -1229,6 +1240,7 @@ private fun SettingsPreview() {
             client = EdgezUsbClient(context),
             bleClient = EdgezBleClient(context),
             activeConnection = ActiveConnection.NONE,
+            edgeZDatabase = EdgeZDatabase(context),
             shareLocation = false,
             onShareLocationChange = {},
             onTransportConnectionChange = { _, _ -> },

@@ -549,12 +549,21 @@ fun EdgeZApp() {
                 val conversationUser = selectedConversationUser
                 if (conversationUser != null) {
                     val conversationUserKey = conversationKey(conversationUser)
-                    ConversationScreen(
-                        activeConnection = activeConnection,
-                        user = conversationUser,
-                        messages = conversations[conversationUserKey] ?: emptyList(),
-                        onBack = { selectedConversationUser = null },
-                        onSendMessage = { text ->
+                    val isUserConversation = conversationUser.deviceType == EdgeZDeviceType.USER ||
+                        conversationUser.deviceType == EdgeZDeviceType.UNSPECIFIED
+                    if (!isUserConversation) {
+                        DeviceDetailScreen(
+                            user = conversationUser,
+                            samples = edgeZDatabase.getSensorData(conversationUserKey),
+                            onBack = { selectedConversationUser = null },
+                        )
+                    } else {
+                        ConversationScreen(
+                            activeConnection = activeConnection,
+                            user = conversationUser,
+                            messages = conversations[conversationUserKey] ?: emptyList(),
+                            onBack = { selectedConversationUser = null },
+                            onSendMessage = { text ->
                             val identity = lastConnectionPreferences.getOrCreateUserIdentity()
                             val fromNode = haLowStatus?.macAddress?.takeIf { it != 0L }
                             if (fromNode == null) {
@@ -590,7 +599,7 @@ fun EdgeZApp() {
                                 )
                             }
                         },
-                        onSendVoiceMessage = { voiceBytes, durationMs, localPath, codec ->
+                            onSendVoiceMessage = { voiceBytes, durationMs, localPath, codec ->
                             val identity = lastConnectionPreferences.getOrCreateUserIdentity()
                             val fromNode = haLowStatus?.macAddress?.takeIf { it != 0L }
                             val timestampMs = System.currentTimeMillis()
@@ -666,7 +675,7 @@ fun EdgeZApp() {
                                 )
                             }
                         },
-                        onResendVoiceMessage = { entry ->
+                            onResendVoiceMessage = { entry ->
                             val identity = lastConnectionPreferences.getOrCreateUserIdentity()
                             val fromNode = haLowStatus?.macAddress?.takeIf { it != 0L }
 
@@ -734,7 +743,8 @@ fun EdgeZApp() {
                                 )
                             }
                         },
-                    )
+                        )
+                    }
                 } else {
                     NodesScreen(
                         activeConnection = activeConnection,
@@ -760,6 +770,7 @@ fun EdgeZApp() {
                 client = usbClient,
                 bleClient = bleClient,
                 activeConnection = activeConnection,
+                edgeZDatabase = edgeZDatabase,
                 shareLocation = shareLocation,
                 onShareLocationChange = { enabled ->
                     shareLocation = enabled

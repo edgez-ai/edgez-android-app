@@ -31,8 +31,11 @@ data class DeviceGeoFence(
     val alertCondition: GeoFenceAlertCondition = GeoFenceAlertCondition.UNSPECIFIED,
 ) {
     val key: String get() = "$idHigh:$idLow"
+    val isEmptyId: Boolean get() = idHigh == 0L && idLow == 0L
 
     companion object {
+        fun keyFor(idHigh: Long, idLow: Long): String = "$idHigh:$idLow"
+
         fun create(
             name: String,
             marker: String = NodeMapMarker.DEFAULT.id,

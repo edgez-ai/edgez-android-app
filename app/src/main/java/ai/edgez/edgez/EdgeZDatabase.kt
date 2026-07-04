@@ -8,11 +8,17 @@ import android.util.Log
 import ai.edgez.edgez.usb.PacketMime
 
 private const val DATABASE_NAME = "edgez_local.db"
-private const val DATABASE_VERSION = 4
+private const val DATABASE_VERSION = 5
 private const val TABLE_USERS = "halow_users"
 private const val TABLE_MESSAGES = "conversation_messages"
 private const val TABLE_SENSOR_DATA = "sensor_data"
+private const val TABLE_GEO_FENCES = "device_geo_fences"
 private const val TAG_USERS = "EdgeZUsers"
+
+data class SensorSample(
+    val timestampMs: Long,
+    val data: EdgeZSensorData,
+)
 
 class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
     context.applicationContext,
@@ -45,6 +51,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
             )
             """.trimIndent(),
         )
+        createGeoFenceTable(db)
         db.execSQL(
             """
             CREATE TABLE $TABLE_MESSAGES (
@@ -85,6 +92,10 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
             db.execSQL("ALTER TABLE $TABLE_USERS ADD COLUMN sleeping INTEGER NOT NULL DEFAULT 0")
             createSensorDataTable(db)
         }
+        if (oldVersion < 5) {
+            createGeoFenceTable(db)
+            migrateUserGeoFences(db)
+        }
     }
 
     override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -93,6 +104,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
 
     fun getUsers(): Map<Long, HaLowUser> {
         val users = linkedMapOf<Long, HaLowUser>()
+        val geoFences = getGeoFenceMap()
         readableDatabase.query(
             TABLE_USERS,
             arrayOf(
@@ -141,13 +153,16 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
             val sleepingIndex = cursor.getColumnIndexOrThrow("sleeping")
             while (cursor.moveToNext()) {
                 val userUuid = cursor.getString(userUuidIndex)
-                val geoFence = cursor.toDeviceGeoFence(
-                    geoFenceIdHighIndex,
-                    geoFenceIdLowIndex,
-                    geoFenceNameIndex,
-                    geoFenceMarkerIndex,
-                    geoFenceAlertConditionIndex,
-                )
+                val geoFenceIdHigh = cursor.getLong(geoFenceIdHighIndex)
+                val geoFenceIdLow = cursor.getLong(geoFenceIdLowIndex)
+                val geoFence = geoFences[DeviceGeoFence.keyFor(geoFenceIdHigh, geoFenceIdLow)]
+                    ?: cursor.toDeviceGeoFence(
+                        geoFenceIdHighIndex,
+                        geoFenceIdLowIndex,
+                        geoFenceNameIndex,
+                        geoFenceMarkerIndex,
+                        geoFenceAlertConditionIndex,
+                    )
                 val user = HaLowUser(
                     nodeNum = cursor.getLong(nodeNumIndex),
                     userId = userIdLowFromUuid(userUuid),
@@ -227,6 +242,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
     }
 
     fun upsertUser(user: HaLowUser) {
+        user.geoFence?.let(::upsertGeoFence)
         val rowId = writableDatabase.insertWithOnConflict(
             TABLE_USERS,
             null,
@@ -245,9 +261,9 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 put("device_type", user.deviceType.protoValue)
                 put("geo_fence_id_high", user.geoFence?.idHigh ?: 0L)
                 put("geo_fence_id_low", user.geoFence?.idLow ?: 0L)
-                put("geo_fence_name", user.geoFence?.name.orEmpty())
-                put("geo_fence_marker", NodeMapMarker.normalize(user.geoFence?.marker ?: NodeMapMarker.DEFAULT.id))
-                put("geo_fence_alert_condition", user.geoFence?.alertCondition?.protoValue ?: 0)
+                put("geo_fence_name", "")
+                put("geo_fence_marker", NodeMapMarker.DEFAULT.id)
+                put("geo_fence_alert_condition", 0)
                 put("sleeping", if (user.sleeping) 1 else 0)
             },
             SQLiteDatabase.CONFLICT_REPLACE,
@@ -257,6 +273,61 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
             "upsert user rowId=$rowId node=${user.nodeId} uuid=${user.userUuid} name=${user.displayName} " +
                 "lastSeen=${user.lastSeenMs} lat=${user.latitude} lon=${user.longitude} locTs=${user.locationTimestampMs} marker=${user.marker} " +
                 "deviceType=${user.deviceType.label} geoFence=${user.geoFence?.name ?: "none"} sleeping=${user.sleeping}",
+        )
+    }
+
+    fun getGeoFences(): List<DeviceGeoFence> {
+        return getGeoFenceMap().values
+            .sortedWith(compareBy<DeviceGeoFence> { it.name.lowercase() }.thenBy { it.key })
+    }
+
+    fun upsertGeoFence(geoFence: DeviceGeoFence) {
+        if (geoFence.isEmptyId) return
+        writableDatabase.insertWithOnConflict(
+            TABLE_GEO_FENCES,
+            null,
+            geoFence.toContentValues(),
+            SQLiteDatabase.CONFLICT_REPLACE,
+        )
+    }
+
+    fun upsertGeoFences(geoFences: List<DeviceGeoFence>) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            geoFences.distinctBy { it.key }.forEach { geoFence ->
+                if (!geoFence.isEmptyId) {
+                    db.insertWithOnConflict(
+                        TABLE_GEO_FENCES,
+                        null,
+                        geoFence.toContentValues(),
+                        SQLiteDatabase.CONFLICT_REPLACE,
+                    )
+                }
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun deleteGeoFence(geoFence: DeviceGeoFence) {
+        writableDatabase.delete(
+            TABLE_GEO_FENCES,
+            "id_high = ? AND id_low = ?",
+            arrayOf(geoFence.idHigh.toString(), geoFence.idLow.toString()),
+        )
+        writableDatabase.update(
+            TABLE_USERS,
+            ContentValues().apply {
+                put("geo_fence_id_high", 0L)
+                put("geo_fence_id_low", 0L)
+                put("geo_fence_name", "")
+                put("geo_fence_marker", NodeMapMarker.DEFAULT.id)
+                put("geo_fence_alert_condition", 0)
+            },
+            "geo_fence_id_high = ? AND geo_fence_id_low = ?",
+            arrayOf(geoFence.idHigh.toString(), geoFence.idLow.toString()),
         )
     }
 
@@ -287,6 +358,51 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
             "insert sensor rowId=$rowId peer=$peerUserUuid node=0x%012x ts=$timestampMs temp=${sensorData.temperature} humidity=${sensorData.humidity} pressure=${sensorData.pressure} lat=${sensorData.latitude} lon=${sensorData.longitude} alt=${sensorData.altitude}"
                 .format(nodeNum),
         )
+    }
+
+    fun getSensorData(peerUserUuid: String, limit: Int = 120): List<SensorSample> {
+        val samples = mutableListOf<SensorSample>()
+        readableDatabase.query(
+            TABLE_SENSOR_DATA,
+            arrayOf(
+                "timestamp_ms",
+                "latitude",
+                "longitude",
+                "altitude",
+                "temperature",
+                "humidity",
+                "pressure",
+            ),
+            "peer_user_uuid = ?",
+            arrayOf(peerUserUuid),
+            null,
+            null,
+            "timestamp_ms DESC",
+            limit.coerceIn(1, 500).toString(),
+        ).use { cursor ->
+            val timestampIndex = cursor.getColumnIndexOrThrow("timestamp_ms")
+            val latitudeIndex = cursor.getColumnIndexOrThrow("latitude")
+            val longitudeIndex = cursor.getColumnIndexOrThrow("longitude")
+            val altitudeIndex = cursor.getColumnIndexOrThrow("altitude")
+            val temperatureIndex = cursor.getColumnIndexOrThrow("temperature")
+            val humidityIndex = cursor.getColumnIndexOrThrow("humidity")
+            val pressureIndex = cursor.getColumnIndexOrThrow("pressure")
+            while (cursor.moveToNext()) {
+                val data = EdgeZSensorData(
+                    latitude = cursor.getNullableDouble(latitudeIndex),
+                    longitude = cursor.getNullableDouble(longitudeIndex),
+                    altitude = cursor.getNullableDouble(altitudeIndex),
+                    temperature = cursor.getNullableDouble(temperatureIndex),
+                    humidity = cursor.getNullableDouble(humidityIndex),
+                    pressure = cursor.getNullableDouble(pressureIndex),
+                )
+                samples += SensorSample(
+                    timestampMs = cursor.getLong(timestampIndex),
+                    data = data,
+                )
+            }
+        }
+        return samples.asReversed()
     }
 
     fun insertMessage(peerUserUuid: String, entry: ConversationEntry) {
@@ -364,6 +480,76 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_sensor_peer_time ON $TABLE_SENSOR_DATA(peer_user_uuid, timestamp_ms)")
     }
 
+    private fun createGeoFenceTable(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $TABLE_GEO_FENCES (
+                id_high INTEGER NOT NULL,
+                id_low INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                marker TEXT NOT NULL DEFAULT 'default',
+                alert_condition INTEGER NOT NULL DEFAULT 0,
+                updated_at_ms INTEGER NOT NULL,
+                PRIMARY KEY(id_high, id_low)
+            )
+            """.trimIndent(),
+        )
+    }
+
+    private fun migrateUserGeoFences(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            INSERT OR IGNORE INTO $TABLE_GEO_FENCES (
+                id_high,
+                id_low,
+                name,
+                marker,
+                alert_condition,
+                updated_at_ms
+            )
+            SELECT
+                geo_fence_id_high,
+                geo_fence_id_low,
+                CASE WHEN geo_fence_name = '' THEN 'Geo fence' ELSE geo_fence_name END,
+                geo_fence_marker,
+                geo_fence_alert_condition,
+                last_seen_ms
+            FROM $TABLE_USERS
+            WHERE geo_fence_id_high != 0 OR geo_fence_id_low != 0
+            """.trimIndent(),
+        )
+    }
+
+    private fun getGeoFenceMap(): Map<String, DeviceGeoFence> {
+        val geoFences = linkedMapOf<String, DeviceGeoFence>()
+        readableDatabase.query(
+            TABLE_GEO_FENCES,
+            arrayOf("id_high", "id_low", "name", "marker", "alert_condition"),
+            null,
+            null,
+            null,
+            null,
+            "name COLLATE NOCASE ASC",
+        ).use { cursor ->
+            val idHighIndex = cursor.getColumnIndexOrThrow("id_high")
+            val idLowIndex = cursor.getColumnIndexOrThrow("id_low")
+            val nameIndex = cursor.getColumnIndexOrThrow("name")
+            val markerIndex = cursor.getColumnIndexOrThrow("marker")
+            val alertConditionIndex = cursor.getColumnIndexOrThrow("alert_condition")
+            while (cursor.moveToNext()) {
+                val geoFence = DeviceGeoFence(
+                    idHigh = cursor.getLong(idHighIndex),
+                    idLow = cursor.getLong(idLowIndex),
+                    name = cursor.getString(nameIndex).orEmpty().ifBlank { "Geo fence" }.take(64),
+                    marker = NodeMapMarker.normalize(cursor.getString(markerIndex)),
+                    alertCondition = GeoFenceAlertCondition.fromProtoValue(cursor.getInt(alertConditionIndex)),
+                )
+                geoFences[geoFence.key] = geoFence
+            }
+        }
+        return geoFences
+    }
+
 }
 
 private fun android.database.Cursor.getNullableDouble(columnIndex: Int): Double? {
@@ -395,5 +581,16 @@ private fun ContentValues.putNullableDouble(key: String, value: Double?) {
         putNull(key)
     } else {
         put(key, value)
+    }
+}
+
+private fun DeviceGeoFence.toContentValues(): ContentValues {
+    return ContentValues().apply {
+        put("id_high", idHigh)
+        put("id_low", idLow)
+        put("name", name.ifBlank { "Geo fence" }.take(64))
+        put("marker", NodeMapMarker.normalize(marker))
+        put("alert_condition", alertCondition.protoValue)
+        put("updated_at_ms", System.currentTimeMillis())
     }
 }
