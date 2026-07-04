@@ -396,14 +396,35 @@ fun SettingsScreen(
         }
         status = "Saving $label..."
         executor.execute {
-            val result = when (connection) {
-                ActiveConnection.USB -> client.sendDeviceSettings(settings)
-                ActiveConnection.BLE -> bleClient.sendDeviceSettings(settings)
-                ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+            val scriptConfigs = DeviceSensorCatalog.scriptConfigsFor(
+                uartI2cSensorType = settings.uartI2cSensorType,
+                rs485SensorType = settings.rs485SensorType,
+            )
+            var result: Result<String> = Result.success("No sensor scripts")
+            for (scriptConfig in scriptConfigs) {
+                result = when (connection) {
+                    ActiveConnection.USB -> client.sendDeviceSensorScript(scriptConfig)
+                    ActiveConnection.BLE -> bleClient.sendDeviceSensorScript(scriptConfig)
+                    ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+                }
+                if (result.isFailure) break
+            }
+            if (result.isSuccess) {
+                result = when (connection) {
+                    ActiveConnection.USB -> client.sendDeviceSettings(settings)
+                    ActiveConnection.BLE -> bleClient.sendDeviceSettings(settings)
+                    ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+                }
             }
             activity?.runOnUiThread {
                 status = result.fold(
-                    onSuccess = { "$label sent" },
+                    onSuccess = {
+                        if (scriptConfigs.isEmpty()) {
+                            "$label sent"
+                        } else {
+                            "$label and ${scriptConfigs.size} sensor script(s) sent"
+                        }
+                    },
                     onFailure = { it.message ?: "$label save failed" },
                 )
             }
@@ -829,6 +850,7 @@ fun SettingsScreen(
                     SensorTypeDropdown(
                         label = "UART/I2C connector",
                         selected = DeviceSensorType.fromName(deviceUartI2cSensorType),
+                        options = DeviceSensorCatalog.sensorTypesFor(DeviceSensorConnector.UART_I2C),
                         expanded = uartI2cSensorDropdownExpanded,
                         onExpandedChange = { uartI2cSensorDropdownExpanded = it },
                         onSelected = { selectedType ->
@@ -840,6 +862,7 @@ fun SettingsScreen(
                     SensorTypeDropdown(
                         label = "RS485 connector",
                         selected = DeviceSensorType.fromName(deviceRs485SensorType),
+                        options = DeviceSensorCatalog.sensorTypesFor(DeviceSensorConnector.RS485),
                         expanded = rs485SensorDropdownExpanded,
                         onExpandedChange = { rs485SensorDropdownExpanded = it },
                         onSelected = { selectedType ->
@@ -972,6 +995,7 @@ fun SettingsScreen(
 private fun SensorTypeDropdown(
     label: String,
     selected: DeviceSensorType,
+    options: List<DeviceSensorType>,
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
     onSelected: (DeviceSensorType) -> Unit,
@@ -987,7 +1011,7 @@ private fun SensorTypeDropdown(
             expanded = expanded,
             onDismissRequest = { onExpandedChange(false) },
         ) {
-            DeviceSensorType.entries.forEach { sensorType ->
+            options.forEach { sensorType ->
                 DropdownMenuItem(
                     text = { Text(sensorType.label) },
                     onClick = {

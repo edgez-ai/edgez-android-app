@@ -14,6 +14,7 @@ import android.util.Log
 import ai.edgez.halow.UsbControl
 import ai.edgez.edgez.DeviceGeoFence
 import ai.edgez.edgez.DeviceSensorType
+import ai.edgez.edgez.DeviceSensorScriptConfig
 import ai.edgez.edgez.EdgeZDeviceType
 import ai.edgez.edgez.EdgeZSensorData
 import ai.edgez.edgez.GeoFenceAlertCondition
@@ -40,6 +41,7 @@ const val EDGEZ_MAGIC_1 = 'Z'.code.toByte()
 const val EDGEZ_HEADER_LEN = 4
 const val EDGEZ_MAX_PAYLOAD = 512
 const val EDGEZ_NETWORK_PACKET_MAX_PAYLOAD = 350
+private const val SCRIPT_CONFIG_CHUNK_SIZE = 220
 private const val BEACON_AES_GCM_TAG_BITS = 128
 private const val BEACON_AES_GCM_NONCE_SIZE = 12
 private val BEACON_ENCRYPTED_MAGIC = byteArrayOf('E'.code.toByte(), 'Z'.code.toByte(), 'B'.code.toByte(), 1)
@@ -550,6 +552,38 @@ object EdgezUsbControlProto {
         ).setDeviceSettings(protoSettings.build()).build().toByteArray()
     }
 
+    fun encodeScriptConfigUpload(config: DeviceSensorScriptConfig): List<ByteArray> {
+        val scriptBytes = config.script.toByteArray(StandardCharsets.UTF_8)
+        val packets = mutableListOf<ByteArray>()
+        packets += encodeScriptConfig(
+            action = UsbControl.ScriptConfigAction.SCRIPT_CONFIG_BEGIN,
+            config = config,
+            totalSize = scriptBytes.size,
+            offset = 0,
+            chunk = ByteArray(0),
+        )
+        var offset = 0
+        while (offset < scriptBytes.size) {
+            val end = (offset + SCRIPT_CONFIG_CHUNK_SIZE).coerceAtMost(scriptBytes.size)
+            packets += encodeScriptConfig(
+                action = UsbControl.ScriptConfigAction.SCRIPT_CONFIG_CHUNK,
+                config = config,
+                totalSize = scriptBytes.size,
+                offset = offset,
+                chunk = scriptBytes.copyOfRange(offset, end),
+            )
+            offset = end
+        }
+        packets += encodeScriptConfig(
+            action = UsbControl.ScriptConfigAction.SCRIPT_CONFIG_COMMIT,
+            config = config,
+            totalSize = scriptBytes.size,
+            offset = scriptBytes.size,
+            chunk = ByteArray(0),
+        )
+        return packets
+    }
+
     fun encodeConversationMessage(
         message: ConversationMessage,
         from: Long,
@@ -584,6 +618,33 @@ object EdgezUsbControlProto {
             maxHop = maxHop,
             sequence = sequence,
         ).setPayload(ByteString.copyFrom(conversationPayload)).build().toByteArray()
+    }
+
+    private fun encodeScriptConfig(
+        action: UsbControl.ScriptConfigAction,
+        config: DeviceSensorScriptConfig,
+        totalSize: Int,
+        offset: Int,
+        chunk: ByteArray,
+    ): ByteArray {
+        val scriptConfig = UsbControl.ScriptConfig.newBuilder()
+            .setAction(action)
+            .setScriptId(config.scriptId.coerceIn(1, 65535))
+            .setName(config.name.take(64))
+            .setVersion(config.version.coerceIn(1, 65535))
+            .setTotalSize(totalSize.coerceAtLeast(0))
+            .setOffset(offset.coerceAtLeast(0))
+            .setChunk(ByteString.copyFrom(chunk))
+            .setSensorType(config.sensorType.toProtoSensorType())
+            .setSelectUartI2C(config.selectUartI2c)
+            .setSelectRs485(config.selectRs485)
+            .setGlobalBufferSize(config.globalBufferSize.coerceIn(1024, 65535))
+            .setMimeType(config.mimeType.take(48))
+            .build()
+        return encodeNetworkPacketBuilder()
+            .setScriptConfig(scriptConfig)
+            .build()
+            .toByteArray()
     }
 
     fun decodeMobileFromRadio(payload: ByteArray, meshPassphrase: String = ""): HaLowInterfaceStatus? {
@@ -1267,6 +1328,14 @@ class EdgezUsbClient(private val context: Context) {
 
     fun sendDeviceSettings(settings: DeviceSettings, timeoutMs: Int = 1500): Result<String> {
         return sendFrame(EdgezUsbControlProto.encodeDeviceSettingsSet(settings), timeoutMs)
+    }
+
+    fun sendDeviceSensorScript(config: DeviceSensorScriptConfig, timeoutMs: Int = 1500): Result<String> {
+        for (packet in EdgezUsbControlProto.encodeScriptConfigUpload(config)) {
+            val result = sendFrame(packet, timeoutMs)
+            if (result.isFailure) return result
+        }
+        return Result.success("Sensor script sent")
     }
 
     fun sendConversationMessage(

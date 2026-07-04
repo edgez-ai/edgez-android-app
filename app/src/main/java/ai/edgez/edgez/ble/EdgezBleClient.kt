@@ -21,6 +21,7 @@ import android.os.Build
 import android.os.ParcelUuid
 import androidx.core.content.ContextCompat
 import ai.edgez.edgez.NodeMapMarker
+import ai.edgez.edgez.DeviceSensorScriptConfig
 import ai.edgez.edgez.usb.EDGEZ_HEADER_LEN
 import ai.edgez.edgez.usb.EDGEZ_MAGIC_0
 import ai.edgez.edgez.usb.EDGEZ_MAGIC_1
@@ -225,6 +226,14 @@ class EdgezBleClient(private val context: Context) {
 
     fun sendDeviceSettings(settings: DeviceSettings): Result<String> {
         return sendFrame(EdgezUsbControlProto.encodeDeviceSettingsSet(settings))
+    }
+
+    fun sendDeviceSensorScript(config: DeviceSensorScriptConfig): Result<String> {
+        for (packet in EdgezUsbControlProto.encodeScriptConfigUpload(config)) {
+            val result = sendFrame(packet)
+            if (result.isFailure) return result
+        }
+        return Result.success("BLE queued sensor script")
     }
 
     fun sendConversationMessage(

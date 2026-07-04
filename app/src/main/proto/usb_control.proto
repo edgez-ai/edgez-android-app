@@ -57,6 +57,15 @@ enum DeviceSettingsAction {
   DEVICE_SETTINGS_REPORT = 3;
 }
 
+enum ScriptConfigAction {
+  SCRIPT_CONFIG_ACTION_UNSPECIFIED = 0;
+  SCRIPT_CONFIG_BEGIN = 1;
+  SCRIPT_CONFIG_CHUNK = 2;
+  SCRIPT_CONFIG_COMMIT = 3;
+  SCRIPT_CONFIG_DELETE = 4;
+  SCRIPT_CONFIG_REPORT = 5;
+}
+
 message NetworkPacket {
   uint64 message_id_high = 1; // high 64 bits of message UUID
   uint64 message_id_low = 2;  // low 64 bits of message UUID
@@ -76,6 +85,7 @@ message NetworkPacket {
     HaLowInterfaceStatus status = 102;
     HaLowInitConfig init = 103;
     DeviceSettings device_settings = 104;
+    ScriptConfig script_config = 105;
   }
 }
 
@@ -106,6 +116,7 @@ enum SensorType {
   SENSOR_TYPE_TEMPERATURE_HUMIDITY = 5;
   SENSOR_TYPE_TEMPERATURE_HUMIDITY_PRESSURE = 6;
   SENSOR_TYPE_GPS = 7;
+  SENSOR_TYPE_SHT3X_TEMP_HUMIDTY = 8;
 }
 
 message GeoFence {
@@ -186,4 +197,19 @@ message DeviceSettings {
   GeoFence geo_fence = 15;
   SensorType uart_i2c_sensor_type = 16;
   SensorType rs485_sensor_type = 17;
+}
+
+message ScriptConfig {
+  ScriptConfigAction action = 1;
+  uint32 script_id = 2;
+  string name = 3;
+  uint32 version = 4;
+  uint32 total_size = 5;
+  uint32 offset = 6;
+  bytes chunk = 7;
+  SensorType sensor_type = 8;
+  bool select_uart_i2c = 9;
+  bool select_rs485 = 10;
+  uint32 global_buffer_size = 11;
+  string mime_type = 12;
 }
