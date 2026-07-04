@@ -107,18 +107,6 @@ enum AlertCondition {
   ALERT_CONDITION_LOW_BATTERY = 5;
 }
 
-enum SensorType {
-  SENSOR_TYPE_UNSPECIFIED = 0;
-  SENSOR_TYPE_NONE = 1;
-  SENSOR_TYPE_TEMPERATURE = 2;
-  SENSOR_TYPE_HUMIDITY = 3;
-  SENSOR_TYPE_PRESSURE = 4;
-  SENSOR_TYPE_TEMPERATURE_HUMIDITY = 5;
-  SENSOR_TYPE_TEMPERATURE_HUMIDITY_PRESSURE = 6;
-  SENSOR_TYPE_GPS = 7;
-  SENSOR_TYPE_SHT3X_TEMP_HUMIDTY = 8;
-}
-
 message GeoFence {
   uint64 id_high = 1;
   uint64 id_low = 2;
@@ -195,8 +183,8 @@ message DeviceSettings {
   float longitude = 13;
   uint32 max_hop = 14;
   GeoFence geo_fence = 15;
-  SensorType uart_i2c_sensor_type = 16;
-  SensorType rs485_sensor_type = 17;
+  string uart_i2c_sensor_type = 16;
+  string rs485_sensor_type = 17;
 }
 
 message ScriptConfig {
@@ -207,7 +195,7 @@ message ScriptConfig {
   uint32 total_size = 5;
   uint32 offset = 6;
   bytes chunk = 7;
-  SensorType sensor_type = 8;
+  string sensor_type = 8;
   bool select_uart_i2c = 9;
   bool select_rs485 = 10;
   uint32 global_buffer_size = 11;

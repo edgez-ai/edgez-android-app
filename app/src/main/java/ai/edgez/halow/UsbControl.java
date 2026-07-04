@@ -1091,158 +1091,6 @@ public final class UsbControl {
     // @@protoc_insertion_point(enum_scope:ai.edgez.halow.AlertCondition)
   }
 
-  /**
-   * Protobuf enum {@code ai.edgez.halow.SensorType}
-   */
-  public enum SensorType
-      implements com.google.protobuf.Internal.EnumLite {
-    /**
-     * <code>SENSOR_TYPE_UNSPECIFIED = 0;</code>
-     */
-    SENSOR_TYPE_UNSPECIFIED(0),
-    /**
-     * <code>SENSOR_TYPE_NONE = 1;</code>
-     */
-    SENSOR_TYPE_NONE(1),
-    /**
-     * <code>SENSOR_TYPE_TEMPERATURE = 2;</code>
-     */
-    SENSOR_TYPE_TEMPERATURE(2),
-    /**
-     * <code>SENSOR_TYPE_HUMIDITY = 3;</code>
-     */
-    SENSOR_TYPE_HUMIDITY(3),
-    /**
-     * <code>SENSOR_TYPE_PRESSURE = 4;</code>
-     */
-    SENSOR_TYPE_PRESSURE(4),
-    /**
-     * <code>SENSOR_TYPE_TEMPERATURE_HUMIDITY = 5;</code>
-     */
-    SENSOR_TYPE_TEMPERATURE_HUMIDITY(5),
-    /**
-     * <code>SENSOR_TYPE_TEMPERATURE_HUMIDITY_PRESSURE = 6;</code>
-     */
-    SENSOR_TYPE_TEMPERATURE_HUMIDITY_PRESSURE(6),
-    /**
-     * <code>SENSOR_TYPE_GPS = 7;</code>
-     */
-    SENSOR_TYPE_GPS(7),
-    /**
-     * <code>SENSOR_TYPE_SHT3X_TEMP_HUMIDTY = 8;</code>
-     */
-    SENSOR_TYPE_SHT3X_TEMP_HUMIDTY(8),
-    UNRECOGNIZED(-1),
-    ;
-
-    /**
-     * <code>SENSOR_TYPE_UNSPECIFIED = 0;</code>
-     */
-    public static final int SENSOR_TYPE_UNSPECIFIED_VALUE = 0;
-    /**
-     * <code>SENSOR_TYPE_NONE = 1;</code>
-     */
-    public static final int SENSOR_TYPE_NONE_VALUE = 1;
-    /**
-     * <code>SENSOR_TYPE_TEMPERATURE = 2;</code>
-     */
-    public static final int SENSOR_TYPE_TEMPERATURE_VALUE = 2;
-    /**
-     * <code>SENSOR_TYPE_HUMIDITY = 3;</code>
-     */
-    public static final int SENSOR_TYPE_HUMIDITY_VALUE = 3;
-    /**
-     * <code>SENSOR_TYPE_PRESSURE = 4;</code>
-     */
-    public static final int SENSOR_TYPE_PRESSURE_VALUE = 4;
-    /**
-     * <code>SENSOR_TYPE_TEMPERATURE_HUMIDITY = 5;</code>
-     */
-    public static final int SENSOR_TYPE_TEMPERATURE_HUMIDITY_VALUE = 5;
-    /**
-     * <code>SENSOR_TYPE_TEMPERATURE_HUMIDITY_PRESSURE = 6;</code>
-     */
-    public static final int SENSOR_TYPE_TEMPERATURE_HUMIDITY_PRESSURE_VALUE = 6;
-    /**
-     * <code>SENSOR_TYPE_GPS = 7;</code>
-     */
-    public static final int SENSOR_TYPE_GPS_VALUE = 7;
-    /**
-     * <code>SENSOR_TYPE_SHT3X_TEMP_HUMIDTY = 8;</code>
-     */
-    public static final int SENSOR_TYPE_SHT3X_TEMP_HUMIDTY_VALUE = 8;
-
-
-    @java.lang.Override
-    public final int getNumber() {
-      if (this == UNRECOGNIZED) {
-        throw new java.lang.IllegalArgumentException(
-            "Can't get the number of an unknown enum value.");
-      }
-      return value;
-    }
-
-    /**
-     * @param value The number of the enum to look for.
-     * @return The enum associated with the given number.
-     * @deprecated Use {@link #forNumber(int)} instead.
-     */
-    @java.lang.Deprecated
-    public static SensorType valueOf(int value) {
-      return forNumber(value);
-    }
-
-    public static SensorType forNumber(int value) {
-      switch (value) {
-        case 0: return SENSOR_TYPE_UNSPECIFIED;
-        case 1: return SENSOR_TYPE_NONE;
-        case 2: return SENSOR_TYPE_TEMPERATURE;
-        case 3: return SENSOR_TYPE_HUMIDITY;
-        case 4: return SENSOR_TYPE_PRESSURE;
-        case 5: return SENSOR_TYPE_TEMPERATURE_HUMIDITY;
-        case 6: return SENSOR_TYPE_TEMPERATURE_HUMIDITY_PRESSURE;
-        case 7: return SENSOR_TYPE_GPS;
-        case 8: return SENSOR_TYPE_SHT3X_TEMP_HUMIDTY;
-        default: return null;
-      }
-    }
-
-    public static com.google.protobuf.Internal.EnumLiteMap<SensorType>
-        internalGetValueMap() {
-      return internalValueMap;
-    }
-    private static final com.google.protobuf.Internal.EnumLiteMap<
-        SensorType> internalValueMap =
-          new com.google.protobuf.Internal.EnumLiteMap<SensorType>() {
-            @java.lang.Override
-            public SensorType findValueByNumber(int number) {
-              return SensorType.forNumber(number);
-            }
-          };
-
-    public static com.google.protobuf.Internal.EnumVerifier 
-        internalGetVerifier() {
-      return SensorTypeVerifier.INSTANCE;
-    }
-
-    private static final class SensorTypeVerifier implements 
-         com.google.protobuf.Internal.EnumVerifier { 
-            static final com.google.protobuf.Internal.EnumVerifier           INSTANCE = new SensorTypeVerifier();
-            @java.lang.Override
-            public boolean isInRange(int number) {
-              return SensorType.forNumber(number) != null;
-            }
-          };
-
-    private final int value;
-
-    private SensorType(int value) {
-      this.value = value;
-    }
-
-    // @@protoc_insertion_point(enum_scope:ai.edgez.halow.SensorType)
-  }
-
   public interface NetworkPacketOrBuilder extends
       // @@protoc_insertion_point(interface_extends:ai.edgez.halow.NetworkPacket)
       com.google.protobuf.MessageLiteOrBuilder {
@@ -7534,26 +7382,28 @@ public final class UsbControl {
     ai.edgez.halow.UsbControl.GeoFence getGeoFence();
 
     /**
-     * <code>.ai.edgez.halow.SensorType uart_i2c_sensor_type = 16;</code>
-     * @return The enum numeric value on the wire for uartI2cSensorType.
-     */
-    int getUartI2CSensorTypeValue();
-    /**
-     * <code>.ai.edgez.halow.SensorType uart_i2c_sensor_type = 16;</code>
+     * <code>string uart_i2c_sensor_type = 16;</code>
      * @return The uartI2cSensorType.
      */
-    ai.edgez.halow.UsbControl.SensorType getUartI2CSensorType();
+    java.lang.String getUartI2CSensorType();
+    /**
+     * <code>string uart_i2c_sensor_type = 16;</code>
+     * @return The bytes for uartI2cSensorType.
+     */
+    com.google.protobuf.ByteString
+        getUartI2CSensorTypeBytes();
 
     /**
-     * <code>.ai.edgez.halow.SensorType rs485_sensor_type = 17;</code>
-     * @return The enum numeric value on the wire for rs485SensorType.
-     */
-    int getRs485SensorTypeValue();
-    /**
-     * <code>.ai.edgez.halow.SensorType rs485_sensor_type = 17;</code>
+     * <code>string rs485_sensor_type = 17;</code>
      * @return The rs485SensorType.
      */
-    ai.edgez.halow.UsbControl.SensorType getRs485SensorType();
+    java.lang.String getRs485SensorType();
+    /**
+     * <code>string rs485_sensor_type = 17;</code>
+     * @return The bytes for rs485SensorType.
+     */
+    com.google.protobuf.ByteString
+        getRs485SensorTypeBytes();
   }
   /**
    * Protobuf type {@code ai.edgez.halow.DeviceSettings}
@@ -7568,6 +7418,8 @@ public final class UsbControl {
       userName_ = "";
       userPublicKey_ = com.google.protobuf.ByteString.EMPTY;
       userPrivateKey_ = com.google.protobuf.ByteString.EMPTY;
+      uartI2CSensorType_ = "";
+      rs485SensorType_ = "";
     }
     private int bitField0_;
     public static final int ACTION_FIELD_NUMBER = 1;
@@ -8060,87 +7912,99 @@ public final class UsbControl {
     }
 
     public static final int UART_I2C_SENSOR_TYPE_FIELD_NUMBER = 16;
-    private int uartI2CSensorType_;
+    private java.lang.String uartI2CSensorType_;
     /**
-     * <code>.ai.edgez.halow.SensorType uart_i2c_sensor_type = 16;</code>
-     * @return The enum numeric value on the wire for uartI2cSensorType.
-     */
-    @java.lang.Override
-    public int getUartI2CSensorTypeValue() {
-      return uartI2CSensorType_;
-    }
-    /**
-     * <code>.ai.edgez.halow.SensorType uart_i2c_sensor_type = 16;</code>
+     * <code>string uart_i2c_sensor_type = 16;</code>
      * @return The uartI2cSensorType.
      */
     @java.lang.Override
-    public ai.edgez.halow.UsbControl.SensorType getUartI2CSensorType() {
-      ai.edgez.halow.UsbControl.SensorType result = ai.edgez.halow.UsbControl.SensorType.forNumber(uartI2CSensorType_);
-      return result == null ? ai.edgez.halow.UsbControl.SensorType.UNRECOGNIZED : result;
+    public java.lang.String getUartI2CSensorType() {
+      return uartI2CSensorType_;
     }
     /**
-     * <code>.ai.edgez.halow.SensorType uart_i2c_sensor_type = 16;</code>
-     * @param value The enum numeric value on the wire for uartI2cSensorType to set.
+     * <code>string uart_i2c_sensor_type = 16;</code>
+     * @return The bytes for uartI2cSensorType.
      */
-    private void setUartI2CSensorTypeValue(int value) {
-        uartI2CSensorType_ = value;
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getUartI2CSensorTypeBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(uartI2CSensorType_);
     }
     /**
-     * <code>.ai.edgez.halow.SensorType uart_i2c_sensor_type = 16;</code>
+     * <code>string uart_i2c_sensor_type = 16;</code>
      * @param value The uartI2cSensorType to set.
      */
-    private void setUartI2CSensorType(ai.edgez.halow.UsbControl.SensorType value) {
-      uartI2CSensorType_ = value.getNumber();
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setUartI2CSensorType(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
 
+      uartI2CSensorType_ = value;
     }
     /**
-     * <code>.ai.edgez.halow.SensorType uart_i2c_sensor_type = 16;</code>
+     * <code>string uart_i2c_sensor_type = 16;</code>
      */
     private void clearUartI2CSensorType() {
 
-      uartI2CSensorType_ = 0;
+      uartI2CSensorType_ = getDefaultInstance().getUartI2CSensorType();
+    }
+    /**
+     * <code>string uart_i2c_sensor_type = 16;</code>
+     * @param value The bytes for uartI2cSensorType to set.
+     */
+    private void setUartI2CSensorTypeBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      uartI2CSensorType_ = value.toStringUtf8();
+
     }
 
     public static final int RS485_SENSOR_TYPE_FIELD_NUMBER = 17;
-    private int rs485SensorType_;
+    private java.lang.String rs485SensorType_;
     /**
-     * <code>.ai.edgez.halow.SensorType rs485_sensor_type = 17;</code>
-     * @return The enum numeric value on the wire for rs485SensorType.
-     */
-    @java.lang.Override
-    public int getRs485SensorTypeValue() {
-      return rs485SensorType_;
-    }
-    /**
-     * <code>.ai.edgez.halow.SensorType rs485_sensor_type = 17;</code>
+     * <code>string rs485_sensor_type = 17;</code>
      * @return The rs485SensorType.
      */
     @java.lang.Override
-    public ai.edgez.halow.UsbControl.SensorType getRs485SensorType() {
-      ai.edgez.halow.UsbControl.SensorType result = ai.edgez.halow.UsbControl.SensorType.forNumber(rs485SensorType_);
-      return result == null ? ai.edgez.halow.UsbControl.SensorType.UNRECOGNIZED : result;
+    public java.lang.String getRs485SensorType() {
+      return rs485SensorType_;
     }
     /**
-     * <code>.ai.edgez.halow.SensorType rs485_sensor_type = 17;</code>
-     * @param value The enum numeric value on the wire for rs485SensorType to set.
+     * <code>string rs485_sensor_type = 17;</code>
+     * @return The bytes for rs485SensorType.
      */
-    private void setRs485SensorTypeValue(int value) {
-        rs485SensorType_ = value;
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getRs485SensorTypeBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(rs485SensorType_);
     }
     /**
-     * <code>.ai.edgez.halow.SensorType rs485_sensor_type = 17;</code>
+     * <code>string rs485_sensor_type = 17;</code>
      * @param value The rs485SensorType to set.
      */
-    private void setRs485SensorType(ai.edgez.halow.UsbControl.SensorType value) {
-      rs485SensorType_ = value.getNumber();
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setRs485SensorType(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
 
+      rs485SensorType_ = value;
     }
     /**
-     * <code>.ai.edgez.halow.SensorType rs485_sensor_type = 17;</code>
+     * <code>string rs485_sensor_type = 17;</code>
      */
     private void clearRs485SensorType() {
 
-      rs485SensorType_ = 0;
+      rs485SensorType_ = getDefaultInstance().getRs485SensorType();
+    }
+    /**
+     * <code>string rs485_sensor_type = 17;</code>
+     * @param value The bytes for rs485SensorType to set.
+     */
+    private void setRs485SensorTypeBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      rs485SensorType_ = value.toStringUtf8();
+
     }
 
     public static ai.edgez.halow.UsbControl.DeviceSettings parseFrom(
@@ -8758,43 +8622,35 @@ public final class UsbControl {
       }
 
       /**
-       * <code>.ai.edgez.halow.SensorType uart_i2c_sensor_type = 16;</code>
-       * @return The enum numeric value on the wire for uartI2cSensorType.
-       */
-      @java.lang.Override
-      public int getUartI2CSensorTypeValue() {
-        return instance.getUartI2CSensorTypeValue();
-      }
-      /**
-       * <code>.ai.edgez.halow.SensorType uart_i2c_sensor_type = 16;</code>
-       * @param value The uartI2cSensorType to set.
-       * @return This builder for chaining.
-       */
-      public Builder setUartI2CSensorTypeValue(int value) {
-        copyOnWrite();
-        instance.setUartI2CSensorTypeValue(value);
-        return this;
-      }
-      /**
-       * <code>.ai.edgez.halow.SensorType uart_i2c_sensor_type = 16;</code>
+       * <code>string uart_i2c_sensor_type = 16;</code>
        * @return The uartI2cSensorType.
        */
       @java.lang.Override
-      public ai.edgez.halow.UsbControl.SensorType getUartI2CSensorType() {
+      public java.lang.String getUartI2CSensorType() {
         return instance.getUartI2CSensorType();
       }
       /**
-       * <code>.ai.edgez.halow.SensorType uart_i2c_sensor_type = 16;</code>
-       * @param value The enum numeric value on the wire for uartI2cSensorType to set.
+       * <code>string uart_i2c_sensor_type = 16;</code>
+       * @return The bytes for uartI2cSensorType.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getUartI2CSensorTypeBytes() {
+        return instance.getUartI2CSensorTypeBytes();
+      }
+      /**
+       * <code>string uart_i2c_sensor_type = 16;</code>
+       * @param value The uartI2cSensorType to set.
        * @return This builder for chaining.
        */
-      public Builder setUartI2CSensorType(ai.edgez.halow.UsbControl.SensorType value) {
+      public Builder setUartI2CSensorType(
+          java.lang.String value) {
         copyOnWrite();
         instance.setUartI2CSensorType(value);
         return this;
       }
       /**
-       * <code>.ai.edgez.halow.SensorType uart_i2c_sensor_type = 16;</code>
+       * <code>string uart_i2c_sensor_type = 16;</code>
        * @return This builder for chaining.
        */
       public Builder clearUartI2CSensorType() {
@@ -8802,50 +8658,64 @@ public final class UsbControl {
         instance.clearUartI2CSensorType();
         return this;
       }
-
       /**
-       * <code>.ai.edgez.halow.SensorType rs485_sensor_type = 17;</code>
-       * @return The enum numeric value on the wire for rs485SensorType.
-       */
-      @java.lang.Override
-      public int getRs485SensorTypeValue() {
-        return instance.getRs485SensorTypeValue();
-      }
-      /**
-       * <code>.ai.edgez.halow.SensorType rs485_sensor_type = 17;</code>
-       * @param value The rs485SensorType to set.
+       * <code>string uart_i2c_sensor_type = 16;</code>
+       * @param value The bytes for uartI2cSensorType to set.
        * @return This builder for chaining.
        */
-      public Builder setRs485SensorTypeValue(int value) {
+      public Builder setUartI2CSensorTypeBytes(
+          com.google.protobuf.ByteString value) {
         copyOnWrite();
-        instance.setRs485SensorTypeValue(value);
+        instance.setUartI2CSensorTypeBytes(value);
         return this;
       }
+
       /**
-       * <code>.ai.edgez.halow.SensorType rs485_sensor_type = 17;</code>
+       * <code>string rs485_sensor_type = 17;</code>
        * @return The rs485SensorType.
        */
       @java.lang.Override
-      public ai.edgez.halow.UsbControl.SensorType getRs485SensorType() {
+      public java.lang.String getRs485SensorType() {
         return instance.getRs485SensorType();
       }
       /**
-       * <code>.ai.edgez.halow.SensorType rs485_sensor_type = 17;</code>
-       * @param value The enum numeric value on the wire for rs485SensorType to set.
+       * <code>string rs485_sensor_type = 17;</code>
+       * @return The bytes for rs485SensorType.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getRs485SensorTypeBytes() {
+        return instance.getRs485SensorTypeBytes();
+      }
+      /**
+       * <code>string rs485_sensor_type = 17;</code>
+       * @param value The rs485SensorType to set.
        * @return This builder for chaining.
        */
-      public Builder setRs485SensorType(ai.edgez.halow.UsbControl.SensorType value) {
+      public Builder setRs485SensorType(
+          java.lang.String value) {
         copyOnWrite();
         instance.setRs485SensorType(value);
         return this;
       }
       /**
-       * <code>.ai.edgez.halow.SensorType rs485_sensor_type = 17;</code>
+       * <code>string rs485_sensor_type = 17;</code>
        * @return This builder for chaining.
        */
       public Builder clearRs485SensorType() {
         copyOnWrite();
         instance.clearRs485SensorType();
+        return this;
+      }
+      /**
+       * <code>string rs485_sensor_type = 17;</code>
+       * @param value The bytes for rs485SensorType to set.
+       * @return This builder for chaining.
+       */
+      public Builder setRs485SensorTypeBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setRs485SensorTypeBytes(value);
         return this;
       }
 
@@ -8887,7 +8757,7 @@ public final class UsbControl {
             java.lang.String info =
                 "\u0000\u0011\u0000\u0001\u0001\u0011\u0011\u0000\u0000\u0000\u0001\f\u0002\u0007" +
                 "\u0003\u0208\u0004\u0007\u0005\u0208\u0006\f\u0007\u000b\b\u0003\t\u0003\n\n\u000b" +
-                "\n\f\u0001\r\u0001\u000e\u000b\u000f\u1009\u0000\u0010\f\u0011\f";
+                "\n\f\u0001\r\u0001\u000e\u000b\u000f\u1009\u0000\u0010\u0208\u0011\u0208";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         // fall through
@@ -9000,15 +8870,16 @@ public final class UsbControl {
     com.google.protobuf.ByteString getChunk();
 
     /**
-     * <code>.ai.edgez.halow.SensorType sensor_type = 8;</code>
-     * @return The enum numeric value on the wire for sensorType.
-     */
-    int getSensorTypeValue();
-    /**
-     * <code>.ai.edgez.halow.SensorType sensor_type = 8;</code>
+     * <code>string sensor_type = 8;</code>
      * @return The sensorType.
      */
-    ai.edgez.halow.UsbControl.SensorType getSensorType();
+    java.lang.String getSensorType();
+    /**
+     * <code>string sensor_type = 8;</code>
+     * @return The bytes for sensorType.
+     */
+    com.google.protobuf.ByteString
+        getSensorTypeBytes();
 
     /**
      * <code>bool select_uart_i2c = 9;</code>
@@ -9051,6 +8922,7 @@ public final class UsbControl {
     private ScriptConfig() {
       name_ = "";
       chunk_ = com.google.protobuf.ByteString.EMPTY;
+      sensorType_ = "";
       mimeType_ = "";
     }
     public static final int ACTION_FIELD_NUMBER = 1;
@@ -9275,45 +9147,51 @@ public final class UsbControl {
     }
 
     public static final int SENSOR_TYPE_FIELD_NUMBER = 8;
-    private int sensorType_;
+    private java.lang.String sensorType_;
     /**
-     * <code>.ai.edgez.halow.SensorType sensor_type = 8;</code>
-     * @return The enum numeric value on the wire for sensorType.
-     */
-    @java.lang.Override
-    public int getSensorTypeValue() {
-      return sensorType_;
-    }
-    /**
-     * <code>.ai.edgez.halow.SensorType sensor_type = 8;</code>
+     * <code>string sensor_type = 8;</code>
      * @return The sensorType.
      */
     @java.lang.Override
-    public ai.edgez.halow.UsbControl.SensorType getSensorType() {
-      ai.edgez.halow.UsbControl.SensorType result = ai.edgez.halow.UsbControl.SensorType.forNumber(sensorType_);
-      return result == null ? ai.edgez.halow.UsbControl.SensorType.UNRECOGNIZED : result;
+    public java.lang.String getSensorType() {
+      return sensorType_;
     }
     /**
-     * <code>.ai.edgez.halow.SensorType sensor_type = 8;</code>
-     * @param value The enum numeric value on the wire for sensorType to set.
+     * <code>string sensor_type = 8;</code>
+     * @return The bytes for sensorType.
      */
-    private void setSensorTypeValue(int value) {
-        sensorType_ = value;
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getSensorTypeBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(sensorType_);
     }
     /**
-     * <code>.ai.edgez.halow.SensorType sensor_type = 8;</code>
+     * <code>string sensor_type = 8;</code>
      * @param value The sensorType to set.
      */
-    private void setSensorType(ai.edgez.halow.UsbControl.SensorType value) {
-      sensorType_ = value.getNumber();
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setSensorType(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
 
+      sensorType_ = value;
     }
     /**
-     * <code>.ai.edgez.halow.SensorType sensor_type = 8;</code>
+     * <code>string sensor_type = 8;</code>
      */
     private void clearSensorType() {
 
-      sensorType_ = 0;
+      sensorType_ = getDefaultInstance().getSensorType();
+    }
+    /**
+     * <code>string sensor_type = 8;</code>
+     * @param value The bytes for sensorType to set.
+     */
+    private void setSensorTypeBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      sensorType_ = value.toStringUtf8();
+
     }
 
     public static final int SELECT_UART_I2C_FIELD_NUMBER = 9;
@@ -9775,48 +9653,51 @@ public final class UsbControl {
       }
 
       /**
-       * <code>.ai.edgez.halow.SensorType sensor_type = 8;</code>
-       * @return The enum numeric value on the wire for sensorType.
-       */
-      @java.lang.Override
-      public int getSensorTypeValue() {
-        return instance.getSensorTypeValue();
-      }
-      /**
-       * <code>.ai.edgez.halow.SensorType sensor_type = 8;</code>
-       * @param value The sensorType to set.
-       * @return This builder for chaining.
-       */
-      public Builder setSensorTypeValue(int value) {
-        copyOnWrite();
-        instance.setSensorTypeValue(value);
-        return this;
-      }
-      /**
-       * <code>.ai.edgez.halow.SensorType sensor_type = 8;</code>
+       * <code>string sensor_type = 8;</code>
        * @return The sensorType.
        */
       @java.lang.Override
-      public ai.edgez.halow.UsbControl.SensorType getSensorType() {
+      public java.lang.String getSensorType() {
         return instance.getSensorType();
       }
       /**
-       * <code>.ai.edgez.halow.SensorType sensor_type = 8;</code>
-       * @param value The enum numeric value on the wire for sensorType to set.
+       * <code>string sensor_type = 8;</code>
+       * @return The bytes for sensorType.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getSensorTypeBytes() {
+        return instance.getSensorTypeBytes();
+      }
+      /**
+       * <code>string sensor_type = 8;</code>
+       * @param value The sensorType to set.
        * @return This builder for chaining.
        */
-      public Builder setSensorType(ai.edgez.halow.UsbControl.SensorType value) {
+      public Builder setSensorType(
+          java.lang.String value) {
         copyOnWrite();
         instance.setSensorType(value);
         return this;
       }
       /**
-       * <code>.ai.edgez.halow.SensorType sensor_type = 8;</code>
+       * <code>string sensor_type = 8;</code>
        * @return This builder for chaining.
        */
       public Builder clearSensorType() {
         copyOnWrite();
         instance.clearSensorType();
+        return this;
+      }
+      /**
+       * <code>string sensor_type = 8;</code>
+       * @param value The bytes for sensorType to set.
+       * @return This builder for chaining.
+       */
+      public Builder setSensorTypeBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setSensorTypeBytes(value);
         return this;
       }
 
@@ -9984,8 +9865,8 @@ public final class UsbControl {
             };
             java.lang.String info =
                 "\u0000\f\u0000\u0000\u0001\f\f\u0000\u0000\u0000\u0001\f\u0002\u000b\u0003\u0208" +
-                "\u0004\u000b\u0005\u000b\u0006\u000b\u0007\n\b\f\t\u0007\n\u0007\u000b\u000b\f\u0208" +
-                "";
+                "\u0004\u000b\u0005\u000b\u0006\u000b\u0007\n\b\u0208\t\u0007\n\u0007\u000b\u000b" +
+                "\f\u0208";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         // fall through

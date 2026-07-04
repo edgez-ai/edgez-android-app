@@ -90,6 +90,12 @@ fun SettingsScreen(
     var bleReady by remember { mutableStateOf(false) }
     val countryOptions = remember { listOf("US", "JP", "EU") }
     val markerOptions = remember { NodeMapMarker.values().toList() }
+    val uartI2cSensorOptions = remember(context) {
+        DeviceSensorCatalog.sensorDefinitionsFor(context, DeviceSensorConnector.UART_I2C)
+    }
+    val rs485SensorOptions = remember(context) {
+        DeviceSensorCatalog.sensorDefinitionsFor(context, DeviceSensorConnector.RS485)
+    }
     var countryDropdownExpanded by remember { mutableStateOf(false) }
     var markerDropdownExpanded by remember { mutableStateOf(false) }
     var meshCountry by rememberSaveable { mutableStateOf(connectionPreferences.getMeshCountry()) }
@@ -114,8 +120,8 @@ fun SettingsScreen(
     var deviceGeoFences by remember { mutableStateOf(connectionPreferences.getDeviceGeoFences()) }
     var selectedDeviceGeoFenceKey by rememberSaveable { mutableStateOf(connectionPreferences.getSelectedDeviceGeoFenceKey() ?: "") }
     var showGeoFencePage by rememberSaveable { mutableStateOf(false) }
-    var deviceUartI2cSensorType by rememberSaveable { mutableStateOf(DeviceSensorType.UNSPECIFIED.name) }
-    var deviceRs485SensorType by rememberSaveable { mutableStateOf(DeviceSensorType.UNSPECIFIED.name) }
+    var deviceUartI2cSensorType by rememberSaveable { mutableStateOf("") }
+    var deviceRs485SensorType by rememberSaveable { mutableStateOf("") }
     var uartI2cSensorDropdownExpanded by remember { mutableStateOf(false) }
     var rs485SensorDropdownExpanded by remember { mutableStateOf(false) }
     var deviceMode by rememberSaveable { mutableStateOf(DeviceModeState.enabled) }
@@ -297,8 +303,8 @@ fun SettingsScreen(
             selectedDeviceGeoFenceKey = geoFence.key
             connectionPreferences.setSelectedDeviceGeoFenceKey(geoFence.key)
         }
-        deviceUartI2cSensorType = settings.uartI2cSensorType.name
-        deviceRs485SensorType = settings.rs485SensorType.name
+        deviceUartI2cSensorType = settings.uartI2cSensorType
+        deviceRs485SensorType = settings.rs485SensorType
         if (deviceIdentity == null && (settings.userIdHigh != 0L || settings.userIdLow != 0L) && settings.userPrivateKey.size == 32) {
             val publicKey = if (settings.userPublicKey.size == 32) {
                 settings.userPublicKey
@@ -336,8 +342,8 @@ fun SettingsScreen(
             longitude = deviceLongitude.takeIf { deviceShareLocation },
             maxHop = deviceMaxHop.toIntOrNull() ?: connectionPreferences.getMeshMaxHop(),
             geoFence = deviceGeoFences.firstOrNull { it.key == selectedDeviceGeoFenceKey },
-            uartI2cSensorType = DeviceSensorType.fromName(deviceUartI2cSensorType),
-            rs485SensorType = DeviceSensorType.fromName(deviceRs485SensorType),
+            uartI2cSensorType = deviceUartI2cSensorType.take(32),
+            rs485SensorType = deviceRs485SensorType.take(32),
         )
     }
 
@@ -397,6 +403,7 @@ fun SettingsScreen(
         status = "Saving $label..."
         executor.execute {
             val scriptConfigs = DeviceSensorCatalog.scriptConfigsFor(
+                context = context,
                 uartI2cSensorType = settings.uartI2cSensorType,
                 rs485SensorType = settings.rs485SensorType,
             )
@@ -849,25 +856,25 @@ fun SettingsScreen(
                 SettingsCard(title = "Device sensors") {
                     SensorTypeDropdown(
                         label = "UART/I2C connector",
-                        selected = DeviceSensorType.fromName(deviceUartI2cSensorType),
-                        options = DeviceSensorCatalog.sensorTypesFor(DeviceSensorConnector.UART_I2C),
+                        selectedKey = deviceUartI2cSensorType,
+                        options = uartI2cSensorOptions,
                         expanded = uartI2cSensorDropdownExpanded,
                         onExpandedChange = { uartI2cSensorDropdownExpanded = it },
-                        onSelected = { selectedType ->
-                            deviceUartI2cSensorType = selectedType.name
-                            status = "UART/I2C sensor set to ${selectedType.label}"
+                        onSelected = { selectedSensor ->
+                            deviceUartI2cSensorType = selectedSensor.key
+                            status = "UART/I2C sensor set to ${selectedSensor.label}"
                         },
                     )
                     Spacer(Modifier.height(8.dp))
                     SensorTypeDropdown(
                         label = "RS485 connector",
-                        selected = DeviceSensorType.fromName(deviceRs485SensorType),
-                        options = DeviceSensorCatalog.sensorTypesFor(DeviceSensorConnector.RS485),
+                        selectedKey = deviceRs485SensorType,
+                        options = rs485SensorOptions,
                         expanded = rs485SensorDropdownExpanded,
                         onExpandedChange = { rs485SensorDropdownExpanded = it },
-                        onSelected = { selectedType ->
-                            deviceRs485SensorType = selectedType.name
-                            status = "RS485 sensor set to ${selectedType.label}"
+                        onSelected = { selectedSensor ->
+                            deviceRs485SensorType = selectedSensor.key
+                            status = "RS485 sensor set to ${selectedSensor.label}"
                         },
                     )
                     Spacer(Modifier.height(10.dp))
@@ -994,28 +1001,29 @@ fun SettingsScreen(
 @Composable
 private fun SensorTypeDropdown(
     label: String,
-    selected: DeviceSensorType,
-    options: List<DeviceSensorType>,
+    selectedKey: String,
+    options: List<DeviceSensorDefinition>,
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
-    onSelected: (DeviceSensorType) -> Unit,
+    onSelected: (DeviceSensorDefinition) -> Unit,
 ) {
+    val selected = options.firstOrNull { it.key == selectedKey } ?: options.firstOrNull()
     Box(modifier = Modifier.fillMaxWidth()) {
         OutlinedButton(
             modifier = Modifier.fillMaxWidth(),
             onClick = { onExpandedChange(true) },
         ) {
-            Text("$label: ${selected.label}")
+            Text("$label: ${selected?.label ?: selectedKey.ifBlank { "None" }}")
         }
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { onExpandedChange(false) },
         ) {
-            options.forEach { sensorType ->
+            options.forEach { sensor ->
                 DropdownMenuItem(
-                    text = { Text(sensorType.label) },
+                    text = { Text(sensor.label) },
                     onClick = {
-                        onSelected(sensorType)
+                        onSelected(sensor)
                         onExpandedChange(false)
                     },
                 )

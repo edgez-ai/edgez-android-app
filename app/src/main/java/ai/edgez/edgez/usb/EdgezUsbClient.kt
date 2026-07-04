@@ -13,7 +13,6 @@ import android.os.Build
 import android.util.Log
 import ai.edgez.halow.UsbControl
 import ai.edgez.edgez.DeviceGeoFence
-import ai.edgez.edgez.DeviceSensorType
 import ai.edgez.edgez.DeviceSensorScriptConfig
 import ai.edgez.edgez.EdgeZDeviceType
 import ai.edgez.edgez.EdgeZSensorData
@@ -204,8 +203,8 @@ data class DeviceSettings(
     val longitude: Double? = null,
     val maxHop: Int = 0,
     val geoFence: DeviceGeoFence? = null,
-    val uartI2cSensorType: DeviceSensorType = DeviceSensorType.UNSPECIFIED,
-    val rs485SensorType: DeviceSensorType = DeviceSensorType.UNSPECIFIED,
+    val uartI2cSensorType: String = "",
+    val rs485SensorType: String = "",
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -539,8 +538,8 @@ object EdgezUsbControlProto {
             .setUserPublicKey(ByteString.copyFrom(settings.userPublicKey.copyOf(minOf(settings.userPublicKey.size, 32))))
             .setUserPrivateKey(ByteString.copyFrom(settings.userPrivateKey.copyOf(minOf(settings.userPrivateKey.size, 32))))
             .setMaxHop(settings.maxHop.coerceIn(0, 255))
-            .setUartI2CSensorType(settings.uartI2cSensorType.toProtoSensorType())
-            .setRs485SensorType(settings.rs485SensorType.toProtoSensorType())
+            .setUartI2CSensorType(settings.uartI2cSensorType.take(32))
+            .setRs485SensorType(settings.rs485SensorType.take(32))
         settings.geoFence?.let { protoSettings.setGeoFence(it.toProtoGeoFence()) }
         if (settings.latitude != null && settings.longitude != null) {
             protoSettings.setLatitude(settings.latitude.toFloat())
@@ -635,7 +634,7 @@ object EdgezUsbControlProto {
             .setTotalSize(totalSize.coerceAtLeast(0))
             .setOffset(offset.coerceAtLeast(0))
             .setChunk(ByteString.copyFrom(chunk))
-            .setSensorType(config.sensorType.toProtoSensorType())
+            .setSensorType(config.sensorType.take(32))
             .setSelectUartI2C(config.selectUartI2c)
             .setSelectRs485(config.selectRs485)
             .setGlobalBufferSize(config.globalBufferSize.coerceIn(1024, 65535))
@@ -964,8 +963,8 @@ object EdgezUsbControlProto {
             longitude = longitude.toDouble().takeIf { longitude != 0f },
             maxHop = maxHop.coerceIn(0, 255),
             geoFence = if (hasGeoFence()) geoFence.toAppGeoFence() else null,
-            uartI2cSensorType = DeviceSensorType.fromProtoValue(uartI2CSensorTypeValue),
-            rs485SensorType = DeviceSensorType.fromProtoValue(rs485SensorTypeValue),
+            uartI2cSensorType = uartI2CSensorType,
+            rs485SensorType = rs485SensorType,
         )
     }
 
@@ -987,10 +986,6 @@ object EdgezUsbControlProto {
             marker = marker.toNodeMarkerId(),
             alertCondition = GeoFenceAlertCondition.fromProtoValue(alertConditionValue),
         )
-    }
-
-    private fun DeviceSensorType.toProtoSensorType(): UsbControl.SensorType {
-        return UsbControl.SensorType.forNumber(protoValue) ?: UsbControl.SensorType.SENSOR_TYPE_UNSPECIFIED
     }
 
     private fun GeoFenceAlertCondition.toProtoAlertCondition(): UsbControl.AlertCondition {
