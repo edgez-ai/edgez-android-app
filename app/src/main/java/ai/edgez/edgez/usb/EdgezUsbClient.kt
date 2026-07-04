@@ -205,6 +205,7 @@ data class DeviceSettings(
     val geoFence: DeviceGeoFence? = null,
     val uartI2cSensorType: String = "",
     val rs485SensorType: String = "",
+    val geoIndex: Int = 0,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -227,7 +228,8 @@ data class DeviceSettings(
             maxHop == other.maxHop &&
             geoFence == other.geoFence &&
             uartI2cSensorType == other.uartI2cSensorType &&
-            rs485SensorType == other.rs485SensorType
+            rs485SensorType == other.rs485SensorType &&
+            geoIndex == other.geoIndex
     }
 
     override fun hashCode(): Int {
@@ -248,6 +250,7 @@ data class DeviceSettings(
         result = 31 * result + (geoFence?.hashCode() ?: 0)
         result = 31 * result + uartI2cSensorType.hashCode()
         result = 31 * result + rs485SensorType.hashCode()
+        result = 31 * result + geoIndex
         return result
     }
 }
@@ -540,6 +543,7 @@ object EdgezUsbControlProto {
             .setMaxHop(settings.maxHop.coerceIn(0, 255))
             .setUartI2CSensorType(settings.uartI2cSensorType.take(32))
             .setRs485SensorType(settings.rs485SensorType.take(32))
+            .setGeoIndex(settings.geoIndex.coerceAtLeast(0))
         settings.geoFence?.let { protoSettings.setGeoFence(it.toProtoGeoFence()) }
         if (settings.latitude != null && settings.longitude != null) {
             protoSettings.setLatitude(settings.latitude.toFloat())
@@ -965,6 +969,7 @@ object EdgezUsbControlProto {
             geoFence = if (hasGeoFence()) geoFence.toAppGeoFence() else null,
             uartI2cSensorType = uartI2CSensorType,
             rs485SensorType = rs485SensorType,
+            geoIndex = geoIndex,
         )
     }
 

@@ -354,9 +354,10 @@ fun SettingsScreen(
             latitude = deviceLatitude.takeIf { deviceShareLocation },
             longitude = deviceLongitude.takeIf { deviceShareLocation },
             maxHop = deviceMaxHop.toIntOrNull() ?: connectionPreferences.getMeshMaxHop(),
-            geoFence = selectedGeoFence?.copy(geoIndex = selectedGeoFenceIndex.coerceAtLeast(0)),
+            geoFence = selectedGeoFence,
             uartI2cSensorType = deviceUartI2cSensorType.take(32),
             rs485SensorType = deviceRs485SensorType.take(32),
+            geoIndex = selectedGeoFenceIndex.coerceAtLeast(0),
         )
     }
 

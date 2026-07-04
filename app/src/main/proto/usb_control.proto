@@ -186,6 +186,7 @@ message DeviceSettings {
   GeoFence geo_fence = 15;
   string uart_i2c_sensor_type = 16;
   string rs485_sensor_type = 17;
+  uint32 geo_index = 18;
 }
 
 message ScriptConfig {

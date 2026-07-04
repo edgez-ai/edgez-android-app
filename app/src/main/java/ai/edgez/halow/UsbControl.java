@@ -7465,6 +7465,12 @@ public final class UsbControl {
      */
     com.google.protobuf.ByteString
         getRs485SensorTypeBytes();
+
+    /**
+     * <code>uint32 geo_index = 18;</code>
+     * @return The geoIndex.
+     */
+    int getGeoIndex();
   }
   /**
    * Protobuf type {@code ai.edgez.halow.DeviceSettings}
@@ -8066,6 +8072,32 @@ public final class UsbControl {
       checkByteStringIsUtf8(value);
       rs485SensorType_ = value.toStringUtf8();
 
+    }
+
+    public static final int GEO_INDEX_FIELD_NUMBER = 18;
+    private int geoIndex_;
+    /**
+     * <code>uint32 geo_index = 18;</code>
+     * @return The geoIndex.
+     */
+    @java.lang.Override
+    public int getGeoIndex() {
+      return geoIndex_;
+    }
+    /**
+     * <code>uint32 geo_index = 18;</code>
+     * @param value The geoIndex to set.
+     */
+    private void setGeoIndex(int value) {
+      
+      geoIndex_ = value;
+    }
+    /**
+     * <code>uint32 geo_index = 18;</code>
+     */
+    private void clearGeoIndex() {
+
+      geoIndex_ = 0;
     }
 
     public static ai.edgez.halow.UsbControl.DeviceSettings parseFrom(
@@ -8780,6 +8812,34 @@ public final class UsbControl {
         return this;
       }
 
+      /**
+       * <code>uint32 geo_index = 18;</code>
+       * @return The geoIndex.
+       */
+      @java.lang.Override
+      public int getGeoIndex() {
+        return instance.getGeoIndex();
+      }
+      /**
+       * <code>uint32 geo_index = 18;</code>
+       * @param value The geoIndex to set.
+       * @return This builder for chaining.
+       */
+      public Builder setGeoIndex(int value) {
+        copyOnWrite();
+        instance.setGeoIndex(value);
+        return this;
+      }
+      /**
+       * <code>uint32 geo_index = 18;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearGeoIndex() {
+        copyOnWrite();
+        instance.clearGeoIndex();
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:ai.edgez.halow.DeviceSettings)
     }
     @java.lang.Override
@@ -8814,11 +8874,13 @@ public final class UsbControl {
               "geoFence_",
               "uartI2CSensorType_",
               "rs485SensorType_",
+              "geoIndex_",
             };
             java.lang.String info =
-                "\u0000\u0011\u0000\u0001\u0001\u0011\u0011\u0000\u0000\u0000\u0001\f\u0002\u0007" +
+                "\u0000\u0012\u0000\u0001\u0001\u0012\u0012\u0000\u0000\u0000\u0001\f\u0002\u0007" +
                 "\u0003\u0208\u0004\u0007\u0005\u0208\u0006\f\u0007\u000b\b\u0003\t\u0003\n\n\u000b" +
-                "\n\f\u0001\r\u0001\u000e\u000b\u000f\u1009\u0000\u0010\u0208\u0011\u0208";
+                "\n\f\u0001\r\u0001\u000e\u000b\u000f\u1009\u0000\u0010\u0208\u0011\u0208\u0012\u000b" +
+                "";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         // fall through
