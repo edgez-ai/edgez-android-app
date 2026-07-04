@@ -18,6 +18,8 @@ private const val KEY_USER_PRIVATE_KEY = "user_private_key"
 private const val KEY_USER_PUBLIC_KEY = "user_public_key"
 private const val KEY_SHARE_LOCATION = "share_location"
 private const val KEY_AUTO_REPLAY_RECEIVED_VOICE = "auto_replay_received_voice"
+private const val KEY_DEVICE_GEOFENCES = "device_geofences"
+private const val KEY_SELECTED_DEVICE_GEOFENCE = "selected_device_geofence"
 private const val DEFAULT_MESH_ID = "edgez"
 private const val DEFAULT_MESH_MAX_HOP = 2
 const val DEFAULT_BEACON_INTERVAL_SECONDS = 30
@@ -111,6 +113,35 @@ class LastConnectionPreferences(context: Context) {
 
     fun getAutoReplayReceivedVoice(): Boolean = prefs.getBoolean(KEY_AUTO_REPLAY_RECEIVED_VOICE, false)
 
+    fun getDeviceGeoFences(): List<DeviceGeoFence> {
+        val stored = prefs.getString(KEY_DEVICE_GEOFENCES, "") ?: ""
+        return stored.lineSequence()
+            .mapNotNull(::decodeGeoFence)
+            .distinctBy { it.key }
+            .toList()
+    }
+
+    fun saveDeviceGeoFences(geoFences: List<DeviceGeoFence>) {
+        val normalized = geoFences.distinctBy { it.key }
+        val selectedKey = getSelectedDeviceGeoFenceKey()
+        prefs.edit()
+            .putString(KEY_DEVICE_GEOFENCES, normalized.joinToString("\n", transform = ::encodeGeoFence))
+            .apply()
+        if (selectedKey != null && normalized.none { it.key == selectedKey }) {
+            setSelectedDeviceGeoFenceKey(null)
+        }
+    }
+
+    fun getSelectedDeviceGeoFenceKey(): String? {
+        return prefs.getString(KEY_SELECTED_DEVICE_GEOFENCE, null)?.takeIf { it.isNotBlank() }
+    }
+
+    fun setSelectedDeviceGeoFenceKey(key: String?) {
+        prefs.edit()
+            .putString(KEY_SELECTED_DEVICE_GEOFENCE, key?.takeIf { it.isNotBlank() })
+            .apply()
+    }
+
     fun setShareLocation(enabled: Boolean) {
         prefs.edit()
             .putBoolean(KEY_SHARE_LOCATION, enabled)
@@ -176,6 +207,33 @@ class LastConnectionPreferences(context: Context) {
             uuid = UUID.randomUUID()
         }
         return uuid
+    }
+
+    private fun encodeGeoFence(geoFence: DeviceGeoFence): String {
+        val encodedName = Base64.encodeToString(geoFence.name.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        return listOf(
+            geoFence.idHigh.toString(),
+            geoFence.idLow.toString(),
+            encodedName,
+            NodeMapMarker.normalize(geoFence.marker),
+            geoFence.alertCondition.name,
+        ).joinToString("|")
+    }
+
+    private fun decodeGeoFence(encoded: String): DeviceGeoFence? {
+        val parts = encoded.split("|", limit = 5)
+        if (parts.size != 5) return null
+        val idHigh = parts[0].toLongOrNull() ?: return null
+        val idLow = parts[1].toLongOrNull() ?: return null
+        val nameBytes = runCatching { Base64.decode(parts[2], Base64.NO_WRAP) }.getOrNull() ?: return null
+        val name = runCatching { nameBytes.toString(Charsets.UTF_8) }.getOrDefault("Geo fence")
+        return DeviceGeoFence(
+            idHigh = idHigh,
+            idLow = idLow,
+            name = name.ifBlank { "Geo fence" }.take(64),
+            marker = NodeMapMarker.normalize(parts[3]),
+            alertCondition = GeoFenceAlertCondition.fromName(parts[4]),
+        )
     }
 
     private fun encodeBytes(bytes: ByteArray): String {

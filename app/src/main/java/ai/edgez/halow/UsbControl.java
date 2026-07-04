@@ -716,17 +716,418 @@ public final class UsbControl {
     // @@protoc_insertion_point(enum_scope:ai.edgez.halow.DeviceSettingsAction)
   }
 
+  /**
+   * Protobuf enum {@code ai.edgez.halow.DeviceType}
+   */
+  public enum DeviceType
+      implements com.google.protobuf.Internal.EnumLite {
+    /**
+     * <code>DEVICE_TYPE_UNSPECIFIED = 0;</code>
+     */
+    DEVICE_TYPE_UNSPECIFIED(0),
+    /**
+     * <code>DEVICE_TYPE_UNKNOWN = 1;</code>
+     */
+    DEVICE_TYPE_UNKNOWN(1),
+    /**
+     * <code>DEVICE_TYPE_USER = 2;</code>
+     */
+    DEVICE_TYPE_USER(2),
+    /**
+     * <code>DEVICE_TYPE_GATEWAY = 3;</code>
+     */
+    DEVICE_TYPE_GATEWAY(3),
+    /**
+     * <code>DEVICE_TYPE_BEACON = 4;</code>
+     */
+    DEVICE_TYPE_BEACON(4),
+    /**
+     * <code>DEVICE_TYPE_SENSOR = 5;</code>
+     */
+    DEVICE_TYPE_SENSOR(5),
+    UNRECOGNIZED(-1),
+    ;
+
+    /**
+     * <code>DEVICE_TYPE_UNSPECIFIED = 0;</code>
+     */
+    public static final int DEVICE_TYPE_UNSPECIFIED_VALUE = 0;
+    /**
+     * <code>DEVICE_TYPE_UNKNOWN = 1;</code>
+     */
+    public static final int DEVICE_TYPE_UNKNOWN_VALUE = 1;
+    /**
+     * <code>DEVICE_TYPE_USER = 2;</code>
+     */
+    public static final int DEVICE_TYPE_USER_VALUE = 2;
+    /**
+     * <code>DEVICE_TYPE_GATEWAY = 3;</code>
+     */
+    public static final int DEVICE_TYPE_GATEWAY_VALUE = 3;
+    /**
+     * <code>DEVICE_TYPE_BEACON = 4;</code>
+     */
+    public static final int DEVICE_TYPE_BEACON_VALUE = 4;
+    /**
+     * <code>DEVICE_TYPE_SENSOR = 5;</code>
+     */
+    public static final int DEVICE_TYPE_SENSOR_VALUE = 5;
+
+
+    @java.lang.Override
+    public final int getNumber() {
+      if (this == UNRECOGNIZED) {
+        throw new java.lang.IllegalArgumentException(
+            "Can't get the number of an unknown enum value.");
+      }
+      return value;
+    }
+
+    /**
+     * @param value The number of the enum to look for.
+     * @return The enum associated with the given number.
+     * @deprecated Use {@link #forNumber(int)} instead.
+     */
+    @java.lang.Deprecated
+    public static DeviceType valueOf(int value) {
+      return forNumber(value);
+    }
+
+    public static DeviceType forNumber(int value) {
+      switch (value) {
+        case 0: return DEVICE_TYPE_UNSPECIFIED;
+        case 1: return DEVICE_TYPE_UNKNOWN;
+        case 2: return DEVICE_TYPE_USER;
+        case 3: return DEVICE_TYPE_GATEWAY;
+        case 4: return DEVICE_TYPE_BEACON;
+        case 5: return DEVICE_TYPE_SENSOR;
+        default: return null;
+      }
+    }
+
+    public static com.google.protobuf.Internal.EnumLiteMap<DeviceType>
+        internalGetValueMap() {
+      return internalValueMap;
+    }
+    private static final com.google.protobuf.Internal.EnumLiteMap<
+        DeviceType> internalValueMap =
+          new com.google.protobuf.Internal.EnumLiteMap<DeviceType>() {
+            @java.lang.Override
+            public DeviceType findValueByNumber(int number) {
+              return DeviceType.forNumber(number);
+            }
+          };
+
+    public static com.google.protobuf.Internal.EnumVerifier 
+        internalGetVerifier() {
+      return DeviceTypeVerifier.INSTANCE;
+    }
+
+    private static final class DeviceTypeVerifier implements 
+         com.google.protobuf.Internal.EnumVerifier { 
+            static final com.google.protobuf.Internal.EnumVerifier           INSTANCE = new DeviceTypeVerifier();
+            @java.lang.Override
+            public boolean isInRange(int number) {
+              return DeviceType.forNumber(number) != null;
+            }
+          };
+
+    private final int value;
+
+    private DeviceType(int value) {
+      this.value = value;
+    }
+
+    // @@protoc_insertion_point(enum_scope:ai.edgez.halow.DeviceType)
+  }
+
+  /**
+   * Protobuf enum {@code ai.edgez.halow.AlertCondition}
+   */
+  public enum AlertCondition
+      implements com.google.protobuf.Internal.EnumLite {
+    /**
+     * <code>ALERT_CONDITION_UNSPECIFIED = 0;</code>
+     */
+    ALERT_CONDITION_UNSPECIFIED(0),
+    /**
+     * <code>ALERT_CONDITION_ENTER = 1;</code>
+     */
+    ALERT_CONDITION_ENTER(1),
+    /**
+     * <code>ALERT_CONDITION_EXIT = 2;</code>
+     */
+    ALERT_CONDITION_EXIT(2),
+    /**
+     * <code>ALERT_CONDITION_NEAR = 3;</code>
+     */
+    ALERT_CONDITION_NEAR(3),
+    /**
+     * <code>ALERT_CONDITION_FAR = 4;</code>
+     */
+    ALERT_CONDITION_FAR(4),
+    /**
+     * <code>ALERT_CONDITION_LOW_BATTERY = 5;</code>
+     */
+    ALERT_CONDITION_LOW_BATTERY(5),
+    UNRECOGNIZED(-1),
+    ;
+
+    /**
+     * <code>ALERT_CONDITION_UNSPECIFIED = 0;</code>
+     */
+    public static final int ALERT_CONDITION_UNSPECIFIED_VALUE = 0;
+    /**
+     * <code>ALERT_CONDITION_ENTER = 1;</code>
+     */
+    public static final int ALERT_CONDITION_ENTER_VALUE = 1;
+    /**
+     * <code>ALERT_CONDITION_EXIT = 2;</code>
+     */
+    public static final int ALERT_CONDITION_EXIT_VALUE = 2;
+    /**
+     * <code>ALERT_CONDITION_NEAR = 3;</code>
+     */
+    public static final int ALERT_CONDITION_NEAR_VALUE = 3;
+    /**
+     * <code>ALERT_CONDITION_FAR = 4;</code>
+     */
+    public static final int ALERT_CONDITION_FAR_VALUE = 4;
+    /**
+     * <code>ALERT_CONDITION_LOW_BATTERY = 5;</code>
+     */
+    public static final int ALERT_CONDITION_LOW_BATTERY_VALUE = 5;
+
+
+    @java.lang.Override
+    public final int getNumber() {
+      if (this == UNRECOGNIZED) {
+        throw new java.lang.IllegalArgumentException(
+            "Can't get the number of an unknown enum value.");
+      }
+      return value;
+    }
+
+    /**
+     * @param value The number of the enum to look for.
+     * @return The enum associated with the given number.
+     * @deprecated Use {@link #forNumber(int)} instead.
+     */
+    @java.lang.Deprecated
+    public static AlertCondition valueOf(int value) {
+      return forNumber(value);
+    }
+
+    public static AlertCondition forNumber(int value) {
+      switch (value) {
+        case 0: return ALERT_CONDITION_UNSPECIFIED;
+        case 1: return ALERT_CONDITION_ENTER;
+        case 2: return ALERT_CONDITION_EXIT;
+        case 3: return ALERT_CONDITION_NEAR;
+        case 4: return ALERT_CONDITION_FAR;
+        case 5: return ALERT_CONDITION_LOW_BATTERY;
+        default: return null;
+      }
+    }
+
+    public static com.google.protobuf.Internal.EnumLiteMap<AlertCondition>
+        internalGetValueMap() {
+      return internalValueMap;
+    }
+    private static final com.google.protobuf.Internal.EnumLiteMap<
+        AlertCondition> internalValueMap =
+          new com.google.protobuf.Internal.EnumLiteMap<AlertCondition>() {
+            @java.lang.Override
+            public AlertCondition findValueByNumber(int number) {
+              return AlertCondition.forNumber(number);
+            }
+          };
+
+    public static com.google.protobuf.Internal.EnumVerifier 
+        internalGetVerifier() {
+      return AlertConditionVerifier.INSTANCE;
+    }
+
+    private static final class AlertConditionVerifier implements 
+         com.google.protobuf.Internal.EnumVerifier { 
+            static final com.google.protobuf.Internal.EnumVerifier           INSTANCE = new AlertConditionVerifier();
+            @java.lang.Override
+            public boolean isInRange(int number) {
+              return AlertCondition.forNumber(number) != null;
+            }
+          };
+
+    private final int value;
+
+    private AlertCondition(int value) {
+      this.value = value;
+    }
+
+    // @@protoc_insertion_point(enum_scope:ai.edgez.halow.AlertCondition)
+  }
+
+  /**
+   * Protobuf enum {@code ai.edgez.halow.SensorType}
+   */
+  public enum SensorType
+      implements com.google.protobuf.Internal.EnumLite {
+    /**
+     * <code>SENSOR_TYPE_UNSPECIFIED = 0;</code>
+     */
+    SENSOR_TYPE_UNSPECIFIED(0),
+    /**
+     * <code>SENSOR_TYPE_NONE = 1;</code>
+     */
+    SENSOR_TYPE_NONE(1),
+    /**
+     * <code>SENSOR_TYPE_TEMPERATURE = 2;</code>
+     */
+    SENSOR_TYPE_TEMPERATURE(2),
+    /**
+     * <code>SENSOR_TYPE_HUMIDITY = 3;</code>
+     */
+    SENSOR_TYPE_HUMIDITY(3),
+    /**
+     * <code>SENSOR_TYPE_PRESSURE = 4;</code>
+     */
+    SENSOR_TYPE_PRESSURE(4),
+    /**
+     * <code>SENSOR_TYPE_TEMPERATURE_HUMIDITY = 5;</code>
+     */
+    SENSOR_TYPE_TEMPERATURE_HUMIDITY(5),
+    /**
+     * <code>SENSOR_TYPE_TEMPERATURE_HUMIDITY_PRESSURE = 6;</code>
+     */
+    SENSOR_TYPE_TEMPERATURE_HUMIDITY_PRESSURE(6),
+    /**
+     * <code>SENSOR_TYPE_GPS = 7;</code>
+     */
+    SENSOR_TYPE_GPS(7),
+    UNRECOGNIZED(-1),
+    ;
+
+    /**
+     * <code>SENSOR_TYPE_UNSPECIFIED = 0;</code>
+     */
+    public static final int SENSOR_TYPE_UNSPECIFIED_VALUE = 0;
+    /**
+     * <code>SENSOR_TYPE_NONE = 1;</code>
+     */
+    public static final int SENSOR_TYPE_NONE_VALUE = 1;
+    /**
+     * <code>SENSOR_TYPE_TEMPERATURE = 2;</code>
+     */
+    public static final int SENSOR_TYPE_TEMPERATURE_VALUE = 2;
+    /**
+     * <code>SENSOR_TYPE_HUMIDITY = 3;</code>
+     */
+    public static final int SENSOR_TYPE_HUMIDITY_VALUE = 3;
+    /**
+     * <code>SENSOR_TYPE_PRESSURE = 4;</code>
+     */
+    public static final int SENSOR_TYPE_PRESSURE_VALUE = 4;
+    /**
+     * <code>SENSOR_TYPE_TEMPERATURE_HUMIDITY = 5;</code>
+     */
+    public static final int SENSOR_TYPE_TEMPERATURE_HUMIDITY_VALUE = 5;
+    /**
+     * <code>SENSOR_TYPE_TEMPERATURE_HUMIDITY_PRESSURE = 6;</code>
+     */
+    public static final int SENSOR_TYPE_TEMPERATURE_HUMIDITY_PRESSURE_VALUE = 6;
+    /**
+     * <code>SENSOR_TYPE_GPS = 7;</code>
+     */
+    public static final int SENSOR_TYPE_GPS_VALUE = 7;
+
+
+    @java.lang.Override
+    public final int getNumber() {
+      if (this == UNRECOGNIZED) {
+        throw new java.lang.IllegalArgumentException(
+            "Can't get the number of an unknown enum value.");
+      }
+      return value;
+    }
+
+    /**
+     * @param value The number of the enum to look for.
+     * @return The enum associated with the given number.
+     * @deprecated Use {@link #forNumber(int)} instead.
+     */
+    @java.lang.Deprecated
+    public static SensorType valueOf(int value) {
+      return forNumber(value);
+    }
+
+    public static SensorType forNumber(int value) {
+      switch (value) {
+        case 0: return SENSOR_TYPE_UNSPECIFIED;
+        case 1: return SENSOR_TYPE_NONE;
+        case 2: return SENSOR_TYPE_TEMPERATURE;
+        case 3: return SENSOR_TYPE_HUMIDITY;
+        case 4: return SENSOR_TYPE_PRESSURE;
+        case 5: return SENSOR_TYPE_TEMPERATURE_HUMIDITY;
+        case 6: return SENSOR_TYPE_TEMPERATURE_HUMIDITY_PRESSURE;
+        case 7: return SENSOR_TYPE_GPS;
+        default: return null;
+      }
+    }
+
+    public static com.google.protobuf.Internal.EnumLiteMap<SensorType>
+        internalGetValueMap() {
+      return internalValueMap;
+    }
+    private static final com.google.protobuf.Internal.EnumLiteMap<
+        SensorType> internalValueMap =
+          new com.google.protobuf.Internal.EnumLiteMap<SensorType>() {
+            @java.lang.Override
+            public SensorType findValueByNumber(int number) {
+              return SensorType.forNumber(number);
+            }
+          };
+
+    public static com.google.protobuf.Internal.EnumVerifier 
+        internalGetVerifier() {
+      return SensorTypeVerifier.INSTANCE;
+    }
+
+    private static final class SensorTypeVerifier implements 
+         com.google.protobuf.Internal.EnumVerifier { 
+            static final com.google.protobuf.Internal.EnumVerifier           INSTANCE = new SensorTypeVerifier();
+            @java.lang.Override
+            public boolean isInRange(int number) {
+              return SensorType.forNumber(number) != null;
+            }
+          };
+
+    private final int value;
+
+    private SensorType(int value) {
+      this.value = value;
+    }
+
+    // @@protoc_insertion_point(enum_scope:ai.edgez.halow.SensorType)
+  }
+
   public interface NetworkPacketOrBuilder extends
       // @@protoc_insertion_point(interface_extends:ai.edgez.halow.NetworkPacket)
       com.google.protobuf.MessageLiteOrBuilder {
 
     /**
+     * <pre>
+     * high 64 bits of message UUID
+     * </pre>
+     *
      * <code>uint64 message_id_high = 1;</code>
      * @return The messageIdHigh.
      */
     long getMessageIdHigh();
 
     /**
+     * <pre>
+     * low 64 bits of message UUID
+     * </pre>
+     *
      * <code>uint64 message_id_low = 2;</code>
      * @return The messageIdLow.
      */
@@ -756,46 +1157,78 @@ public final class UsbControl {
     ai.edgez.halow.UsbControl.Operation getOperation();
 
     /**
+     * <pre>
+     * self interface when option is request,broadcast, target interface for response. 
+     * </pre>
+     *
      * <code>.ai.edgez.halow.Interface interface = 6;</code>
      * @return The enum numeric value on the wire for interface.
      */
     int getInterfaceValue();
     /**
+     * <pre>
+     * self interface when option is request,broadcast, target interface for response. 
+     * </pre>
+     *
      * <code>.ai.edgez.halow.Interface interface = 6;</code>
      * @return The interface.
      */
     ai.edgez.halow.UsbControl.Interface getInterface();
 
     /**
+     * <pre>
+     * when a message need to split into chunks, use sequence to control it
+     * </pre>
+     *
      * <code>uint32 sequence = 7;</code>
      * @return The sequence.
      */
     int getSequence();
 
     /**
+     * <pre>
+     * high 64 bits of self user UUID
+     * </pre>
+     *
      * <code>uint64 user_high = 8;</code>
      * @return The userHigh.
      */
     long getUserHigh();
 
     /**
+     * <pre>
+     * low 64 bits of self user UUID
+     * </pre>
+     *
      * <code>uint64 user_low = 9;</code>
      * @return The userLow.
      */
     long getUserLow();
 
     /**
+     * <pre>
+     * encrypted payload media type
+     * </pre>
+     *
      * <code>.ai.edgez.halow.Mime mime = 10;</code>
      * @return The enum numeric value on the wire for mime.
      */
     int getMimeValue();
     /**
+     * <pre>
+     * encrypted payload media type
+     * </pre>
+     *
      * <code>.ai.edgez.halow.Mime mime = 10;</code>
      * @return The mime.
      */
     ai.edgez.halow.UsbControl.Mime getMime();
 
     /**
+     * <pre>
+     * hop limit for forwarding this packet
+     * </pre>
+     *
      * <code>uint32 max_hop = 11;</code>
      * @return The maxHop.
      */
@@ -926,6 +1359,10 @@ public final class UsbControl {
     public static final int MESSAGE_ID_HIGH_FIELD_NUMBER = 1;
     private long messageIdHigh_;
     /**
+     * <pre>
+     * high 64 bits of message UUID
+     * </pre>
+     *
      * <code>uint64 message_id_high = 1;</code>
      * @return The messageIdHigh.
      */
@@ -934,6 +1371,10 @@ public final class UsbControl {
       return messageIdHigh_;
     }
     /**
+     * <pre>
+     * high 64 bits of message UUID
+     * </pre>
+     *
      * <code>uint64 message_id_high = 1;</code>
      * @param value The messageIdHigh to set.
      */
@@ -942,6 +1383,10 @@ public final class UsbControl {
       messageIdHigh_ = value;
     }
     /**
+     * <pre>
+     * high 64 bits of message UUID
+     * </pre>
+     *
      * <code>uint64 message_id_high = 1;</code>
      */
     private void clearMessageIdHigh() {
@@ -952,6 +1397,10 @@ public final class UsbControl {
     public static final int MESSAGE_ID_LOW_FIELD_NUMBER = 2;
     private long messageIdLow_;
     /**
+     * <pre>
+     * low 64 bits of message UUID
+     * </pre>
+     *
      * <code>uint64 message_id_low = 2;</code>
      * @return The messageIdLow.
      */
@@ -960,6 +1409,10 @@ public final class UsbControl {
       return messageIdLow_;
     }
     /**
+     * <pre>
+     * low 64 bits of message UUID
+     * </pre>
+     *
      * <code>uint64 message_id_low = 2;</code>
      * @param value The messageIdLow to set.
      */
@@ -968,6 +1421,10 @@ public final class UsbControl {
       messageIdLow_ = value;
     }
     /**
+     * <pre>
+     * low 64 bits of message UUID
+     * </pre>
+     *
      * <code>uint64 message_id_low = 2;</code>
      */
     private void clearMessageIdLow() {
@@ -1072,6 +1529,10 @@ public final class UsbControl {
     public static final int INTERFACE_FIELD_NUMBER = 6;
     private int interface_;
     /**
+     * <pre>
+     * self interface when option is request,broadcast, target interface for response. 
+     * </pre>
+     *
      * <code>.ai.edgez.halow.Interface interface = 6;</code>
      * @return The enum numeric value on the wire for interface.
      */
@@ -1080,6 +1541,10 @@ public final class UsbControl {
       return interface_;
     }
     /**
+     * <pre>
+     * self interface when option is request,broadcast, target interface for response. 
+     * </pre>
+     *
      * <code>.ai.edgez.halow.Interface interface = 6;</code>
      * @return The interface.
      */
@@ -1089,6 +1554,10 @@ public final class UsbControl {
       return result == null ? ai.edgez.halow.UsbControl.Interface.UNRECOGNIZED : result;
     }
     /**
+     * <pre>
+     * self interface when option is request,broadcast, target interface for response. 
+     * </pre>
+     *
      * <code>.ai.edgez.halow.Interface interface = 6;</code>
      * @param value The enum numeric value on the wire for interface to set.
      */
@@ -1096,6 +1565,10 @@ public final class UsbControl {
         interface_ = value;
     }
     /**
+     * <pre>
+     * self interface when option is request,broadcast, target interface for response. 
+     * </pre>
+     *
      * <code>.ai.edgez.halow.Interface interface = 6;</code>
      * @param value The interface to set.
      */
@@ -1104,6 +1577,10 @@ public final class UsbControl {
 
     }
     /**
+     * <pre>
+     * self interface when option is request,broadcast, target interface for response. 
+     * </pre>
+     *
      * <code>.ai.edgez.halow.Interface interface = 6;</code>
      */
     private void clearInterface() {
@@ -1114,6 +1591,10 @@ public final class UsbControl {
     public static final int SEQUENCE_FIELD_NUMBER = 7;
     private int sequence_;
     /**
+     * <pre>
+     * when a message need to split into chunks, use sequence to control it
+     * </pre>
+     *
      * <code>uint32 sequence = 7;</code>
      * @return The sequence.
      */
@@ -1122,6 +1603,10 @@ public final class UsbControl {
       return sequence_;
     }
     /**
+     * <pre>
+     * when a message need to split into chunks, use sequence to control it
+     * </pre>
+     *
      * <code>uint32 sequence = 7;</code>
      * @param value The sequence to set.
      */
@@ -1130,6 +1615,10 @@ public final class UsbControl {
       sequence_ = value;
     }
     /**
+     * <pre>
+     * when a message need to split into chunks, use sequence to control it
+     * </pre>
+     *
      * <code>uint32 sequence = 7;</code>
      */
     private void clearSequence() {
@@ -1140,6 +1629,10 @@ public final class UsbControl {
     public static final int USER_HIGH_FIELD_NUMBER = 8;
     private long userHigh_;
     /**
+     * <pre>
+     * high 64 bits of self user UUID
+     * </pre>
+     *
      * <code>uint64 user_high = 8;</code>
      * @return The userHigh.
      */
@@ -1148,6 +1641,10 @@ public final class UsbControl {
       return userHigh_;
     }
     /**
+     * <pre>
+     * high 64 bits of self user UUID
+     * </pre>
+     *
      * <code>uint64 user_high = 8;</code>
      * @param value The userHigh to set.
      */
@@ -1156,6 +1653,10 @@ public final class UsbControl {
       userHigh_ = value;
     }
     /**
+     * <pre>
+     * high 64 bits of self user UUID
+     * </pre>
+     *
      * <code>uint64 user_high = 8;</code>
      */
     private void clearUserHigh() {
@@ -1166,6 +1667,10 @@ public final class UsbControl {
     public static final int USER_LOW_FIELD_NUMBER = 9;
     private long userLow_;
     /**
+     * <pre>
+     * low 64 bits of self user UUID
+     * </pre>
+     *
      * <code>uint64 user_low = 9;</code>
      * @return The userLow.
      */
@@ -1174,6 +1679,10 @@ public final class UsbControl {
       return userLow_;
     }
     /**
+     * <pre>
+     * low 64 bits of self user UUID
+     * </pre>
+     *
      * <code>uint64 user_low = 9;</code>
      * @param value The userLow to set.
      */
@@ -1182,6 +1691,10 @@ public final class UsbControl {
       userLow_ = value;
     }
     /**
+     * <pre>
+     * low 64 bits of self user UUID
+     * </pre>
+     *
      * <code>uint64 user_low = 9;</code>
      */
     private void clearUserLow() {
@@ -1192,6 +1705,10 @@ public final class UsbControl {
     public static final int MIME_FIELD_NUMBER = 10;
     private int mime_;
     /**
+     * <pre>
+     * encrypted payload media type
+     * </pre>
+     *
      * <code>.ai.edgez.halow.Mime mime = 10;</code>
      * @return The enum numeric value on the wire for mime.
      */
@@ -1200,6 +1717,10 @@ public final class UsbControl {
       return mime_;
     }
     /**
+     * <pre>
+     * encrypted payload media type
+     * </pre>
+     *
      * <code>.ai.edgez.halow.Mime mime = 10;</code>
      * @return The mime.
      */
@@ -1209,6 +1730,10 @@ public final class UsbControl {
       return result == null ? ai.edgez.halow.UsbControl.Mime.UNRECOGNIZED : result;
     }
     /**
+     * <pre>
+     * encrypted payload media type
+     * </pre>
+     *
      * <code>.ai.edgez.halow.Mime mime = 10;</code>
      * @param value The enum numeric value on the wire for mime to set.
      */
@@ -1216,6 +1741,10 @@ public final class UsbControl {
         mime_ = value;
     }
     /**
+     * <pre>
+     * encrypted payload media type
+     * </pre>
+     *
      * <code>.ai.edgez.halow.Mime mime = 10;</code>
      * @param value The mime to set.
      */
@@ -1224,6 +1753,10 @@ public final class UsbControl {
 
     }
     /**
+     * <pre>
+     * encrypted payload media type
+     * </pre>
+     *
      * <code>.ai.edgez.halow.Mime mime = 10;</code>
      */
     private void clearMime() {
@@ -1234,6 +1767,10 @@ public final class UsbControl {
     public static final int MAX_HOP_FIELD_NUMBER = 11;
     private int maxHop_;
     /**
+     * <pre>
+     * hop limit for forwarding this packet
+     * </pre>
+     *
      * <code>uint32 max_hop = 11;</code>
      * @return The maxHop.
      */
@@ -1242,6 +1779,10 @@ public final class UsbControl {
       return maxHop_;
     }
     /**
+     * <pre>
+     * hop limit for forwarding this packet
+     * </pre>
+     *
      * <code>uint32 max_hop = 11;</code>
      * @param value The maxHop to set.
      */
@@ -1250,6 +1791,10 @@ public final class UsbControl {
       maxHop_ = value;
     }
     /**
+     * <pre>
+     * hop limit for forwarding this packet
+     * </pre>
+     *
      * <code>uint32 max_hop = 11;</code>
      */
     private void clearMaxHop() {
@@ -1627,6 +2172,10 @@ public final class UsbControl {
 
 
       /**
+       * <pre>
+       * high 64 bits of message UUID
+       * </pre>
+       *
        * <code>uint64 message_id_high = 1;</code>
        * @return The messageIdHigh.
        */
@@ -1635,6 +2184,10 @@ public final class UsbControl {
         return instance.getMessageIdHigh();
       }
       /**
+       * <pre>
+       * high 64 bits of message UUID
+       * </pre>
+       *
        * <code>uint64 message_id_high = 1;</code>
        * @param value The messageIdHigh to set.
        * @return This builder for chaining.
@@ -1645,6 +2198,10 @@ public final class UsbControl {
         return this;
       }
       /**
+       * <pre>
+       * high 64 bits of message UUID
+       * </pre>
+       *
        * <code>uint64 message_id_high = 1;</code>
        * @return This builder for chaining.
        */
@@ -1655,6 +2212,10 @@ public final class UsbControl {
       }
 
       /**
+       * <pre>
+       * low 64 bits of message UUID
+       * </pre>
+       *
        * <code>uint64 message_id_low = 2;</code>
        * @return The messageIdLow.
        */
@@ -1663,6 +2224,10 @@ public final class UsbControl {
         return instance.getMessageIdLow();
       }
       /**
+       * <pre>
+       * low 64 bits of message UUID
+       * </pre>
+       *
        * <code>uint64 message_id_low = 2;</code>
        * @param value The messageIdLow to set.
        * @return This builder for chaining.
@@ -1673,6 +2238,10 @@ public final class UsbControl {
         return this;
       }
       /**
+       * <pre>
+       * low 64 bits of message UUID
+       * </pre>
+       *
        * <code>uint64 message_id_low = 2;</code>
        * @return This builder for chaining.
        */
@@ -1785,6 +2354,10 @@ public final class UsbControl {
       }
 
       /**
+       * <pre>
+       * self interface when option is request,broadcast, target interface for response. 
+       * </pre>
+       *
        * <code>.ai.edgez.halow.Interface interface = 6;</code>
        * @return The enum numeric value on the wire for interface.
        */
@@ -1793,6 +2366,10 @@ public final class UsbControl {
         return instance.getInterfaceValue();
       }
       /**
+       * <pre>
+       * self interface when option is request,broadcast, target interface for response. 
+       * </pre>
+       *
        * <code>.ai.edgez.halow.Interface interface = 6;</code>
        * @param value The interface to set.
        * @return This builder for chaining.
@@ -1803,6 +2380,10 @@ public final class UsbControl {
         return this;
       }
       /**
+       * <pre>
+       * self interface when option is request,broadcast, target interface for response. 
+       * </pre>
+       *
        * <code>.ai.edgez.halow.Interface interface = 6;</code>
        * @return The interface.
        */
@@ -1811,6 +2392,10 @@ public final class UsbControl {
         return instance.getInterface();
       }
       /**
+       * <pre>
+       * self interface when option is request,broadcast, target interface for response. 
+       * </pre>
+       *
        * <code>.ai.edgez.halow.Interface interface = 6;</code>
        * @param value The enum numeric value on the wire for interface to set.
        * @return This builder for chaining.
@@ -1821,6 +2406,10 @@ public final class UsbControl {
         return this;
       }
       /**
+       * <pre>
+       * self interface when option is request,broadcast, target interface for response. 
+       * </pre>
+       *
        * <code>.ai.edgez.halow.Interface interface = 6;</code>
        * @return This builder for chaining.
        */
@@ -1831,6 +2420,10 @@ public final class UsbControl {
       }
 
       /**
+       * <pre>
+       * when a message need to split into chunks, use sequence to control it
+       * </pre>
+       *
        * <code>uint32 sequence = 7;</code>
        * @return The sequence.
        */
@@ -1839,6 +2432,10 @@ public final class UsbControl {
         return instance.getSequence();
       }
       /**
+       * <pre>
+       * when a message need to split into chunks, use sequence to control it
+       * </pre>
+       *
        * <code>uint32 sequence = 7;</code>
        * @param value The sequence to set.
        * @return This builder for chaining.
@@ -1849,6 +2446,10 @@ public final class UsbControl {
         return this;
       }
       /**
+       * <pre>
+       * when a message need to split into chunks, use sequence to control it
+       * </pre>
+       *
        * <code>uint32 sequence = 7;</code>
        * @return This builder for chaining.
        */
@@ -1859,6 +2460,10 @@ public final class UsbControl {
       }
 
       /**
+       * <pre>
+       * high 64 bits of self user UUID
+       * </pre>
+       *
        * <code>uint64 user_high = 8;</code>
        * @return The userHigh.
        */
@@ -1867,6 +2472,10 @@ public final class UsbControl {
         return instance.getUserHigh();
       }
       /**
+       * <pre>
+       * high 64 bits of self user UUID
+       * </pre>
+       *
        * <code>uint64 user_high = 8;</code>
        * @param value The userHigh to set.
        * @return This builder for chaining.
@@ -1877,6 +2486,10 @@ public final class UsbControl {
         return this;
       }
       /**
+       * <pre>
+       * high 64 bits of self user UUID
+       * </pre>
+       *
        * <code>uint64 user_high = 8;</code>
        * @return This builder for chaining.
        */
@@ -1887,6 +2500,10 @@ public final class UsbControl {
       }
 
       /**
+       * <pre>
+       * low 64 bits of self user UUID
+       * </pre>
+       *
        * <code>uint64 user_low = 9;</code>
        * @return The userLow.
        */
@@ -1895,6 +2512,10 @@ public final class UsbControl {
         return instance.getUserLow();
       }
       /**
+       * <pre>
+       * low 64 bits of self user UUID
+       * </pre>
+       *
        * <code>uint64 user_low = 9;</code>
        * @param value The userLow to set.
        * @return This builder for chaining.
@@ -1905,6 +2526,10 @@ public final class UsbControl {
         return this;
       }
       /**
+       * <pre>
+       * low 64 bits of self user UUID
+       * </pre>
+       *
        * <code>uint64 user_low = 9;</code>
        * @return This builder for chaining.
        */
@@ -1915,6 +2540,10 @@ public final class UsbControl {
       }
 
       /**
+       * <pre>
+       * encrypted payload media type
+       * </pre>
+       *
        * <code>.ai.edgez.halow.Mime mime = 10;</code>
        * @return The enum numeric value on the wire for mime.
        */
@@ -1923,6 +2552,10 @@ public final class UsbControl {
         return instance.getMimeValue();
       }
       /**
+       * <pre>
+       * encrypted payload media type
+       * </pre>
+       *
        * <code>.ai.edgez.halow.Mime mime = 10;</code>
        * @param value The mime to set.
        * @return This builder for chaining.
@@ -1933,6 +2566,10 @@ public final class UsbControl {
         return this;
       }
       /**
+       * <pre>
+       * encrypted payload media type
+       * </pre>
+       *
        * <code>.ai.edgez.halow.Mime mime = 10;</code>
        * @return The mime.
        */
@@ -1941,6 +2578,10 @@ public final class UsbControl {
         return instance.getMime();
       }
       /**
+       * <pre>
+       * encrypted payload media type
+       * </pre>
+       *
        * <code>.ai.edgez.halow.Mime mime = 10;</code>
        * @param value The enum numeric value on the wire for mime to set.
        * @return This builder for chaining.
@@ -1951,6 +2592,10 @@ public final class UsbControl {
         return this;
       }
       /**
+       * <pre>
+       * encrypted payload media type
+       * </pre>
+       *
        * <code>.ai.edgez.halow.Mime mime = 10;</code>
        * @return This builder for chaining.
        */
@@ -1961,6 +2606,10 @@ public final class UsbControl {
       }
 
       /**
+       * <pre>
+       * hop limit for forwarding this packet
+       * </pre>
+       *
        * <code>uint32 max_hop = 11;</code>
        * @return The maxHop.
        */
@@ -1969,6 +2618,10 @@ public final class UsbControl {
         return instance.getMaxHop();
       }
       /**
+       * <pre>
+       * hop limit for forwarding this packet
+       * </pre>
+       *
        * <code>uint32 max_hop = 11;</code>
        * @param value The maxHop to set.
        * @return This builder for chaining.
@@ -1979,6 +2632,10 @@ public final class UsbControl {
         return this;
       }
       /**
+       * <pre>
+       * hop limit for forwarding this packet
+       * </pre>
+       *
        * <code>uint32 max_hop = 11;</code>
        * @return This builder for chaining.
        */
@@ -2316,6 +2973,1175 @@ public final class UsbControl {
     }
   }
 
+  public interface GeoFenceOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:ai.edgez.halow.GeoFence)
+      com.google.protobuf.MessageLiteOrBuilder {
+
+    /**
+     * <code>uint64 id_high = 1;</code>
+     * @return The idHigh.
+     */
+    long getIdHigh();
+
+    /**
+     * <code>uint64 id_low = 2;</code>
+     * @return The idLow.
+     */
+    long getIdLow();
+
+    /**
+     * <code>string name = 3;</code>
+     * @return The name.
+     */
+    java.lang.String getName();
+    /**
+     * <code>string name = 3;</code>
+     * @return The bytes for name.
+     */
+    com.google.protobuf.ByteString
+        getNameBytes();
+
+    /**
+     * <code>.ai.edgez.halow.MarkerColor marker = 4;</code>
+     * @return The enum numeric value on the wire for marker.
+     */
+    int getMarkerValue();
+    /**
+     * <code>.ai.edgez.halow.MarkerColor marker = 4;</code>
+     * @return The marker.
+     */
+    ai.edgez.halow.UsbControl.MarkerColor getMarker();
+
+    /**
+     * <code>.ai.edgez.halow.AlertCondition alert_condition = 5;</code>
+     * @return The enum numeric value on the wire for alertCondition.
+     */
+    int getAlertConditionValue();
+    /**
+     * <code>.ai.edgez.halow.AlertCondition alert_condition = 5;</code>
+     * @return The alertCondition.
+     */
+    ai.edgez.halow.UsbControl.AlertCondition getAlertCondition();
+  }
+  /**
+   * Protobuf type {@code ai.edgez.halow.GeoFence}
+   */
+  public  static final class GeoFence extends
+      com.google.protobuf.GeneratedMessageLite<
+          GeoFence, GeoFence.Builder> implements
+      // @@protoc_insertion_point(message_implements:ai.edgez.halow.GeoFence)
+      GeoFenceOrBuilder {
+    private GeoFence() {
+      name_ = "";
+    }
+    public static final int ID_HIGH_FIELD_NUMBER = 1;
+    private long idHigh_;
+    /**
+     * <code>uint64 id_high = 1;</code>
+     * @return The idHigh.
+     */
+    @java.lang.Override
+    public long getIdHigh() {
+      return idHigh_;
+    }
+    /**
+     * <code>uint64 id_high = 1;</code>
+     * @param value The idHigh to set.
+     */
+    private void setIdHigh(long value) {
+      
+      idHigh_ = value;
+    }
+    /**
+     * <code>uint64 id_high = 1;</code>
+     */
+    private void clearIdHigh() {
+
+      idHigh_ = 0L;
+    }
+
+    public static final int ID_LOW_FIELD_NUMBER = 2;
+    private long idLow_;
+    /**
+     * <code>uint64 id_low = 2;</code>
+     * @return The idLow.
+     */
+    @java.lang.Override
+    public long getIdLow() {
+      return idLow_;
+    }
+    /**
+     * <code>uint64 id_low = 2;</code>
+     * @param value The idLow to set.
+     */
+    private void setIdLow(long value) {
+      
+      idLow_ = value;
+    }
+    /**
+     * <code>uint64 id_low = 2;</code>
+     */
+    private void clearIdLow() {
+
+      idLow_ = 0L;
+    }
+
+    public static final int NAME_FIELD_NUMBER = 3;
+    private java.lang.String name_;
+    /**
+     * <code>string name = 3;</code>
+     * @return The name.
+     */
+    @java.lang.Override
+    public java.lang.String getName() {
+      return name_;
+    }
+    /**
+     * <code>string name = 3;</code>
+     * @return The bytes for name.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getNameBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(name_);
+    }
+    /**
+     * <code>string name = 3;</code>
+     * @param value The name to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setName(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      name_ = value;
+    }
+    /**
+     * <code>string name = 3;</code>
+     */
+    private void clearName() {
+
+      name_ = getDefaultInstance().getName();
+    }
+    /**
+     * <code>string name = 3;</code>
+     * @param value The bytes for name to set.
+     */
+    private void setNameBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      name_ = value.toStringUtf8();
+
+    }
+
+    public static final int MARKER_FIELD_NUMBER = 4;
+    private int marker_;
+    /**
+     * <code>.ai.edgez.halow.MarkerColor marker = 4;</code>
+     * @return The enum numeric value on the wire for marker.
+     */
+    @java.lang.Override
+    public int getMarkerValue() {
+      return marker_;
+    }
+    /**
+     * <code>.ai.edgez.halow.MarkerColor marker = 4;</code>
+     * @return The marker.
+     */
+    @java.lang.Override
+    public ai.edgez.halow.UsbControl.MarkerColor getMarker() {
+      ai.edgez.halow.UsbControl.MarkerColor result = ai.edgez.halow.UsbControl.MarkerColor.forNumber(marker_);
+      return result == null ? ai.edgez.halow.UsbControl.MarkerColor.UNRECOGNIZED : result;
+    }
+    /**
+     * <code>.ai.edgez.halow.MarkerColor marker = 4;</code>
+     * @param value The enum numeric value on the wire for marker to set.
+     */
+    private void setMarkerValue(int value) {
+        marker_ = value;
+    }
+    /**
+     * <code>.ai.edgez.halow.MarkerColor marker = 4;</code>
+     * @param value The marker to set.
+     */
+    private void setMarker(ai.edgez.halow.UsbControl.MarkerColor value) {
+      marker_ = value.getNumber();
+
+    }
+    /**
+     * <code>.ai.edgez.halow.MarkerColor marker = 4;</code>
+     */
+    private void clearMarker() {
+
+      marker_ = 0;
+    }
+
+    public static final int ALERT_CONDITION_FIELD_NUMBER = 5;
+    private int alertCondition_;
+    /**
+     * <code>.ai.edgez.halow.AlertCondition alert_condition = 5;</code>
+     * @return The enum numeric value on the wire for alertCondition.
+     */
+    @java.lang.Override
+    public int getAlertConditionValue() {
+      return alertCondition_;
+    }
+    /**
+     * <code>.ai.edgez.halow.AlertCondition alert_condition = 5;</code>
+     * @return The alertCondition.
+     */
+    @java.lang.Override
+    public ai.edgez.halow.UsbControl.AlertCondition getAlertCondition() {
+      ai.edgez.halow.UsbControl.AlertCondition result = ai.edgez.halow.UsbControl.AlertCondition.forNumber(alertCondition_);
+      return result == null ? ai.edgez.halow.UsbControl.AlertCondition.UNRECOGNIZED : result;
+    }
+    /**
+     * <code>.ai.edgez.halow.AlertCondition alert_condition = 5;</code>
+     * @param value The enum numeric value on the wire for alertCondition to set.
+     */
+    private void setAlertConditionValue(int value) {
+        alertCondition_ = value;
+    }
+    /**
+     * <code>.ai.edgez.halow.AlertCondition alert_condition = 5;</code>
+     * @param value The alertCondition to set.
+     */
+    private void setAlertCondition(ai.edgez.halow.UsbControl.AlertCondition value) {
+      alertCondition_ = value.getNumber();
+
+    }
+    /**
+     * <code>.ai.edgez.halow.AlertCondition alert_condition = 5;</code>
+     */
+    private void clearAlertCondition() {
+
+      alertCondition_ = 0;
+    }
+
+    public static ai.edgez.halow.UsbControl.GeoFence parseFrom(
+        java.nio.ByteBuffer data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static ai.edgez.halow.UsbControl.GeoFence parseFrom(
+        java.nio.ByteBuffer data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static ai.edgez.halow.UsbControl.GeoFence parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static ai.edgez.halow.UsbControl.GeoFence parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static ai.edgez.halow.UsbControl.GeoFence parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static ai.edgez.halow.UsbControl.GeoFence parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static ai.edgez.halow.UsbControl.GeoFence parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static ai.edgez.halow.UsbControl.GeoFence parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static ai.edgez.halow.UsbControl.GeoFence parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input);
+    }
+
+    public static ai.edgez.halow.UsbControl.GeoFence parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+    public static ai.edgez.halow.UsbControl.GeoFence parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static ai.edgez.halow.UsbControl.GeoFence parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static Builder newBuilder() {
+      return (Builder) DEFAULT_INSTANCE.createBuilder();
+    }
+    public static Builder newBuilder(ai.edgez.halow.UsbControl.GeoFence prototype) {
+      return DEFAULT_INSTANCE.createBuilder(prototype);
+    }
+
+    /**
+     * Protobuf type {@code ai.edgez.halow.GeoFence}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageLite.Builder<
+          ai.edgez.halow.UsbControl.GeoFence, Builder> implements
+        // @@protoc_insertion_point(builder_implements:ai.edgez.halow.GeoFence)
+        ai.edgez.halow.UsbControl.GeoFenceOrBuilder {
+      // Construct using ai.edgez.halow.UsbControl.GeoFence.newBuilder()
+      private Builder() {
+        super(DEFAULT_INSTANCE);
+      }
+
+
+      /**
+       * <code>uint64 id_high = 1;</code>
+       * @return The idHigh.
+       */
+      @java.lang.Override
+      public long getIdHigh() {
+        return instance.getIdHigh();
+      }
+      /**
+       * <code>uint64 id_high = 1;</code>
+       * @param value The idHigh to set.
+       * @return This builder for chaining.
+       */
+      public Builder setIdHigh(long value) {
+        copyOnWrite();
+        instance.setIdHigh(value);
+        return this;
+      }
+      /**
+       * <code>uint64 id_high = 1;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearIdHigh() {
+        copyOnWrite();
+        instance.clearIdHigh();
+        return this;
+      }
+
+      /**
+       * <code>uint64 id_low = 2;</code>
+       * @return The idLow.
+       */
+      @java.lang.Override
+      public long getIdLow() {
+        return instance.getIdLow();
+      }
+      /**
+       * <code>uint64 id_low = 2;</code>
+       * @param value The idLow to set.
+       * @return This builder for chaining.
+       */
+      public Builder setIdLow(long value) {
+        copyOnWrite();
+        instance.setIdLow(value);
+        return this;
+      }
+      /**
+       * <code>uint64 id_low = 2;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearIdLow() {
+        copyOnWrite();
+        instance.clearIdLow();
+        return this;
+      }
+
+      /**
+       * <code>string name = 3;</code>
+       * @return The name.
+       */
+      @java.lang.Override
+      public java.lang.String getName() {
+        return instance.getName();
+      }
+      /**
+       * <code>string name = 3;</code>
+       * @return The bytes for name.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getNameBytes() {
+        return instance.getNameBytes();
+      }
+      /**
+       * <code>string name = 3;</code>
+       * @param value The name to set.
+       * @return This builder for chaining.
+       */
+      public Builder setName(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setName(value);
+        return this;
+      }
+      /**
+       * <code>string name = 3;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearName() {
+        copyOnWrite();
+        instance.clearName();
+        return this;
+      }
+      /**
+       * <code>string name = 3;</code>
+       * @param value The bytes for name to set.
+       * @return This builder for chaining.
+       */
+      public Builder setNameBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setNameBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>.ai.edgez.halow.MarkerColor marker = 4;</code>
+       * @return The enum numeric value on the wire for marker.
+       */
+      @java.lang.Override
+      public int getMarkerValue() {
+        return instance.getMarkerValue();
+      }
+      /**
+       * <code>.ai.edgez.halow.MarkerColor marker = 4;</code>
+       * @param value The marker to set.
+       * @return This builder for chaining.
+       */
+      public Builder setMarkerValue(int value) {
+        copyOnWrite();
+        instance.setMarkerValue(value);
+        return this;
+      }
+      /**
+       * <code>.ai.edgez.halow.MarkerColor marker = 4;</code>
+       * @return The marker.
+       */
+      @java.lang.Override
+      public ai.edgez.halow.UsbControl.MarkerColor getMarker() {
+        return instance.getMarker();
+      }
+      /**
+       * <code>.ai.edgez.halow.MarkerColor marker = 4;</code>
+       * @param value The enum numeric value on the wire for marker to set.
+       * @return This builder for chaining.
+       */
+      public Builder setMarker(ai.edgez.halow.UsbControl.MarkerColor value) {
+        copyOnWrite();
+        instance.setMarker(value);
+        return this;
+      }
+      /**
+       * <code>.ai.edgez.halow.MarkerColor marker = 4;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearMarker() {
+        copyOnWrite();
+        instance.clearMarker();
+        return this;
+      }
+
+      /**
+       * <code>.ai.edgez.halow.AlertCondition alert_condition = 5;</code>
+       * @return The enum numeric value on the wire for alertCondition.
+       */
+      @java.lang.Override
+      public int getAlertConditionValue() {
+        return instance.getAlertConditionValue();
+      }
+      /**
+       * <code>.ai.edgez.halow.AlertCondition alert_condition = 5;</code>
+       * @param value The alertCondition to set.
+       * @return This builder for chaining.
+       */
+      public Builder setAlertConditionValue(int value) {
+        copyOnWrite();
+        instance.setAlertConditionValue(value);
+        return this;
+      }
+      /**
+       * <code>.ai.edgez.halow.AlertCondition alert_condition = 5;</code>
+       * @return The alertCondition.
+       */
+      @java.lang.Override
+      public ai.edgez.halow.UsbControl.AlertCondition getAlertCondition() {
+        return instance.getAlertCondition();
+      }
+      /**
+       * <code>.ai.edgez.halow.AlertCondition alert_condition = 5;</code>
+       * @param value The enum numeric value on the wire for alertCondition to set.
+       * @return This builder for chaining.
+       */
+      public Builder setAlertCondition(ai.edgez.halow.UsbControl.AlertCondition value) {
+        copyOnWrite();
+        instance.setAlertCondition(value);
+        return this;
+      }
+      /**
+       * <code>.ai.edgez.halow.AlertCondition alert_condition = 5;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearAlertCondition() {
+        copyOnWrite();
+        instance.clearAlertCondition();
+        return this;
+      }
+
+      // @@protoc_insertion_point(builder_scope:ai.edgez.halow.GeoFence)
+    }
+    @java.lang.Override
+    @java.lang.SuppressWarnings({"unchecked", "fallthrough"})
+    protected final java.lang.Object dynamicMethod(
+        com.google.protobuf.GeneratedMessageLite.MethodToInvoke method,
+        java.lang.Object arg0, java.lang.Object arg1) {
+      switch (method) {
+        case NEW_MUTABLE_INSTANCE: {
+          return new ai.edgez.halow.UsbControl.GeoFence();
+        }
+        case NEW_BUILDER: {
+          return new Builder();
+        }
+        case BUILD_MESSAGE_INFO: {
+            java.lang.Object[] objects = new java.lang.Object[] {
+              "idHigh_",
+              "idLow_",
+              "name_",
+              "marker_",
+              "alertCondition_",
+            };
+            java.lang.String info =
+                "\u0000\u0005\u0000\u0000\u0001\u0005\u0005\u0000\u0000\u0000\u0001\u0003\u0002\u0003" +
+                "\u0003\u0208\u0004\f\u0005\f";
+            return newMessageInfo(DEFAULT_INSTANCE, info, objects);
+        }
+        // fall through
+        case GET_DEFAULT_INSTANCE: {
+          return DEFAULT_INSTANCE;
+        }
+        case GET_PARSER: {
+          com.google.protobuf.Parser<ai.edgez.halow.UsbControl.GeoFence> parser = PARSER;
+          if (parser == null) {
+            synchronized (ai.edgez.halow.UsbControl.GeoFence.class) {
+              parser = PARSER;
+              if (parser == null) {
+                parser =
+                    new DefaultInstanceBasedParser<ai.edgez.halow.UsbControl.GeoFence>(
+                        DEFAULT_INSTANCE);
+                PARSER = parser;
+              }
+            }
+          }
+          return parser;
+      }
+      case GET_MEMOIZED_IS_INITIALIZED: {
+        return (byte) 1;
+      }
+      case SET_MEMOIZED_IS_INITIALIZED: {
+        return null;
+      }
+      }
+      throw new UnsupportedOperationException();
+    }
+
+
+    // @@protoc_insertion_point(class_scope:ai.edgez.halow.GeoFence)
+    private static final ai.edgez.halow.UsbControl.GeoFence DEFAULT_INSTANCE;
+    static {
+      GeoFence defaultInstance = new GeoFence();
+      // New instances are implicitly immutable so no need to make
+      // immutable.
+      DEFAULT_INSTANCE = defaultInstance;
+      com.google.protobuf.GeneratedMessageLite.registerDefaultInstance(
+        GeoFence.class, defaultInstance);
+    }
+
+    public static ai.edgez.halow.UsbControl.GeoFence getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    private static volatile com.google.protobuf.Parser<GeoFence> PARSER;
+
+    public static com.google.protobuf.Parser<GeoFence> parser() {
+      return DEFAULT_INSTANCE.getParserForType();
+    }
+  }
+
+  public interface SensorDataOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:ai.edgez.halow.SensorData)
+      com.google.protobuf.MessageLiteOrBuilder {
+
+    /**
+     * <code>float latitude = 4;</code>
+     * @return The latitude.
+     */
+    float getLatitude();
+
+    /**
+     * <code>float longitude = 5;</code>
+     * @return The longitude.
+     */
+    float getLongitude();
+
+    /**
+     * <code>float altitude = 6;</code>
+     * @return The altitude.
+     */
+    float getAltitude();
+
+    /**
+     * <code>float temperature = 7;</code>
+     * @return The temperature.
+     */
+    float getTemperature();
+
+    /**
+     * <code>float humidity = 8;</code>
+     * @return The humidity.
+     */
+    float getHumidity();
+
+    /**
+     * <code>float pressure = 9;</code>
+     * @return The pressure.
+     */
+    float getPressure();
+  }
+  /**
+   * Protobuf type {@code ai.edgez.halow.SensorData}
+   */
+  public  static final class SensorData extends
+      com.google.protobuf.GeneratedMessageLite<
+          SensorData, SensorData.Builder> implements
+      // @@protoc_insertion_point(message_implements:ai.edgez.halow.SensorData)
+      SensorDataOrBuilder {
+    private SensorData() {
+    }
+    public static final int LATITUDE_FIELD_NUMBER = 4;
+    private float latitude_;
+    /**
+     * <code>float latitude = 4;</code>
+     * @return The latitude.
+     */
+    @java.lang.Override
+    public float getLatitude() {
+      return latitude_;
+    }
+    /**
+     * <code>float latitude = 4;</code>
+     * @param value The latitude to set.
+     */
+    private void setLatitude(float value) {
+      
+      latitude_ = value;
+    }
+    /**
+     * <code>float latitude = 4;</code>
+     */
+    private void clearLatitude() {
+
+      latitude_ = 0F;
+    }
+
+    public static final int LONGITUDE_FIELD_NUMBER = 5;
+    private float longitude_;
+    /**
+     * <code>float longitude = 5;</code>
+     * @return The longitude.
+     */
+    @java.lang.Override
+    public float getLongitude() {
+      return longitude_;
+    }
+    /**
+     * <code>float longitude = 5;</code>
+     * @param value The longitude to set.
+     */
+    private void setLongitude(float value) {
+      
+      longitude_ = value;
+    }
+    /**
+     * <code>float longitude = 5;</code>
+     */
+    private void clearLongitude() {
+
+      longitude_ = 0F;
+    }
+
+    public static final int ALTITUDE_FIELD_NUMBER = 6;
+    private float altitude_;
+    /**
+     * <code>float altitude = 6;</code>
+     * @return The altitude.
+     */
+    @java.lang.Override
+    public float getAltitude() {
+      return altitude_;
+    }
+    /**
+     * <code>float altitude = 6;</code>
+     * @param value The altitude to set.
+     */
+    private void setAltitude(float value) {
+      
+      altitude_ = value;
+    }
+    /**
+     * <code>float altitude = 6;</code>
+     */
+    private void clearAltitude() {
+
+      altitude_ = 0F;
+    }
+
+    public static final int TEMPERATURE_FIELD_NUMBER = 7;
+    private float temperature_;
+    /**
+     * <code>float temperature = 7;</code>
+     * @return The temperature.
+     */
+    @java.lang.Override
+    public float getTemperature() {
+      return temperature_;
+    }
+    /**
+     * <code>float temperature = 7;</code>
+     * @param value The temperature to set.
+     */
+    private void setTemperature(float value) {
+      
+      temperature_ = value;
+    }
+    /**
+     * <code>float temperature = 7;</code>
+     */
+    private void clearTemperature() {
+
+      temperature_ = 0F;
+    }
+
+    public static final int HUMIDITY_FIELD_NUMBER = 8;
+    private float humidity_;
+    /**
+     * <code>float humidity = 8;</code>
+     * @return The humidity.
+     */
+    @java.lang.Override
+    public float getHumidity() {
+      return humidity_;
+    }
+    /**
+     * <code>float humidity = 8;</code>
+     * @param value The humidity to set.
+     */
+    private void setHumidity(float value) {
+      
+      humidity_ = value;
+    }
+    /**
+     * <code>float humidity = 8;</code>
+     */
+    private void clearHumidity() {
+
+      humidity_ = 0F;
+    }
+
+    public static final int PRESSURE_FIELD_NUMBER = 9;
+    private float pressure_;
+    /**
+     * <code>float pressure = 9;</code>
+     * @return The pressure.
+     */
+    @java.lang.Override
+    public float getPressure() {
+      return pressure_;
+    }
+    /**
+     * <code>float pressure = 9;</code>
+     * @param value The pressure to set.
+     */
+    private void setPressure(float value) {
+      
+      pressure_ = value;
+    }
+    /**
+     * <code>float pressure = 9;</code>
+     */
+    private void clearPressure() {
+
+      pressure_ = 0F;
+    }
+
+    public static ai.edgez.halow.UsbControl.SensorData parseFrom(
+        java.nio.ByteBuffer data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static ai.edgez.halow.UsbControl.SensorData parseFrom(
+        java.nio.ByteBuffer data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static ai.edgez.halow.UsbControl.SensorData parseFrom(
+        com.google.protobuf.ByteString data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static ai.edgez.halow.UsbControl.SensorData parseFrom(
+        com.google.protobuf.ByteString data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static ai.edgez.halow.UsbControl.SensorData parseFrom(byte[] data)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data);
+    }
+    public static ai.edgez.halow.UsbControl.SensorData parseFrom(
+        byte[] data,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws com.google.protobuf.InvalidProtocolBufferException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, data, extensionRegistry);
+    }
+    public static ai.edgez.halow.UsbControl.SensorData parseFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static ai.edgez.halow.UsbControl.SensorData parseFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static ai.edgez.halow.UsbControl.SensorData parseDelimitedFrom(java.io.InputStream input)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input);
+    }
+
+    public static ai.edgez.halow.UsbControl.SensorData parseDelimitedFrom(
+        java.io.InputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return parseDelimitedFrom(DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+    public static ai.edgez.halow.UsbControl.SensorData parseFrom(
+        com.google.protobuf.CodedInputStream input)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input);
+    }
+    public static ai.edgez.halow.UsbControl.SensorData parseFrom(
+        com.google.protobuf.CodedInputStream input,
+        com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+        throws java.io.IOException {
+      return com.google.protobuf.GeneratedMessageLite.parseFrom(
+          DEFAULT_INSTANCE, input, extensionRegistry);
+    }
+
+    public static Builder newBuilder() {
+      return (Builder) DEFAULT_INSTANCE.createBuilder();
+    }
+    public static Builder newBuilder(ai.edgez.halow.UsbControl.SensorData prototype) {
+      return DEFAULT_INSTANCE.createBuilder(prototype);
+    }
+
+    /**
+     * Protobuf type {@code ai.edgez.halow.SensorData}
+     */
+    public static final class Builder extends
+        com.google.protobuf.GeneratedMessageLite.Builder<
+          ai.edgez.halow.UsbControl.SensorData, Builder> implements
+        // @@protoc_insertion_point(builder_implements:ai.edgez.halow.SensorData)
+        ai.edgez.halow.UsbControl.SensorDataOrBuilder {
+      // Construct using ai.edgez.halow.UsbControl.SensorData.newBuilder()
+      private Builder() {
+        super(DEFAULT_INSTANCE);
+      }
+
+
+      /**
+       * <code>float latitude = 4;</code>
+       * @return The latitude.
+       */
+      @java.lang.Override
+      public float getLatitude() {
+        return instance.getLatitude();
+      }
+      /**
+       * <code>float latitude = 4;</code>
+       * @param value The latitude to set.
+       * @return This builder for chaining.
+       */
+      public Builder setLatitude(float value) {
+        copyOnWrite();
+        instance.setLatitude(value);
+        return this;
+      }
+      /**
+       * <code>float latitude = 4;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearLatitude() {
+        copyOnWrite();
+        instance.clearLatitude();
+        return this;
+      }
+
+      /**
+       * <code>float longitude = 5;</code>
+       * @return The longitude.
+       */
+      @java.lang.Override
+      public float getLongitude() {
+        return instance.getLongitude();
+      }
+      /**
+       * <code>float longitude = 5;</code>
+       * @param value The longitude to set.
+       * @return This builder for chaining.
+       */
+      public Builder setLongitude(float value) {
+        copyOnWrite();
+        instance.setLongitude(value);
+        return this;
+      }
+      /**
+       * <code>float longitude = 5;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearLongitude() {
+        copyOnWrite();
+        instance.clearLongitude();
+        return this;
+      }
+
+      /**
+       * <code>float altitude = 6;</code>
+       * @return The altitude.
+       */
+      @java.lang.Override
+      public float getAltitude() {
+        return instance.getAltitude();
+      }
+      /**
+       * <code>float altitude = 6;</code>
+       * @param value The altitude to set.
+       * @return This builder for chaining.
+       */
+      public Builder setAltitude(float value) {
+        copyOnWrite();
+        instance.setAltitude(value);
+        return this;
+      }
+      /**
+       * <code>float altitude = 6;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearAltitude() {
+        copyOnWrite();
+        instance.clearAltitude();
+        return this;
+      }
+
+      /**
+       * <code>float temperature = 7;</code>
+       * @return The temperature.
+       */
+      @java.lang.Override
+      public float getTemperature() {
+        return instance.getTemperature();
+      }
+      /**
+       * <code>float temperature = 7;</code>
+       * @param value The temperature to set.
+       * @return This builder for chaining.
+       */
+      public Builder setTemperature(float value) {
+        copyOnWrite();
+        instance.setTemperature(value);
+        return this;
+      }
+      /**
+       * <code>float temperature = 7;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearTemperature() {
+        copyOnWrite();
+        instance.clearTemperature();
+        return this;
+      }
+
+      /**
+       * <code>float humidity = 8;</code>
+       * @return The humidity.
+       */
+      @java.lang.Override
+      public float getHumidity() {
+        return instance.getHumidity();
+      }
+      /**
+       * <code>float humidity = 8;</code>
+       * @param value The humidity to set.
+       * @return This builder for chaining.
+       */
+      public Builder setHumidity(float value) {
+        copyOnWrite();
+        instance.setHumidity(value);
+        return this;
+      }
+      /**
+       * <code>float humidity = 8;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearHumidity() {
+        copyOnWrite();
+        instance.clearHumidity();
+        return this;
+      }
+
+      /**
+       * <code>float pressure = 9;</code>
+       * @return The pressure.
+       */
+      @java.lang.Override
+      public float getPressure() {
+        return instance.getPressure();
+      }
+      /**
+       * <code>float pressure = 9;</code>
+       * @param value The pressure to set.
+       * @return This builder for chaining.
+       */
+      public Builder setPressure(float value) {
+        copyOnWrite();
+        instance.setPressure(value);
+        return this;
+      }
+      /**
+       * <code>float pressure = 9;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearPressure() {
+        copyOnWrite();
+        instance.clearPressure();
+        return this;
+      }
+
+      // @@protoc_insertion_point(builder_scope:ai.edgez.halow.SensorData)
+    }
+    @java.lang.Override
+    @java.lang.SuppressWarnings({"unchecked", "fallthrough"})
+    protected final java.lang.Object dynamicMethod(
+        com.google.protobuf.GeneratedMessageLite.MethodToInvoke method,
+        java.lang.Object arg0, java.lang.Object arg1) {
+      switch (method) {
+        case NEW_MUTABLE_INSTANCE: {
+          return new ai.edgez.halow.UsbControl.SensorData();
+        }
+        case NEW_BUILDER: {
+          return new Builder();
+        }
+        case BUILD_MESSAGE_INFO: {
+            java.lang.Object[] objects = new java.lang.Object[] {
+              "latitude_",
+              "longitude_",
+              "altitude_",
+              "temperature_",
+              "humidity_",
+              "pressure_",
+            };
+            java.lang.String info =
+                "\u0000\u0006\u0000\u0000\u0004\t\u0006\u0000\u0000\u0000\u0004\u0001\u0005\u0001" +
+                "\u0006\u0001\u0007\u0001\b\u0001\t\u0001";
+            return newMessageInfo(DEFAULT_INSTANCE, info, objects);
+        }
+        // fall through
+        case GET_DEFAULT_INSTANCE: {
+          return DEFAULT_INSTANCE;
+        }
+        case GET_PARSER: {
+          com.google.protobuf.Parser<ai.edgez.halow.UsbControl.SensorData> parser = PARSER;
+          if (parser == null) {
+            synchronized (ai.edgez.halow.UsbControl.SensorData.class) {
+              parser = PARSER;
+              if (parser == null) {
+                parser =
+                    new DefaultInstanceBasedParser<ai.edgez.halow.UsbControl.SensorData>(
+                        DEFAULT_INSTANCE);
+                PARSER = parser;
+              }
+            }
+          }
+          return parser;
+      }
+      case GET_MEMOIZED_IS_INITIALIZED: {
+        return (byte) 1;
+      }
+      case SET_MEMOIZED_IS_INITIALIZED: {
+        return null;
+      }
+      }
+      throw new UnsupportedOperationException();
+    }
+
+
+    // @@protoc_insertion_point(class_scope:ai.edgez.halow.SensorData)
+    private static final ai.edgez.halow.UsbControl.SensorData DEFAULT_INSTANCE;
+    static {
+      SensorData defaultInstance = new SensorData();
+      // New instances are implicitly immutable so no need to make
+      // immutable.
+      DEFAULT_INSTANCE = defaultInstance;
+      com.google.protobuf.GeneratedMessageLite.registerDefaultInstance(
+        SensorData.class, defaultInstance);
+    }
+
+    public static ai.edgez.halow.UsbControl.SensorData getDefaultInstance() {
+      return DEFAULT_INSTANCE;
+    }
+
+    private static volatile com.google.protobuf.Parser<SensorData> PARSER;
+
+    public static com.google.protobuf.Parser<SensorData> parser() {
+      return DEFAULT_INSTANCE.getParserForType();
+    }
+  }
+
   public interface BeaconOrBuilder extends
       // @@protoc_insertion_point(interface_extends:ai.edgez.halow.Beacon)
       com.google.protobuf.MessageLiteOrBuilder {
@@ -2372,6 +4198,51 @@ public final class UsbControl {
      * @return The marker.
      */
     ai.edgez.halow.UsbControl.MarkerColor getMarker();
+
+    /**
+     * <code>.ai.edgez.halow.DeviceType device_type = 8;</code>
+     * @return The enum numeric value on the wire for deviceType.
+     */
+    int getDeviceTypeValue();
+    /**
+     * <code>.ai.edgez.halow.DeviceType device_type = 8;</code>
+     * @return The deviceType.
+     */
+    ai.edgez.halow.UsbControl.DeviceType getDeviceType();
+
+    /**
+     * <code>uint32 beacon_interval_seconds = 9;</code>
+     * @return The beaconIntervalSeconds.
+     */
+    int getBeaconIntervalSeconds();
+
+    /**
+     * <code>bool sleeping = 10;</code>
+     * @return The sleeping.
+     */
+    boolean getSleeping();
+
+    /**
+     * <code>.ai.edgez.halow.GeoFence geo_fence = 100;</code>
+     * @return Whether the geoFence field is set.
+     */
+    boolean hasGeoFence();
+    /**
+     * <code>.ai.edgez.halow.GeoFence geo_fence = 100;</code>
+     * @return The geoFence.
+     */
+    ai.edgez.halow.UsbControl.GeoFence getGeoFence();
+
+    /**
+     * <code>.ai.edgez.halow.SensorData sensor_data = 101;</code>
+     * @return Whether the sensorData field is set.
+     */
+    boolean hasSensorData();
+    /**
+     * <code>.ai.edgez.halow.SensorData sensor_data = 101;</code>
+     * @return The sensorData.
+     */
+    ai.edgez.halow.UsbControl.SensorData getSensorData();
   }
   /**
    * Protobuf type {@code ai.edgez.halow.Beacon}
@@ -2385,6 +4256,7 @@ public final class UsbControl {
       userName_ = "";
       userPublicKey_ = com.google.protobuf.ByteString.EMPTY;
     }
+    private int bitField0_;
     public static final int USER_ID_HIGH_FIELD_NUMBER = 1;
     private long userIdHigh_;
     /**
@@ -2604,6 +4476,194 @@ public final class UsbControl {
     private void clearMarker() {
 
       marker_ = 0;
+    }
+
+    public static final int DEVICE_TYPE_FIELD_NUMBER = 8;
+    private int deviceType_;
+    /**
+     * <code>.ai.edgez.halow.DeviceType device_type = 8;</code>
+     * @return The enum numeric value on the wire for deviceType.
+     */
+    @java.lang.Override
+    public int getDeviceTypeValue() {
+      return deviceType_;
+    }
+    /**
+     * <code>.ai.edgez.halow.DeviceType device_type = 8;</code>
+     * @return The deviceType.
+     */
+    @java.lang.Override
+    public ai.edgez.halow.UsbControl.DeviceType getDeviceType() {
+      ai.edgez.halow.UsbControl.DeviceType result = ai.edgez.halow.UsbControl.DeviceType.forNumber(deviceType_);
+      return result == null ? ai.edgez.halow.UsbControl.DeviceType.UNRECOGNIZED : result;
+    }
+    /**
+     * <code>.ai.edgez.halow.DeviceType device_type = 8;</code>
+     * @param value The enum numeric value on the wire for deviceType to set.
+     */
+    private void setDeviceTypeValue(int value) {
+        deviceType_ = value;
+    }
+    /**
+     * <code>.ai.edgez.halow.DeviceType device_type = 8;</code>
+     * @param value The deviceType to set.
+     */
+    private void setDeviceType(ai.edgez.halow.UsbControl.DeviceType value) {
+      deviceType_ = value.getNumber();
+
+    }
+    /**
+     * <code>.ai.edgez.halow.DeviceType device_type = 8;</code>
+     */
+    private void clearDeviceType() {
+
+      deviceType_ = 0;
+    }
+
+    public static final int BEACON_INTERVAL_SECONDS_FIELD_NUMBER = 9;
+    private int beaconIntervalSeconds_;
+    /**
+     * <code>uint32 beacon_interval_seconds = 9;</code>
+     * @return The beaconIntervalSeconds.
+     */
+    @java.lang.Override
+    public int getBeaconIntervalSeconds() {
+      return beaconIntervalSeconds_;
+    }
+    /**
+     * <code>uint32 beacon_interval_seconds = 9;</code>
+     * @param value The beaconIntervalSeconds to set.
+     */
+    private void setBeaconIntervalSeconds(int value) {
+      
+      beaconIntervalSeconds_ = value;
+    }
+    /**
+     * <code>uint32 beacon_interval_seconds = 9;</code>
+     */
+    private void clearBeaconIntervalSeconds() {
+
+      beaconIntervalSeconds_ = 0;
+    }
+
+    public static final int SLEEPING_FIELD_NUMBER = 10;
+    private boolean sleeping_;
+    /**
+     * <code>bool sleeping = 10;</code>
+     * @return The sleeping.
+     */
+    @java.lang.Override
+    public boolean getSleeping() {
+      return sleeping_;
+    }
+    /**
+     * <code>bool sleeping = 10;</code>
+     * @param value The sleeping to set.
+     */
+    private void setSleeping(boolean value) {
+      
+      sleeping_ = value;
+    }
+    /**
+     * <code>bool sleeping = 10;</code>
+     */
+    private void clearSleeping() {
+
+      sleeping_ = false;
+    }
+
+    public static final int GEO_FENCE_FIELD_NUMBER = 100;
+    private ai.edgez.halow.UsbControl.GeoFence geoFence_;
+    /**
+     * <code>.ai.edgez.halow.GeoFence geo_fence = 100;</code>
+     */
+    @java.lang.Override
+    public boolean hasGeoFence() {
+      return ((bitField0_ & 0x00000001) != 0);
+    }
+    /**
+     * <code>.ai.edgez.halow.GeoFence geo_fence = 100;</code>
+     */
+    @java.lang.Override
+    public ai.edgez.halow.UsbControl.GeoFence getGeoFence() {
+      return geoFence_ == null ? ai.edgez.halow.UsbControl.GeoFence.getDefaultInstance() : geoFence_;
+    }
+    /**
+     * <code>.ai.edgez.halow.GeoFence geo_fence = 100;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setGeoFence(ai.edgez.halow.UsbControl.GeoFence value) {
+      value.getClass();  // minimal bytecode null check
+      geoFence_ = value;
+      bitField0_ |= 0x00000001;
+      }
+    /**
+     * <code>.ai.edgez.halow.GeoFence geo_fence = 100;</code>
+     */
+    @java.lang.SuppressWarnings({"ReferenceEquality", "ReturnValueIgnored"})
+    private void mergeGeoFence(ai.edgez.halow.UsbControl.GeoFence value) {
+      value.getClass();  // minimal bytecode null check
+      if (geoFence_ != null &&
+          geoFence_ != ai.edgez.halow.UsbControl.GeoFence.getDefaultInstance()) {
+        geoFence_ =
+          ai.edgez.halow.UsbControl.GeoFence.newBuilder(geoFence_).mergeFrom(value).buildPartial();
+      } else {
+        geoFence_ = value;
+      }
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.ai.edgez.halow.GeoFence geo_fence = 100;</code>
+     */
+    private void clearGeoFence() {  geoFence_ = null;
+      bitField0_ = (bitField0_ & ~0x00000001);
+    }
+
+    public static final int SENSOR_DATA_FIELD_NUMBER = 101;
+    private ai.edgez.halow.UsbControl.SensorData sensorData_;
+    /**
+     * <code>.ai.edgez.halow.SensorData sensor_data = 101;</code>
+     */
+    @java.lang.Override
+    public boolean hasSensorData() {
+      return ((bitField0_ & 0x00000002) != 0);
+    }
+    /**
+     * <code>.ai.edgez.halow.SensorData sensor_data = 101;</code>
+     */
+    @java.lang.Override
+    public ai.edgez.halow.UsbControl.SensorData getSensorData() {
+      return sensorData_ == null ? ai.edgez.halow.UsbControl.SensorData.getDefaultInstance() : sensorData_;
+    }
+    /**
+     * <code>.ai.edgez.halow.SensorData sensor_data = 101;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setSensorData(ai.edgez.halow.UsbControl.SensorData value) {
+      value.getClass();  // minimal bytecode null check
+      sensorData_ = value;
+      bitField0_ |= 0x00000002;
+      }
+    /**
+     * <code>.ai.edgez.halow.SensorData sensor_data = 101;</code>
+     */
+    @java.lang.SuppressWarnings({"ReferenceEquality", "ReturnValueIgnored"})
+    private void mergeSensorData(ai.edgez.halow.UsbControl.SensorData value) {
+      value.getClass();  // minimal bytecode null check
+      if (sensorData_ != null &&
+          sensorData_ != ai.edgez.halow.UsbControl.SensorData.getDefaultInstance()) {
+        sensorData_ =
+          ai.edgez.halow.UsbControl.SensorData.newBuilder(sensorData_).mergeFrom(value).buildPartial();
+      } else {
+        sensorData_ = value;
+      }
+      bitField0_ |= 0x00000002;
+    }
+    /**
+     * <code>.ai.edgez.halow.SensorData sensor_data = 101;</code>
+     */
+    private void clearSensorData() {  sensorData_ = null;
+      bitField0_ = (bitField0_ & ~0x00000002);
     }
 
     public static ai.edgez.halow.UsbControl.Beacon parseFrom(
@@ -2938,6 +4998,202 @@ public final class UsbControl {
         return this;
       }
 
+      /**
+       * <code>.ai.edgez.halow.DeviceType device_type = 8;</code>
+       * @return The enum numeric value on the wire for deviceType.
+       */
+      @java.lang.Override
+      public int getDeviceTypeValue() {
+        return instance.getDeviceTypeValue();
+      }
+      /**
+       * <code>.ai.edgez.halow.DeviceType device_type = 8;</code>
+       * @param value The deviceType to set.
+       * @return This builder for chaining.
+       */
+      public Builder setDeviceTypeValue(int value) {
+        copyOnWrite();
+        instance.setDeviceTypeValue(value);
+        return this;
+      }
+      /**
+       * <code>.ai.edgez.halow.DeviceType device_type = 8;</code>
+       * @return The deviceType.
+       */
+      @java.lang.Override
+      public ai.edgez.halow.UsbControl.DeviceType getDeviceType() {
+        return instance.getDeviceType();
+      }
+      /**
+       * <code>.ai.edgez.halow.DeviceType device_type = 8;</code>
+       * @param value The enum numeric value on the wire for deviceType to set.
+       * @return This builder for chaining.
+       */
+      public Builder setDeviceType(ai.edgez.halow.UsbControl.DeviceType value) {
+        copyOnWrite();
+        instance.setDeviceType(value);
+        return this;
+      }
+      /**
+       * <code>.ai.edgez.halow.DeviceType device_type = 8;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearDeviceType() {
+        copyOnWrite();
+        instance.clearDeviceType();
+        return this;
+      }
+
+      /**
+       * <code>uint32 beacon_interval_seconds = 9;</code>
+       * @return The beaconIntervalSeconds.
+       */
+      @java.lang.Override
+      public int getBeaconIntervalSeconds() {
+        return instance.getBeaconIntervalSeconds();
+      }
+      /**
+       * <code>uint32 beacon_interval_seconds = 9;</code>
+       * @param value The beaconIntervalSeconds to set.
+       * @return This builder for chaining.
+       */
+      public Builder setBeaconIntervalSeconds(int value) {
+        copyOnWrite();
+        instance.setBeaconIntervalSeconds(value);
+        return this;
+      }
+      /**
+       * <code>uint32 beacon_interval_seconds = 9;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearBeaconIntervalSeconds() {
+        copyOnWrite();
+        instance.clearBeaconIntervalSeconds();
+        return this;
+      }
+
+      /**
+       * <code>bool sleeping = 10;</code>
+       * @return The sleeping.
+       */
+      @java.lang.Override
+      public boolean getSleeping() {
+        return instance.getSleeping();
+      }
+      /**
+       * <code>bool sleeping = 10;</code>
+       * @param value The sleeping to set.
+       * @return This builder for chaining.
+       */
+      public Builder setSleeping(boolean value) {
+        copyOnWrite();
+        instance.setSleeping(value);
+        return this;
+      }
+      /**
+       * <code>bool sleeping = 10;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearSleeping() {
+        copyOnWrite();
+        instance.clearSleeping();
+        return this;
+      }
+
+      /**
+       * <code>.ai.edgez.halow.GeoFence geo_fence = 100;</code>
+       */
+      @java.lang.Override
+      public boolean hasGeoFence() {
+        return instance.hasGeoFence();
+      }
+      /**
+       * <code>.ai.edgez.halow.GeoFence geo_fence = 100;</code>
+       */
+      @java.lang.Override
+      public ai.edgez.halow.UsbControl.GeoFence getGeoFence() {
+        return instance.getGeoFence();
+      }
+      /**
+       * <code>.ai.edgez.halow.GeoFence geo_fence = 100;</code>
+       */
+      public Builder setGeoFence(ai.edgez.halow.UsbControl.GeoFence value) {
+        copyOnWrite();
+        instance.setGeoFence(value);
+        return this;
+        }
+      /**
+       * <code>.ai.edgez.halow.GeoFence geo_fence = 100;</code>
+       */
+      public Builder setGeoFence(
+          ai.edgez.halow.UsbControl.GeoFence.Builder builderForValue) {
+        copyOnWrite();
+        instance.setGeoFence(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.ai.edgez.halow.GeoFence geo_fence = 100;</code>
+       */
+      public Builder mergeGeoFence(ai.edgez.halow.UsbControl.GeoFence value) {
+        copyOnWrite();
+        instance.mergeGeoFence(value);
+        return this;
+      }
+      /**
+       * <code>.ai.edgez.halow.GeoFence geo_fence = 100;</code>
+       */
+      public Builder clearGeoFence() {  copyOnWrite();
+        instance.clearGeoFence();
+        return this;
+      }
+
+      /**
+       * <code>.ai.edgez.halow.SensorData sensor_data = 101;</code>
+       */
+      @java.lang.Override
+      public boolean hasSensorData() {
+        return instance.hasSensorData();
+      }
+      /**
+       * <code>.ai.edgez.halow.SensorData sensor_data = 101;</code>
+       */
+      @java.lang.Override
+      public ai.edgez.halow.UsbControl.SensorData getSensorData() {
+        return instance.getSensorData();
+      }
+      /**
+       * <code>.ai.edgez.halow.SensorData sensor_data = 101;</code>
+       */
+      public Builder setSensorData(ai.edgez.halow.UsbControl.SensorData value) {
+        copyOnWrite();
+        instance.setSensorData(value);
+        return this;
+        }
+      /**
+       * <code>.ai.edgez.halow.SensorData sensor_data = 101;</code>
+       */
+      public Builder setSensorData(
+          ai.edgez.halow.UsbControl.SensorData.Builder builderForValue) {
+        copyOnWrite();
+        instance.setSensorData(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.ai.edgez.halow.SensorData sensor_data = 101;</code>
+       */
+      public Builder mergeSensorData(ai.edgez.halow.UsbControl.SensorData value) {
+        copyOnWrite();
+        instance.mergeSensorData(value);
+        return this;
+      }
+      /**
+       * <code>.ai.edgez.halow.SensorData sensor_data = 101;</code>
+       */
+      public Builder clearSensorData() {  copyOnWrite();
+        instance.clearSensorData();
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:ai.edgez.halow.Beacon)
     }
     @java.lang.Override
@@ -2954,6 +5210,7 @@ public final class UsbControl {
         }
         case BUILD_MESSAGE_INFO: {
             java.lang.Object[] objects = new java.lang.Object[] {
+              "bitField0_",
               "userIdHigh_",
               "userIdLow_",
               "userName_",
@@ -2961,10 +5218,16 @@ public final class UsbControl {
               "attitude_",
               "longitude_",
               "marker_",
+              "deviceType_",
+              "beaconIntervalSeconds_",
+              "sleeping_",
+              "geoFence_",
+              "sensorData_",
             };
             java.lang.String info =
-                "\u0000\u0007\u0000\u0000\u0001\u0007\u0007\u0000\u0000\u0000\u0001\u0003\u0002\u0003" +
-                "\u0003\u0208\u0004\n\u0005\u0001\u0006\u0001\u0007\f";
+                "\u0000\f\u0000\u0001\u0001e\f\u0000\u0000\u0000\u0001\u0003\u0002\u0003\u0003\u0208" +
+                "\u0004\n\u0005\u0001\u0006\u0001\u0007\f\b\f\t\u000b\n\u0007d\u1009\u0000e\u1009" +
+                "\u0001";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         // fall through
@@ -5010,6 +7273,39 @@ public final class UsbControl {
      * @return The maxHop.
      */
     int getMaxHop();
+
+    /**
+     * <code>.ai.edgez.halow.GeoFence geo_fence = 15;</code>
+     * @return Whether the geoFence field is set.
+     */
+    boolean hasGeoFence();
+    /**
+     * <code>.ai.edgez.halow.GeoFence geo_fence = 15;</code>
+     * @return The geoFence.
+     */
+    ai.edgez.halow.UsbControl.GeoFence getGeoFence();
+
+    /**
+     * <code>.ai.edgez.halow.SensorType uart_i2c_sensor_type = 16;</code>
+     * @return The enum numeric value on the wire for uartI2cSensorType.
+     */
+    int getUartI2CSensorTypeValue();
+    /**
+     * <code>.ai.edgez.halow.SensorType uart_i2c_sensor_type = 16;</code>
+     * @return The uartI2cSensorType.
+     */
+    ai.edgez.halow.UsbControl.SensorType getUartI2CSensorType();
+
+    /**
+     * <code>.ai.edgez.halow.SensorType rs485_sensor_type = 17;</code>
+     * @return The enum numeric value on the wire for rs485SensorType.
+     */
+    int getRs485SensorTypeValue();
+    /**
+     * <code>.ai.edgez.halow.SensorType rs485_sensor_type = 17;</code>
+     * @return The rs485SensorType.
+     */
+    ai.edgez.halow.UsbControl.SensorType getRs485SensorType();
   }
   /**
    * Protobuf type {@code ai.edgez.halow.DeviceSettings}
@@ -5025,6 +7321,7 @@ public final class UsbControl {
       userPublicKey_ = com.google.protobuf.ByteString.EMPTY;
       userPrivateKey_ = com.google.protobuf.ByteString.EMPTY;
     }
+    private int bitField0_;
     public static final int ACTION_FIELD_NUMBER = 1;
     private int action_;
     /**
@@ -5465,6 +7762,137 @@ public final class UsbControl {
     private void clearMaxHop() {
 
       maxHop_ = 0;
+    }
+
+    public static final int GEO_FENCE_FIELD_NUMBER = 15;
+    private ai.edgez.halow.UsbControl.GeoFence geoFence_;
+    /**
+     * <code>.ai.edgez.halow.GeoFence geo_fence = 15;</code>
+     */
+    @java.lang.Override
+    public boolean hasGeoFence() {
+      return ((bitField0_ & 0x00000001) != 0);
+    }
+    /**
+     * <code>.ai.edgez.halow.GeoFence geo_fence = 15;</code>
+     */
+    @java.lang.Override
+    public ai.edgez.halow.UsbControl.GeoFence getGeoFence() {
+      return geoFence_ == null ? ai.edgez.halow.UsbControl.GeoFence.getDefaultInstance() : geoFence_;
+    }
+    /**
+     * <code>.ai.edgez.halow.GeoFence geo_fence = 15;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setGeoFence(ai.edgez.halow.UsbControl.GeoFence value) {
+      value.getClass();  // minimal bytecode null check
+      geoFence_ = value;
+      bitField0_ |= 0x00000001;
+      }
+    /**
+     * <code>.ai.edgez.halow.GeoFence geo_fence = 15;</code>
+     */
+    @java.lang.SuppressWarnings({"ReferenceEquality", "ReturnValueIgnored"})
+    private void mergeGeoFence(ai.edgez.halow.UsbControl.GeoFence value) {
+      value.getClass();  // minimal bytecode null check
+      if (geoFence_ != null &&
+          geoFence_ != ai.edgez.halow.UsbControl.GeoFence.getDefaultInstance()) {
+        geoFence_ =
+          ai.edgez.halow.UsbControl.GeoFence.newBuilder(geoFence_).mergeFrom(value).buildPartial();
+      } else {
+        geoFence_ = value;
+      }
+      bitField0_ |= 0x00000001;
+    }
+    /**
+     * <code>.ai.edgez.halow.GeoFence geo_fence = 15;</code>
+     */
+    private void clearGeoFence() {  geoFence_ = null;
+      bitField0_ = (bitField0_ & ~0x00000001);
+    }
+
+    public static final int UART_I2C_SENSOR_TYPE_FIELD_NUMBER = 16;
+    private int uartI2CSensorType_;
+    /**
+     * <code>.ai.edgez.halow.SensorType uart_i2c_sensor_type = 16;</code>
+     * @return The enum numeric value on the wire for uartI2cSensorType.
+     */
+    @java.lang.Override
+    public int getUartI2CSensorTypeValue() {
+      return uartI2CSensorType_;
+    }
+    /**
+     * <code>.ai.edgez.halow.SensorType uart_i2c_sensor_type = 16;</code>
+     * @return The uartI2cSensorType.
+     */
+    @java.lang.Override
+    public ai.edgez.halow.UsbControl.SensorType getUartI2CSensorType() {
+      ai.edgez.halow.UsbControl.SensorType result = ai.edgez.halow.UsbControl.SensorType.forNumber(uartI2CSensorType_);
+      return result == null ? ai.edgez.halow.UsbControl.SensorType.UNRECOGNIZED : result;
+    }
+    /**
+     * <code>.ai.edgez.halow.SensorType uart_i2c_sensor_type = 16;</code>
+     * @param value The enum numeric value on the wire for uartI2cSensorType to set.
+     */
+    private void setUartI2CSensorTypeValue(int value) {
+        uartI2CSensorType_ = value;
+    }
+    /**
+     * <code>.ai.edgez.halow.SensorType uart_i2c_sensor_type = 16;</code>
+     * @param value The uartI2cSensorType to set.
+     */
+    private void setUartI2CSensorType(ai.edgez.halow.UsbControl.SensorType value) {
+      uartI2CSensorType_ = value.getNumber();
+
+    }
+    /**
+     * <code>.ai.edgez.halow.SensorType uart_i2c_sensor_type = 16;</code>
+     */
+    private void clearUartI2CSensorType() {
+
+      uartI2CSensorType_ = 0;
+    }
+
+    public static final int RS485_SENSOR_TYPE_FIELD_NUMBER = 17;
+    private int rs485SensorType_;
+    /**
+     * <code>.ai.edgez.halow.SensorType rs485_sensor_type = 17;</code>
+     * @return The enum numeric value on the wire for rs485SensorType.
+     */
+    @java.lang.Override
+    public int getRs485SensorTypeValue() {
+      return rs485SensorType_;
+    }
+    /**
+     * <code>.ai.edgez.halow.SensorType rs485_sensor_type = 17;</code>
+     * @return The rs485SensorType.
+     */
+    @java.lang.Override
+    public ai.edgez.halow.UsbControl.SensorType getRs485SensorType() {
+      ai.edgez.halow.UsbControl.SensorType result = ai.edgez.halow.UsbControl.SensorType.forNumber(rs485SensorType_);
+      return result == null ? ai.edgez.halow.UsbControl.SensorType.UNRECOGNIZED : result;
+    }
+    /**
+     * <code>.ai.edgez.halow.SensorType rs485_sensor_type = 17;</code>
+     * @param value The enum numeric value on the wire for rs485SensorType to set.
+     */
+    private void setRs485SensorTypeValue(int value) {
+        rs485SensorType_ = value;
+    }
+    /**
+     * <code>.ai.edgez.halow.SensorType rs485_sensor_type = 17;</code>
+     * @param value The rs485SensorType to set.
+     */
+    private void setRs485SensorType(ai.edgez.halow.UsbControl.SensorType value) {
+      rs485SensorType_ = value.getNumber();
+
+    }
+    /**
+     * <code>.ai.edgez.halow.SensorType rs485_sensor_type = 17;</code>
+     */
+    private void clearRs485SensorType() {
+
+      rs485SensorType_ = 0;
     }
 
     public static ai.edgez.halow.UsbControl.DeviceSettings parseFrom(
@@ -6034,6 +8462,145 @@ public final class UsbControl {
         return this;
       }
 
+      /**
+       * <code>.ai.edgez.halow.GeoFence geo_fence = 15;</code>
+       */
+      @java.lang.Override
+      public boolean hasGeoFence() {
+        return instance.hasGeoFence();
+      }
+      /**
+       * <code>.ai.edgez.halow.GeoFence geo_fence = 15;</code>
+       */
+      @java.lang.Override
+      public ai.edgez.halow.UsbControl.GeoFence getGeoFence() {
+        return instance.getGeoFence();
+      }
+      /**
+       * <code>.ai.edgez.halow.GeoFence geo_fence = 15;</code>
+       */
+      public Builder setGeoFence(ai.edgez.halow.UsbControl.GeoFence value) {
+        copyOnWrite();
+        instance.setGeoFence(value);
+        return this;
+        }
+      /**
+       * <code>.ai.edgez.halow.GeoFence geo_fence = 15;</code>
+       */
+      public Builder setGeoFence(
+          ai.edgez.halow.UsbControl.GeoFence.Builder builderForValue) {
+        copyOnWrite();
+        instance.setGeoFence(builderForValue.build());
+        return this;
+      }
+      /**
+       * <code>.ai.edgez.halow.GeoFence geo_fence = 15;</code>
+       */
+      public Builder mergeGeoFence(ai.edgez.halow.UsbControl.GeoFence value) {
+        copyOnWrite();
+        instance.mergeGeoFence(value);
+        return this;
+      }
+      /**
+       * <code>.ai.edgez.halow.GeoFence geo_fence = 15;</code>
+       */
+      public Builder clearGeoFence() {  copyOnWrite();
+        instance.clearGeoFence();
+        return this;
+      }
+
+      /**
+       * <code>.ai.edgez.halow.SensorType uart_i2c_sensor_type = 16;</code>
+       * @return The enum numeric value on the wire for uartI2cSensorType.
+       */
+      @java.lang.Override
+      public int getUartI2CSensorTypeValue() {
+        return instance.getUartI2CSensorTypeValue();
+      }
+      /**
+       * <code>.ai.edgez.halow.SensorType uart_i2c_sensor_type = 16;</code>
+       * @param value The uartI2cSensorType to set.
+       * @return This builder for chaining.
+       */
+      public Builder setUartI2CSensorTypeValue(int value) {
+        copyOnWrite();
+        instance.setUartI2CSensorTypeValue(value);
+        return this;
+      }
+      /**
+       * <code>.ai.edgez.halow.SensorType uart_i2c_sensor_type = 16;</code>
+       * @return The uartI2cSensorType.
+       */
+      @java.lang.Override
+      public ai.edgez.halow.UsbControl.SensorType getUartI2CSensorType() {
+        return instance.getUartI2CSensorType();
+      }
+      /**
+       * <code>.ai.edgez.halow.SensorType uart_i2c_sensor_type = 16;</code>
+       * @param value The enum numeric value on the wire for uartI2cSensorType to set.
+       * @return This builder for chaining.
+       */
+      public Builder setUartI2CSensorType(ai.edgez.halow.UsbControl.SensorType value) {
+        copyOnWrite();
+        instance.setUartI2CSensorType(value);
+        return this;
+      }
+      /**
+       * <code>.ai.edgez.halow.SensorType uart_i2c_sensor_type = 16;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearUartI2CSensorType() {
+        copyOnWrite();
+        instance.clearUartI2CSensorType();
+        return this;
+      }
+
+      /**
+       * <code>.ai.edgez.halow.SensorType rs485_sensor_type = 17;</code>
+       * @return The enum numeric value on the wire for rs485SensorType.
+       */
+      @java.lang.Override
+      public int getRs485SensorTypeValue() {
+        return instance.getRs485SensorTypeValue();
+      }
+      /**
+       * <code>.ai.edgez.halow.SensorType rs485_sensor_type = 17;</code>
+       * @param value The rs485SensorType to set.
+       * @return This builder for chaining.
+       */
+      public Builder setRs485SensorTypeValue(int value) {
+        copyOnWrite();
+        instance.setRs485SensorTypeValue(value);
+        return this;
+      }
+      /**
+       * <code>.ai.edgez.halow.SensorType rs485_sensor_type = 17;</code>
+       * @return The rs485SensorType.
+       */
+      @java.lang.Override
+      public ai.edgez.halow.UsbControl.SensorType getRs485SensorType() {
+        return instance.getRs485SensorType();
+      }
+      /**
+       * <code>.ai.edgez.halow.SensorType rs485_sensor_type = 17;</code>
+       * @param value The enum numeric value on the wire for rs485SensorType to set.
+       * @return This builder for chaining.
+       */
+      public Builder setRs485SensorType(ai.edgez.halow.UsbControl.SensorType value) {
+        copyOnWrite();
+        instance.setRs485SensorType(value);
+        return this;
+      }
+      /**
+       * <code>.ai.edgez.halow.SensorType rs485_sensor_type = 17;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearRs485SensorType() {
+        copyOnWrite();
+        instance.clearRs485SensorType();
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:ai.edgez.halow.DeviceSettings)
     }
     @java.lang.Override
@@ -6050,6 +8617,7 @@ public final class UsbControl {
         }
         case BUILD_MESSAGE_INFO: {
             java.lang.Object[] objects = new java.lang.Object[] {
+              "bitField0_",
               "action_",
               "deviceModeEnabled_",
               "meshId_",
@@ -6064,11 +8632,14 @@ public final class UsbControl {
               "latitude_",
               "longitude_",
               "maxHop_",
+              "geoFence_",
+              "uartI2CSensorType_",
+              "rs485SensorType_",
             };
             java.lang.String info =
-                "\u0000\u000e\u0000\u0000\u0001\u000e\u000e\u0000\u0000\u0000\u0001\f\u0002\u0007" +
+                "\u0000\u0011\u0000\u0001\u0001\u0011\u0011\u0000\u0000\u0000\u0001\f\u0002\u0007" +
                 "\u0003\u0208\u0004\u0007\u0005\u0208\u0006\f\u0007\u000b\b\u0003\t\u0003\n\n\u000b" +
-                "\n\f\u0001\r\u0001\u000e\u000b";
+                "\n\f\u0001\r\u0001\u000e\u000b\u000f\u1009\u0000\u0010\f\u0011\f";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         // fall through

@@ -12,6 +12,9 @@ import android.hardware.usb.UsbManager
 import android.os.Build
 import android.util.Log
 import ai.edgez.halow.UsbControl
+import ai.edgez.edgez.DeviceGeoFence
+import ai.edgez.edgez.DeviceSensorType
+import ai.edgez.edgez.GeoFenceAlertCondition
 import ai.edgez.edgez.NodeMapMarker
 import com.google.protobuf.ByteString
 import com.google.protobuf.InvalidProtocolBufferException
@@ -184,6 +187,9 @@ data class DeviceSettings(
     val latitude: Double? = null,
     val longitude: Double? = null,
     val maxHop: Int = 0,
+    val geoFence: DeviceGeoFence? = null,
+    val uartI2cSensorType: DeviceSensorType = DeviceSensorType.UNSPECIFIED,
+    val rs485SensorType: DeviceSensorType = DeviceSensorType.UNSPECIFIED,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -203,7 +209,10 @@ data class DeviceSettings(
             userPrivateKey.contentEquals(other.userPrivateKey) &&
             latitude == other.latitude &&
             longitude == other.longitude &&
-            maxHop == other.maxHop
+            maxHop == other.maxHop &&
+            geoFence == other.geoFence &&
+            uartI2cSensorType == other.uartI2cSensorType &&
+            rs485SensorType == other.rs485SensorType
     }
 
     override fun hashCode(): Int {
@@ -221,6 +230,9 @@ data class DeviceSettings(
         result = 31 * result + (latitude?.hashCode() ?: 0)
         result = 31 * result + (longitude?.hashCode() ?: 0)
         result = 31 * result + maxHop
+        result = 31 * result + (geoFence?.hashCode() ?: 0)
+        result = 31 * result + uartI2cSensorType.hashCode()
+        result = 31 * result + rs485SensorType.hashCode()
         return result
     }
 }
@@ -511,6 +523,9 @@ object EdgezUsbControlProto {
             .setUserPublicKey(ByteString.copyFrom(settings.userPublicKey.copyOf(minOf(settings.userPublicKey.size, 32))))
             .setUserPrivateKey(ByteString.copyFrom(settings.userPrivateKey.copyOf(minOf(settings.userPrivateKey.size, 32))))
             .setMaxHop(settings.maxHop.coerceIn(0, 255))
+            .setUartI2CSensorType(settings.uartI2cSensorType.toProtoSensorType())
+            .setRs485SensorType(settings.rs485SensorType.toProtoSensorType())
+        settings.geoFence?.let { protoSettings.setGeoFence(it.toProtoGeoFence()) }
         if (settings.latitude != null && settings.longitude != null) {
             protoSettings.setLatitude(settings.latitude.toFloat())
             protoSettings.setLongitude(settings.longitude.toFloat())
@@ -873,7 +888,38 @@ object EdgezUsbControlProto {
             latitude = latitude.toDouble().takeIf { latitude != 0f },
             longitude = longitude.toDouble().takeIf { longitude != 0f },
             maxHop = maxHop.coerceIn(0, 255),
+            geoFence = if (hasGeoFence()) geoFence.toAppGeoFence() else null,
+            uartI2cSensorType = DeviceSensorType.fromProtoValue(uartI2CSensorTypeValue),
+            rs485SensorType = DeviceSensorType.fromProtoValue(rs485SensorTypeValue),
         )
+    }
+
+    private fun DeviceGeoFence.toProtoGeoFence(): UsbControl.GeoFence {
+        return UsbControl.GeoFence.newBuilder()
+            .setIdHigh(idHigh)
+            .setIdLow(idLow)
+            .setName(name.take(64))
+            .setMarker(NodeMapMarker.fromId(marker).toProtoMarkerColor())
+            .setAlertCondition(alertCondition.toProtoAlertCondition())
+            .build()
+    }
+
+    private fun UsbControl.GeoFence.toAppGeoFence(): DeviceGeoFence {
+        return DeviceGeoFence(
+            idHigh = idHigh,
+            idLow = idLow,
+            name = name.ifBlank { "Geo fence" }.take(64),
+            marker = marker.toNodeMarkerId(),
+            alertCondition = GeoFenceAlertCondition.fromProtoValue(alertConditionValue),
+        )
+    }
+
+    private fun DeviceSensorType.toProtoSensorType(): UsbControl.SensorType {
+        return UsbControl.SensorType.forNumber(protoValue) ?: UsbControl.SensorType.SENSOR_TYPE_UNSPECIFIED
+    }
+
+    private fun GeoFenceAlertCondition.toProtoAlertCondition(): UsbControl.AlertCondition {
+        return UsbControl.AlertCondition.forNumber(protoValue) ?: UsbControl.AlertCondition.ALERT_CONDITION_UNSPECIFIED
     }
 
     private fun UsbControl.Beacon.toAppBeacon(): EdgeZAssocMetadata? {

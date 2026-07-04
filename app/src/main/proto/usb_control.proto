@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package ai.edgez.halow;
 
+
 enum Operation {
   OPERATION_UNSPECIFIED = 0;
   REQUEST = 1;
@@ -57,17 +58,17 @@ enum DeviceSettingsAction {
 }
 
 message NetworkPacket {
-  uint64 message_id_high = 1;
-  uint64 message_id_low = 2;
+  uint64 message_id_high = 1; // high 64 bits of message UUID
+  uint64 message_id_low = 2;  // low 64 bits of message UUID
   uint64 from = 3;
   uint64 to = 4;
   Operation operation = 5;
-  Interface interface = 6;
-  uint32 sequence = 7;
-  uint64 user_high = 8;
-  uint64 user_low = 9;
-  Mime mime = 10;
-  uint32 max_hop = 11;
+  Interface interface = 6;  // self interface when option is request,broadcast, target interface for response. 
+  uint32 sequence = 7; // when a message need to split into chunks, use sequence to control it
+  uint64 user_high = 8;   // high 64 bits of self user UUID
+  uint64 user_low = 9;    // low 64 bits of self user UUID
+  Mime mime = 10;         // encrypted payload media type
+  uint32 max_hop = 11;    // hop limit for forwarding this packet
 
   oneof body {
     bytes payload = 100;
@@ -78,6 +79,52 @@ message NetworkPacket {
   }
 }
 
+enum DeviceType {
+  DEVICE_TYPE_UNSPECIFIED = 0;
+  DEVICE_TYPE_UNKNOWN = 1;
+  DEVICE_TYPE_USER = 2;
+  DEVICE_TYPE_GATEWAY = 3;
+  DEVICE_TYPE_BEACON = 4;
+  DEVICE_TYPE_SENSOR = 5;
+}
+
+enum AlertCondition {
+  ALERT_CONDITION_UNSPECIFIED = 0;
+  ALERT_CONDITION_ENTER = 1;
+  ALERT_CONDITION_EXIT = 2;
+  ALERT_CONDITION_NEAR = 3;
+  ALERT_CONDITION_FAR = 4;
+  ALERT_CONDITION_LOW_BATTERY = 5;
+}
+
+enum SensorType {
+  SENSOR_TYPE_UNSPECIFIED = 0;
+  SENSOR_TYPE_NONE = 1;
+  SENSOR_TYPE_TEMPERATURE = 2;
+  SENSOR_TYPE_HUMIDITY = 3;
+  SENSOR_TYPE_PRESSURE = 4;
+  SENSOR_TYPE_TEMPERATURE_HUMIDITY = 5;
+  SENSOR_TYPE_TEMPERATURE_HUMIDITY_PRESSURE = 6;
+  SENSOR_TYPE_GPS = 7;
+}
+
+message GeoFence {
+  uint64 id_high = 1;
+  uint64 id_low = 2;
+  string name = 3;
+  MarkerColor marker = 4;
+  AlertCondition alert_condition = 5;
+}
+
+message SensorData {
+  float latitude = 4;
+  float longitude = 5;
+  float altitude = 6;
+  float temperature = 7;
+  float humidity = 8;
+  float pressure = 9;
+}
+
 message Beacon {
   uint64 user_id_high = 1;
   uint64 user_id_low = 2;
@@ -86,7 +133,13 @@ message Beacon {
   float attitude = 5;
   float longitude = 6;
   MarkerColor marker = 7;
+  DeviceType device_type = 8;
+  uint32 beacon_interval_seconds = 9;
+  bool sleeping = 10;
+  GeoFence geo_fence = 100;
+  SensorData sensor_data = 101;
 }
+
 
 message HaLowInterfaceStatus {
   bool supported = 1;
@@ -101,6 +154,8 @@ message HaLowInterfaceStatus {
   string gateway = 10;
   uint64 mac_address = 11;
 }
+
+
 
 message HaLowInitConfig {
   string country_code = 1;
@@ -128,4 +183,7 @@ message DeviceSettings {
   float latitude = 12;
   float longitude = 13;
   uint32 max_hop = 14;
+  GeoFence geo_fence = 15;
+  SensorType uart_i2c_sensor_type = 16;
+  SensorType rs485_sensor_type = 17;
 }

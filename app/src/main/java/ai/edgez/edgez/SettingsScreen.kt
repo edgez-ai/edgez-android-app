@@ -111,6 +111,13 @@ fun SettingsScreen(
     var deviceShareLocation by rememberSaveable { mutableStateOf(false) }
     var deviceLatitude by rememberSaveable { mutableStateOf<Double?>(null) }
     var deviceLongitude by rememberSaveable { mutableStateOf<Double?>(null) }
+    var deviceGeoFences by remember { mutableStateOf(connectionPreferences.getDeviceGeoFences()) }
+    var selectedDeviceGeoFenceKey by rememberSaveable { mutableStateOf(connectionPreferences.getSelectedDeviceGeoFenceKey() ?: "") }
+    var showGeoFencePage by rememberSaveable { mutableStateOf(false) }
+    var deviceUartI2cSensorType by rememberSaveable { mutableStateOf(DeviceSensorType.UNSPECIFIED.name) }
+    var deviceRs485SensorType by rememberSaveable { mutableStateOf(DeviceSensorType.UNSPECIFIED.name) }
+    var uartI2cSensorDropdownExpanded by remember { mutableStateOf(false) }
+    var rs485SensorDropdownExpanded by remember { mutableStateOf(false) }
     var deviceMode by rememberSaveable { mutableStateOf(DeviceModeState.enabled) }
     var autoReplayReceivedVoice by rememberSaveable { mutableStateOf(connectionPreferences.getAutoReplayReceivedVoice()) }
     var showDebugPopup by rememberSaveable { mutableStateOf(false) }
@@ -118,6 +125,27 @@ fun SettingsScreen(
     val activity = context as? ComponentActivity
     val currentOnTransportConnectionChange by rememberUpdatedState(onTransportConnectionChange)
     val showDeviceSettingsOnly = activeConnection != ActiveConnection.NONE && deviceMode
+
+    if (showGeoFencePage) {
+        GeoFenceMaintenanceScreen(
+            geoFences = deviceGeoFences,
+            selectedKey = selectedDeviceGeoFenceKey,
+            onGeoFencesChange = { updated ->
+                deviceGeoFences = updated
+                connectionPreferences.saveDeviceGeoFences(updated)
+                if (selectedDeviceGeoFenceKey.isNotBlank() && updated.none { it.key == selectedDeviceGeoFenceKey }) {
+                    selectedDeviceGeoFenceKey = ""
+                    connectionPreferences.setSelectedDeviceGeoFenceKey(null)
+                }
+            },
+            onSelectedKeyChange = { key ->
+                selectedDeviceGeoFenceKey = key.orEmpty()
+                connectionPreferences.setSelectedDeviceGeoFenceKey(key)
+            },
+            onBack = { showGeoFencePage = false },
+        )
+        return
+    }
 
     if (showDebugPopup) {
         DebugScreen(
@@ -143,6 +171,8 @@ fun SettingsScreen(
         deviceMode = false
         DeviceModeState.enabled = false
         autoReplayReceivedVoice = connectionPreferences.getAutoReplayReceivedVoice()
+        deviceGeoFences = connectionPreferences.getDeviceGeoFences()
+        selectedDeviceGeoFenceKey = connectionPreferences.getSelectedDeviceGeoFenceKey() ?: ""
         onShareLocationChange(connectionPreferences.getShareLocation())
     }
 
@@ -256,6 +286,19 @@ fun SettingsScreen(
             deviceLatitude = settings.latitude
             deviceLongitude = settings.longitude
         }
+        settings.geoFence?.let { geoFence ->
+            val updatedGeoFences = if (deviceGeoFences.any { it.key == geoFence.key }) {
+                deviceGeoFences.map { if (it.key == geoFence.key) geoFence else it }
+            } else {
+                deviceGeoFences + geoFence
+            }
+            deviceGeoFences = updatedGeoFences
+            connectionPreferences.saveDeviceGeoFences(updatedGeoFences)
+            selectedDeviceGeoFenceKey = geoFence.key
+            connectionPreferences.setSelectedDeviceGeoFenceKey(geoFence.key)
+        }
+        deviceUartI2cSensorType = settings.uartI2cSensorType.name
+        deviceRs485SensorType = settings.rs485SensorType.name
         if (deviceIdentity == null && (settings.userIdHigh != 0L || settings.userIdLow != 0L) && settings.userPrivateKey.size == 32) {
             val publicKey = if (settings.userPublicKey.size == 32) {
                 settings.userPublicKey
@@ -292,6 +335,9 @@ fun SettingsScreen(
             latitude = deviceLatitude.takeIf { deviceShareLocation },
             longitude = deviceLongitude.takeIf { deviceShareLocation },
             maxHop = deviceMaxHop.toIntOrNull() ?: connectionPreferences.getMeshMaxHop(),
+            geoFence = deviceGeoFences.firstOrNull { it.key == selectedDeviceGeoFenceKey },
+            uartI2cSensorType = DeviceSensorType.fromName(deviceUartI2cSensorType),
+            rs485SensorType = DeviceSensorType.fromName(deviceRs485SensorType),
         )
     }
 
@@ -752,6 +798,62 @@ fun SettingsScreen(
                 }
             }
 
+            if (showDeviceSettingsOnly) item {
+                SettingsCard(title = "Device geofence") {
+                    val selectedGeoFence = deviceGeoFences.firstOrNull { it.key == selectedDeviceGeoFenceKey }
+                    Text(
+                        selectedGeoFence?.let { "Selected: ${it.name}" } ?: "No geofence selected",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { showGeoFencePage = true }) {
+                            Text("Manage")
+                        }
+                        OutlinedButton(
+                            enabled = selectedDeviceGeoFenceKey.isNotBlank(),
+                            onClick = {
+                                selectedDeviceGeoFenceKey = ""
+                                connectionPreferences.setSelectedDeviceGeoFenceKey(null)
+                                status = "Device geofence cleared"
+                            },
+                        ) {
+                            Text("Clear")
+                        }
+                    }
+                }
+            }
+
+            if (showDeviceSettingsOnly) item {
+                SettingsCard(title = "Device sensors") {
+                    SensorTypeDropdown(
+                        label = "UART/I2C connector",
+                        selected = DeviceSensorType.fromName(deviceUartI2cSensorType),
+                        expanded = uartI2cSensorDropdownExpanded,
+                        onExpandedChange = { uartI2cSensorDropdownExpanded = it },
+                        onSelected = { selectedType ->
+                            deviceUartI2cSensorType = selectedType.name
+                            status = "UART/I2C sensor set to ${selectedType.label}"
+                        },
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    SensorTypeDropdown(
+                        label = "RS485 connector",
+                        selected = DeviceSensorType.fromName(deviceRs485SensorType),
+                        expanded = rs485SensorDropdownExpanded,
+                        onExpandedChange = { rs485SensorDropdownExpanded = it },
+                        onSelected = { selectedType ->
+                            deviceRs485SensorType = selectedType.name
+                            status = "RS485 sensor set to ${selectedType.label}"
+                        },
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Button(onClick = { sendDeviceSettingsToDevice() }) {
+                        Text("Save sensors")
+                    }
+                }
+            }
+
             item {
                 SettingsCard(title = if (showDeviceSettingsOnly) "Device settings" else "Mesh network") {
                     if (!showDeviceSettingsOnly) {
@@ -859,6 +961,217 @@ fun SettingsScreen(
                                 status = if (enabled) "Auto replay enabled" else "Auto replay disabled"
                             },
                         )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SensorTypeDropdown(
+    label: String,
+    selected: DeviceSensorType,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onSelected: (DeviceSensorType) -> Unit,
+) {
+    Box(modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = { onExpandedChange(true) },
+        ) {
+            Text("$label: ${selected.label}")
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { onExpandedChange(false) },
+        ) {
+            DeviceSensorType.entries.forEach { sensorType ->
+                DropdownMenuItem(
+                    text = { Text(sensorType.label) },
+                    onClick = {
+                        onSelected(sensorType)
+                        onExpandedChange(false)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GeoFenceMaintenanceScreen(
+    geoFences: List<DeviceGeoFence>,
+    selectedKey: String,
+    onGeoFencesChange: (List<DeviceGeoFence>) -> Unit,
+    onSelectedKeyChange: (String?) -> Unit,
+    onBack: () -> Unit,
+) {
+    var editingKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var name by rememberSaveable { mutableStateOf("Geo fence") }
+    var marker by rememberSaveable { mutableStateOf(NodeMapMarker.DEFAULT.id) }
+    var alertCondition by rememberSaveable { mutableStateOf(GeoFenceAlertCondition.UNSPECIFIED.name) }
+    var markerExpanded by remember { mutableStateOf(false) }
+    var alertExpanded by remember { mutableStateOf(false) }
+
+    fun editGeoFence(geoFence: DeviceGeoFence?) {
+        editingKey = geoFence?.key
+        name = geoFence?.name ?: "Geo fence"
+        marker = geoFence?.marker ?: NodeMapMarker.DEFAULT.id
+        alertCondition = geoFence?.alertCondition?.name ?: GeoFenceAlertCondition.UNSPECIFIED.name
+    }
+
+    Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .padding(padding)
+                .padding(16.dp)
+                .fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(onClick = onBack) {
+                        Text("Back")
+                    }
+                    Text("Geofences", style = MaterialTheme.typography.headlineMedium)
+                }
+            }
+
+            item {
+                SettingsCard(title = "Selected geofence") {
+                    val selected = geoFences.firstOrNull { it.key == selectedKey }
+                    Text(selected?.name ?: "No geofence selected", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        enabled = selectedKey.isNotBlank(),
+                        onClick = { onSelectedKeyChange(null) },
+                    ) {
+                        Text("Clear selection")
+                    }
+                }
+            }
+
+            item {
+                SettingsCard(title = "Geofence list") {
+                    if (geoFences.isEmpty()) {
+                        Text("No geofences saved.", style = MaterialTheme.typography.bodyMedium)
+                    } else {
+                        geoFences.forEach { geoFence ->
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Text(geoFence.name, style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    "${NodeMapMarker.fromId(geoFence.marker).label} · ${geoFence.alertCondition.label}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(onClick = { onSelectedKeyChange(geoFence.key) }) {
+                                        Text(if (geoFence.key == selectedKey) "Selected" else "Select")
+                                    }
+                                    OutlinedButton(onClick = { editGeoFence(geoFence) }) {
+                                        Text("Edit")
+                                    }
+                                    OutlinedButton(onClick = {
+                                        onGeoFencesChange(geoFences.filterNot { it.key == geoFence.key })
+                                    }) {
+                                        Text("Delete")
+                                    }
+                                }
+                                Spacer(Modifier.height(10.dp))
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                SettingsCard(title = if (editingKey == null) "New geofence" else "Edit geofence") {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it.take(64) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Name") },
+                        singleLine = true,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { markerExpanded = true },
+                        ) {
+                            Text("Marker: ${NodeMapMarker.fromId(marker).label}")
+                        }
+                        DropdownMenu(
+                            expanded = markerExpanded,
+                            onDismissRequest = { markerExpanded = false },
+                        ) {
+                            NodeMapMarker.values().forEach { option ->
+                                DropdownMenuItem(
+                                    text = { Text(option.label) },
+                                    onClick = {
+                                        marker = option.id
+                                        markerExpanded = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        val selectedAlert = GeoFenceAlertCondition.fromName(alertCondition)
+                        OutlinedButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { alertExpanded = true },
+                        ) {
+                            Text("Alert: ${selectedAlert.label}")
+                        }
+                        DropdownMenu(
+                            expanded = alertExpanded,
+                            onDismissRequest = { alertExpanded = false },
+                        ) {
+                            GeoFenceAlertCondition.entries.forEach { option ->
+                                DropdownMenuItem(
+                                    text = { Text(option.label) },
+                                    onClick = {
+                                        alertCondition = option.name
+                                        alertExpanded = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = {
+                            val existing = geoFences.firstOrNull { it.key == editingKey }
+                            val updated = if (existing == null) {
+                                DeviceGeoFence.create(
+                                    name = name,
+                                    marker = marker,
+                                    alertCondition = GeoFenceAlertCondition.fromName(alertCondition),
+                                )
+                            } else {
+                                existing.copy(
+                                    name = name.ifBlank { "Geo fence" }.take(64),
+                                    marker = NodeMapMarker.normalize(marker),
+                                    alertCondition = GeoFenceAlertCondition.fromName(alertCondition),
+                                )
+                            }
+                            val next = if (existing == null) {
+                                geoFences + updated
+                            } else {
+                                geoFences.map { if (it.key == updated.key) updated else it }
+                            }
+                            onGeoFencesChange(next)
+                            onSelectedKeyChange(updated.key)
+                            editGeoFence(null)
+                        }) {
+                            Text("Save")
+                        }
+                        OutlinedButton(onClick = { editGeoFence(null) }) {
+                            Text("New")
+                        }
                     }
                 }
             }
