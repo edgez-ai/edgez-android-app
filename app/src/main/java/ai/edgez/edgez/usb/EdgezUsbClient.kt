@@ -44,7 +44,6 @@ const val USB_CONTROL_ACTION_SET_BLE_ENABLED = 1
 const val USB_CONTROL_ACTION_SET_PAIRING_ENABLED = 2
 const val USB_CONTROL_ACTION_SET_WIFI_CREDENTIALS = 3
 const val USB_CONTROL_ACTION_GET_STATUS = 4
-const val NETWORK_OPERATION_ACK = 3
 
 private const val ESPRESSIF_VID = 0x303A
 private const val EDGEZ_MAX_FRAME = EDGEZ_HEADER_LEN + EDGEZ_MAX_PAYLOAD
@@ -556,36 +555,6 @@ object EdgezUsbControlProto {
             maxHop = maxHop,
             sequence = sequence,
         ).setPayload(ByteString.copyFrom(conversationPayload)).build().toByteArray()
-    }
-
-    fun encodeConversationAck(
-        messageIdHigh: Long,
-        messageIdLow: Long,
-        from: Long,
-        to: Long,
-        maxHop: Int = 0,
-        sequence: Int = 0,
-        userIdHigh: Long,
-        userIdLow: Long,
-    ): ByteArray {
-        require(messageIdHigh != 0L || messageIdLow != 0L) {
-            "NetworkPacket ACK requires a message UUID"
-        }
-        require(userIdHigh != 0L || userIdLow != 0L) {
-            "NetworkPacket ACK requires a user UUID"
-        }
-        return encodeNetworkPacketBuilder(
-            operation = UsbControl.Operation.ACKNOWLEDGE,
-            messageIdHigh = messageIdHigh,
-            messageIdLow = messageIdLow,
-            from = from,
-            to = to,
-            userIdHigh = userIdHigh,
-            userIdLow = userIdLow,
-            mime = PacketMime.TEXT,
-            maxHop = maxHop,
-            sequence = sequence,
-        ).setPayload(ByteString.EMPTY).build().toByteArray()
     }
 
     fun decodeMobileFromRadio(payload: ByteArray, meshPassphrase: String = ""): HaLowInterfaceStatus? {
@@ -1248,34 +1217,6 @@ class EdgezUsbClient(private val context: Context) {
                 sequence = sequence,
                 messageIdHigh = messageIdHigh,
                 messageIdLow = messageIdLow,
-                userIdHigh = userIdHigh,
-                userIdLow = userIdLow,
-            )
-        }.getOrElse { error ->
-            return Result.failure(error)
-        }
-        return sendFrame(packet, timeoutMs)
-    }
-
-    fun sendConversationAck(
-        messageIdHigh: Long,
-        messageIdLow: Long,
-        from: Long,
-        to: Long,
-        maxHop: Int = 0,
-        sequence: Int = 0,
-        userIdHigh: Long,
-        userIdLow: Long,
-        timeoutMs: Int = 1500,
-    ): Result<String> {
-        val packet = runCatching {
-            EdgezUsbControlProto.encodeConversationAck(
-                messageIdHigh = messageIdHigh,
-                messageIdLow = messageIdLow,
-                from = from,
-                to = to,
-                maxHop = maxHop,
-                sequence = sequence,
                 userIdHigh = userIdHigh,
                 userIdLow = userIdLow,
             )
