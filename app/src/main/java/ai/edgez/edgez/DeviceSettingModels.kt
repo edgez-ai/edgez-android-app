@@ -29,12 +29,18 @@ data class DeviceGeoFence(
     val name: String,
     val marker: String = NodeMapMarker.DEFAULT.id,
     val alertCondition: GeoFenceAlertCondition = GeoFenceAlertCondition.UNSPECIFIED,
+    val geoIndex: Int = 0,
 ) {
-    val key: String get() = "$idHigh:$idLow"
+    val key: String get() = keyFor(idHigh, idLow)
+    val legacyKey: String get() = "$idHigh:$idLow"
     val isEmptyId: Boolean get() = idHigh == 0L && idLow == 0L
 
     companion object {
-        fun keyFor(idHigh: Long, idLow: Long): String = "$idHigh:$idLow"
+        fun keyFor(idHigh: Long, idLow: Long): String = UUID(idHigh, idLow).toString()
+
+        fun matchesKey(geoFence: DeviceGeoFence, key: String): Boolean {
+            return geoFence.key == key || geoFence.legacyKey == key
+        }
 
         fun create(
             name: String,

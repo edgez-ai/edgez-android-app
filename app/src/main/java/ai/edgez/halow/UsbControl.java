@@ -3118,6 +3118,12 @@ public final class UsbControl {
      * @return The alertCondition.
      */
     ai.edgez.halow.UsbControl.AlertCondition getAlertCondition();
+
+    /**
+     * <code>uint32 geo_index = 6;</code>
+     * @return The geoIndex.
+     */
+    int getGeoIndex();
   }
   /**
    * Protobuf type {@code ai.edgez.halow.GeoFence}
@@ -3312,6 +3318,32 @@ public final class UsbControl {
     private void clearAlertCondition() {
 
       alertCondition_ = 0;
+    }
+
+    public static final int GEO_INDEX_FIELD_NUMBER = 6;
+    private int geoIndex_;
+    /**
+     * <code>uint32 geo_index = 6;</code>
+     * @return The geoIndex.
+     */
+    @java.lang.Override
+    public int getGeoIndex() {
+      return geoIndex_;
+    }
+    /**
+     * <code>uint32 geo_index = 6;</code>
+     * @param value The geoIndex to set.
+     */
+    private void setGeoIndex(int value) {
+      
+      geoIndex_ = value;
+    }
+    /**
+     * <code>uint32 geo_index = 6;</code>
+     */
+    private void clearGeoIndex() {
+
+      geoIndex_ = 0;
     }
 
     public static ai.edgez.halow.UsbControl.GeoFence parseFrom(
@@ -3608,6 +3640,34 @@ public final class UsbControl {
         return this;
       }
 
+      /**
+       * <code>uint32 geo_index = 6;</code>
+       * @return The geoIndex.
+       */
+      @java.lang.Override
+      public int getGeoIndex() {
+        return instance.getGeoIndex();
+      }
+      /**
+       * <code>uint32 geo_index = 6;</code>
+       * @param value The geoIndex to set.
+       * @return This builder for chaining.
+       */
+      public Builder setGeoIndex(int value) {
+        copyOnWrite();
+        instance.setGeoIndex(value);
+        return this;
+      }
+      /**
+       * <code>uint32 geo_index = 6;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearGeoIndex() {
+        copyOnWrite();
+        instance.clearGeoIndex();
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:ai.edgez.halow.GeoFence)
     }
     @java.lang.Override
@@ -3629,10 +3689,11 @@ public final class UsbControl {
               "name_",
               "marker_",
               "alertCondition_",
+              "geoIndex_",
             };
             java.lang.String info =
-                "\u0000\u0005\u0000\u0000\u0001\u0005\u0005\u0000\u0000\u0000\u0001\u0003\u0002\u0003" +
-                "\u0003\u0208\u0004\f\u0005\f";
+                "\u0000\u0006\u0000\u0000\u0001\u0006\u0006\u0000\u0000\u0000\u0001\u0003\u0002\u0003" +
+                "\u0003\u0208\u0004\f\u0005\f\u0006\u000b";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         // fall through

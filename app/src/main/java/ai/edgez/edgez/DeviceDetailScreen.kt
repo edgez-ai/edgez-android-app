@@ -72,7 +72,7 @@ fun DeviceDetailScreen(
             }
 
             item {
-                GeoFenceCard(user.geoFence)
+                GeoFenceCard(user.geoFence, user.geoIndex)
             }
 
             item {
@@ -113,7 +113,7 @@ private fun DeviceSummaryCard(user: HaLowUser) {
 }
 
 @Composable
-private fun GeoFenceCard(geoFence: DeviceGeoFence?) {
+private fun GeoFenceCard(geoFence: DeviceGeoFence?, geoIndex: Int) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
         Column(
             modifier = Modifier
@@ -130,6 +130,7 @@ private fun GeoFenceCard(geoFence: DeviceGeoFence?) {
                     "${NodeMapMarker.fromId(geoFence.marker).label} · ${geoFence.alertCondition.label}",
                     style = MaterialTheme.typography.bodySmall,
                 )
+                Text("Index $geoIndex", style = MaterialTheme.typography.bodySmall)
             }
         }
     }

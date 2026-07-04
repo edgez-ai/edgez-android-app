@@ -26,6 +26,7 @@ data class HaLowUser(
     val marker: String = NodeMapMarker.DEFAULT.id,
     val deviceType: EdgeZDeviceType = EdgeZDeviceType.UNSPECIFIED,
     val geoFence: DeviceGeoFence? = null,
+    val geoIndex: Int = 0,
     val sleeping: Boolean = false,
 ) {
     val nodeId: String get() = formatMacAddress(nodeNum)
@@ -51,6 +52,7 @@ data class HaLowUser(
             marker == other.marker &&
             deviceType == other.deviceType &&
             geoFence == other.geoFence &&
+            geoIndex == other.geoIndex &&
             sleeping == other.sleeping
     }
 
@@ -69,6 +71,7 @@ data class HaLowUser(
         result = 31 * result + marker.hashCode()
         result = 31 * result + deviceType.hashCode()
         result = 31 * result + (geoFence?.hashCode() ?: 0)
+        result = 31 * result + geoIndex
         result = 31 * result + sleeping.hashCode()
         return result
     }
@@ -154,7 +157,7 @@ fun NetworkPacket.summary(): String {
         return "NetworkPacket init country=${it.countryCode} meshId=${it.meshId} maxHop=${it.maxHop} user=${it.userName.ifBlank { "unknown" }} messageId=$messageId"
     }
     deviceSettings?.let {
-        return "NetworkPacket deviceSettings action=${it.action} mode=${it.deviceModeEnabled} meshId=${it.meshId} maxHop=${it.maxHop} user=${it.userName.ifBlank { "unknown" }} marker=${it.marker} interval=${it.beaconIntervalSeconds} shareLocation=${it.shareLocation} geoFence=${it.geoFence?.name ?: "none"} uartI2cSensor=${it.uartI2cSensorType.ifBlank { "none" }} rs485Sensor=${it.rs485SensorType.ifBlank { "none" }} messageId=$messageId"
+        return "NetworkPacket deviceSettings action=${it.action} mode=${it.deviceModeEnabled} meshId=${it.meshId} maxHop=${it.maxHop} user=${it.userName.ifBlank { "unknown" }} marker=${it.marker} interval=${it.beaconIntervalSeconds} shareLocation=${it.shareLocation} geoFence=${it.geoFence?.name ?: "none"} geoIndex=${it.geoFence?.geoIndex ?: 0} uartI2cSensor=${it.uartI2cSensorType.ifBlank { "none" }} rs485Sensor=${it.rs485SensorType.ifBlank { "none" }} messageId=$messageId"
     }
     return "NetworkPacket op=$operation iface=$interfaceId seq=$sequence messageId=$messageId from=0x%012x to=0x%012x user=${formatUuid(userHigh, userLow)}".format(from, to)
 }
@@ -177,13 +180,14 @@ fun NetworkPacket.toHaLowUser(route: String): HaLowUser? {
             marker = metadata.marker,
             deviceType = metadata.deviceType,
             geoFence = metadata.geoFence,
+            geoIndex = metadata.geoFence?.geoIndex ?: 0,
             sleeping = metadata.sleeping,
         )
         Log.d(
             TAG_USERS,
             "decoded beacon node=${user.nodeId} uuid=${user.userUuid} name=${user.displayName} " +
                 "lastSeen=${user.lastSeenMs} lat=${user.latitude} lon=${user.longitude} locTs=${user.locationTimestampMs} marker=${user.marker} " +
-                "deviceType=${user.deviceType.label} geoFence=${user.geoFence?.name ?: "none"} sleeping=${user.sleeping} " +
+                "deviceType=${user.deviceType.label} geoFence=${user.geoFence?.name ?: "none"} geoIndex=${user.geoIndex} sleeping=${user.sleeping} " +
                 "publicKeyBytes=${user.publicKey.size} route=$route",
         )
         return user
@@ -200,11 +204,12 @@ fun HaLowUser.withFallbackLocationAndMarker(previous: HaLowUser?): HaLowUser {
         deviceType
     }
     val resolvedGeoFence = geoFence ?: previous?.geoFence
+    val resolvedGeoIndex = if (geoFence != null) geoIndex else previous?.geoIndex ?: geoIndex
     if (latitude != null && longitude != null) {
-        return copy(marker = resolvedMarker, deviceType = resolvedDeviceType, geoFence = resolvedGeoFence)
+        return copy(marker = resolvedMarker, deviceType = resolvedDeviceType, geoFence = resolvedGeoFence, geoIndex = resolvedGeoIndex)
     }
     if (previous?.latitude == null || previous.longitude == null) {
-        return copy(marker = resolvedMarker, deviceType = resolvedDeviceType, geoFence = resolvedGeoFence)
+        return copy(marker = resolvedMarker, deviceType = resolvedDeviceType, geoFence = resolvedGeoFence, geoIndex = resolvedGeoIndex)
     }
     val updated = copy(
         latitude = previous.latitude,
@@ -213,6 +218,7 @@ fun HaLowUser.withFallbackLocationAndMarker(previous: HaLowUser?): HaLowUser {
         marker = resolvedMarker,
         deviceType = resolvedDeviceType,
         geoFence = resolvedGeoFence,
+        geoIndex = resolvedGeoIndex,
     )
     Log.d(
         TAG_USERS,

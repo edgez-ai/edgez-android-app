@@ -113,6 +113,7 @@ message GeoFence {
   string name = 3;
   MarkerColor marker = 4;
   AlertCondition alert_condition = 5;
+  uint32 geo_index = 6;
 }
 
 message SensorData {

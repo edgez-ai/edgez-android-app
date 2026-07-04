@@ -155,7 +155,7 @@ fun SettingsScreen(
                 edgeZDatabase.upsertGeoFences(updated)
                 val refreshed = edgeZDatabase.getGeoFences()
                 deviceGeoFences = refreshed
-                if (selectedDeviceGeoFenceKey.isNotBlank() && refreshed.none { it.key == selectedDeviceGeoFenceKey }) {
+                if (selectedDeviceGeoFenceKey.isNotBlank() && refreshed.none { DeviceGeoFence.matchesKey(it, selectedDeviceGeoFenceKey) }) {
                     selectedDeviceGeoFenceKey = ""
                     connectionPreferences.setSelectedDeviceGeoFenceKey(null)
                 }
@@ -338,6 +338,8 @@ fun SettingsScreen(
 
     fun currentDeviceSettings(enabled: Boolean = deviceMode): DeviceSettings {
         val identity = ensureDeviceIdentity()
+        val selectedGeoFenceIndex = deviceGeoFences.indexOfFirst { DeviceGeoFence.matchesKey(it, selectedDeviceGeoFenceKey) }
+        val selectedGeoFence = deviceGeoFences.getOrNull(selectedGeoFenceIndex)
         return DeviceSettings(
             deviceModeEnabled = enabled,
             meshId = deviceMeshId.ifBlank { "edgez" },
@@ -352,7 +354,7 @@ fun SettingsScreen(
             latitude = deviceLatitude.takeIf { deviceShareLocation },
             longitude = deviceLongitude.takeIf { deviceShareLocation },
             maxHop = deviceMaxHop.toIntOrNull() ?: connectionPreferences.getMeshMaxHop(),
-            geoFence = deviceGeoFences.firstOrNull { it.key == selectedDeviceGeoFenceKey },
+            geoFence = selectedGeoFence?.copy(geoIndex = selectedGeoFenceIndex.coerceAtLeast(0)),
             uartI2cSensorType = deviceUartI2cSensorType.take(32),
             rs485SensorType = deviceRs485SensorType.take(32),
         )
@@ -839,7 +841,7 @@ fun SettingsScreen(
 
             if (showDeviceSettingsOnly) item {
                 SettingsCard(title = "Device geofence") {
-                    val selectedGeoFence = deviceGeoFences.firstOrNull { it.key == selectedDeviceGeoFenceKey }
+                    val selectedGeoFence = deviceGeoFences.firstOrNull { DeviceGeoFence.matchesKey(it, selectedDeviceGeoFenceKey) }
                     Text(
                         selectedGeoFence?.let { "Selected: ${it.name}" } ?: "No geofence selected",
                         style = MaterialTheme.typography.bodyMedium,
@@ -1084,7 +1086,7 @@ private fun GeoFenceMaintenanceScreen(
 
             item {
                 SettingsCard(title = "Selected geofence") {
-                    val selected = geoFences.firstOrNull { it.key == selectedKey }
+                    val selected = geoFences.firstOrNull { DeviceGeoFence.matchesKey(it, selectedKey) }
                     Text(selected?.name ?: "No geofence selected", style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(8.dp))
                     OutlinedButton(
@@ -1110,7 +1112,7 @@ private fun GeoFenceMaintenanceScreen(
                                 )
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Button(onClick = { onSelectedKeyChange(geoFence.key) }) {
-                                        Text(if (geoFence.key == selectedKey) "Selected" else "Select")
+                                        Text(if (DeviceGeoFence.matchesKey(geoFence, selectedKey)) "Selected" else "Select")
                                     }
                                     OutlinedButton(onClick = { editGeoFence(geoFence) }) {
                                         Text("Edit")

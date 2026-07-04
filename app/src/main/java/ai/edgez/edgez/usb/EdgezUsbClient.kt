@@ -975,6 +975,7 @@ object EdgezUsbControlProto {
             .setName(name.take(64))
             .setMarker(NodeMapMarker.fromId(marker).toProtoMarkerColor())
             .setAlertCondition(alertCondition.toProtoAlertCondition())
+            .setGeoIndex(geoIndex.coerceAtLeast(0))
             .build()
     }
 
@@ -985,6 +986,7 @@ object EdgezUsbControlProto {
             name = name.ifBlank { "Geo fence" }.take(64),
             marker = marker.toNodeMarkerId(),
             alertCondition = GeoFenceAlertCondition.fromProtoValue(alertConditionValue),
+            geoIndex = geoIndex,
         )
     }
 
