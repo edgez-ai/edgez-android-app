@@ -132,6 +132,7 @@ fun SettingsScreen(
     var deviceGeoFences by remember { mutableStateOf(loadDeviceGeoFences()) }
     var selectedDeviceGeoFenceKey by rememberSaveable { mutableStateOf(connectionPreferences.getSelectedDeviceGeoFenceKey() ?: "") }
     var showGeoFencePage by rememberSaveable { mutableStateOf(false) }
+    var deviceGeoIndex by rememberSaveable { mutableStateOf(0) }
     var deviceUartI2cSensorType by rememberSaveable { mutableStateOf("") }
     var deviceRs485SensorType by rememberSaveable { mutableStateOf("") }
     var uartI2cSensorDropdownExpanded by remember { mutableStateOf(false) }
@@ -314,6 +315,7 @@ fun SettingsScreen(
             selectedDeviceGeoFenceKey = geoFence.key
             connectionPreferences.setSelectedDeviceGeoFenceKey(geoFence.key)
         }
+        deviceGeoIndex = settings.geoIndex.coerceAtLeast(0)
         deviceUartI2cSensorType = settings.uartI2cSensorType
         deviceRs485SensorType = settings.rs485SensorType
         if (deviceIdentity == null && (settings.userIdHigh != 0L || settings.userIdLow != 0L) && settings.userPrivateKey.size == 32) {
@@ -338,8 +340,7 @@ fun SettingsScreen(
 
     fun currentDeviceSettings(enabled: Boolean = deviceMode): DeviceSettings {
         val identity = ensureDeviceIdentity()
-        val selectedGeoFenceIndex = deviceGeoFences.indexOfFirst { DeviceGeoFence.matchesKey(it, selectedDeviceGeoFenceKey) }
-        val selectedGeoFence = deviceGeoFences.getOrNull(selectedGeoFenceIndex)
+        val selectedGeoFence = deviceGeoFences.firstOrNull { DeviceGeoFence.matchesKey(it, selectedDeviceGeoFenceKey) }
         return DeviceSettings(
             deviceModeEnabled = enabled,
             meshId = deviceMeshId.ifBlank { "edgez" },
@@ -357,7 +358,7 @@ fun SettingsScreen(
             geoFence = selectedGeoFence,
             uartI2cSensorType = deviceUartI2cSensorType.take(32),
             rs485SensorType = deviceRs485SensorType.take(32),
-            geoIndex = selectedGeoFenceIndex.coerceAtLeast(0),
+            geoIndex = deviceGeoIndex.coerceAtLeast(0),
         )
     }
 
@@ -847,6 +848,30 @@ fun SettingsScreen(
                         selectedGeoFence?.let { "Selected: ${it.name}" } ?: "No geofence selected",
                         style = MaterialTheme.typography.bodyMedium,
                     )
+                    Spacer(Modifier.height(8.dp))
+                    Text("Geo index", style = MaterialTheme.typography.titleSmall)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedButton(
+                            enabled = deviceGeoIndex > 0,
+                            onClick = { deviceGeoIndex = (deviceGeoIndex - 1).coerceAtLeast(0) },
+                        ) {
+                            Text("-")
+                        }
+                        Text(
+                            deviceGeoIndex.toString(),
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        OutlinedButton(
+                            onClick = { deviceGeoIndex += 1 },
+                        ) {
+                            Text("+")
+                        }
+                    }
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = { showGeoFencePage = true }) {
