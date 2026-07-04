@@ -101,6 +101,13 @@ fun ConversationScreen(
                         Text("Node ${user.nodeId}", style = MaterialTheme.typography.bodySmall)
                         Text("User ${user.userIdText}", style = MaterialTheme.typography.bodySmall)
                         Text("Marker ${NodeMapMarker.fromId(user.marker).label}", style = MaterialTheme.typography.bodySmall)
+                        Text("Type ${user.deviceType.label}", style = MaterialTheme.typography.bodySmall)
+                        user.geoFence?.let {
+                            Text("Geofence ${it.name}", style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (user.sleeping) {
+                            Text("Sleeping", style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
             }

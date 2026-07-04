@@ -202,11 +202,22 @@ private fun NodeCard(user: HaLowUser) {
                     )
                     Text("Node ${user.nodeId}", style = MaterialTheme.typography.bodyMedium)
                     Text("User ${user.userIdText}", style = MaterialTheme.typography.bodySmall)
+                    Text("Type ${user.deviceType.label}", style = MaterialTheme.typography.bodySmall)
+                    user.geoFence?.let {
+                        Text("Geofence ${it.name}", style = MaterialTheme.typography.bodySmall)
+                    }
                 }
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    if (user.sleeping) {
+                        Text(
+                            text = "Sleeping",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     Text(
                         text = "Last seen ${formatLastSeenAge(user.lastSeenMs, nowMs)}",
                         style = MaterialTheme.typography.labelLarge,

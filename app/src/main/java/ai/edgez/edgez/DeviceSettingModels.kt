@@ -68,3 +68,35 @@ enum class DeviceSensorType(val protoValue: Int, val label: String) {
         }
     }
 }
+
+enum class EdgeZDeviceType(val protoValue: Int, val label: String) {
+    UNSPECIFIED(0, "Unspecified"),
+    UNKNOWN(1, "Unknown"),
+    USER(2, "User"),
+    GATEWAY(3, "Gateway"),
+    BEACON(4, "Beacon"),
+    SENSOR(5, "Sensor");
+
+    companion object {
+        fun fromProtoValue(value: Int): EdgeZDeviceType {
+            return entries.firstOrNull { it.protoValue == value } ?: UNSPECIFIED
+        }
+    }
+}
+
+data class EdgeZSensorData(
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val altitude: Double? = null,
+    val temperature: Double? = null,
+    val humidity: Double? = null,
+    val pressure: Double? = null,
+) {
+    val hasAnyValue: Boolean
+        get() = latitude != null ||
+            longitude != null ||
+            altitude != null ||
+            temperature != null ||
+            humidity != null ||
+            pressure != null
+}

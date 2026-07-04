@@ -24,6 +24,9 @@ data class HaLowUser(
     val longitude: Double? = null,
     val locationTimestampMs: Long = 0,
     val marker: String = NodeMapMarker.DEFAULT.id,
+    val deviceType: EdgeZDeviceType = EdgeZDeviceType.UNSPECIFIED,
+    val geoFence: DeviceGeoFence? = null,
+    val sleeping: Boolean = false,
 ) {
     val nodeId: String get() = formatMacAddress(nodeNum)
     val userIdText: String get() = displayUserId(userUuid, userId)
@@ -45,7 +48,10 @@ data class HaLowUser(
             latitude == other.latitude &&
             longitude == other.longitude &&
             locationTimestampMs == other.locationTimestampMs &&
-            marker == other.marker
+            marker == other.marker &&
+            deviceType == other.deviceType &&
+            geoFence == other.geoFence &&
+            sleeping == other.sleeping
     }
 
     override fun hashCode(): Int {
@@ -61,6 +67,9 @@ data class HaLowUser(
         result = 31 * result + (longitude?.hashCode() ?: 0)
         result = 31 * result + locationTimestampMs.hashCode()
         result = 31 * result + marker.hashCode()
+        result = 31 * result + deviceType.hashCode()
+        result = 31 * result + (geoFence?.hashCode() ?: 0)
+        result = 31 * result + sleeping.hashCode()
         return result
     }
 }
@@ -166,11 +175,15 @@ fun NetworkPacket.toHaLowUser(route: String): HaLowUser? {
             longitude = metadata.longitude,
             locationTimestampMs = metadata.locationTimestampMs,
             marker = metadata.marker,
+            deviceType = metadata.deviceType,
+            geoFence = metadata.geoFence,
+            sleeping = metadata.sleeping,
         )
         Log.d(
             TAG_USERS,
             "decoded beacon node=${user.nodeId} uuid=${user.userUuid} name=${user.displayName} " +
                 "lastSeen=${user.lastSeenMs} lat=${user.latitude} lon=${user.longitude} locTs=${user.locationTimestampMs} marker=${user.marker} " +
+                "deviceType=${user.deviceType.label} geoFence=${user.geoFence?.name ?: "none"} sleeping=${user.sleeping} " +
                 "publicKeyBytes=${user.publicKey.size} route=$route",
         )
         return user
@@ -181,17 +194,33 @@ fun NetworkPacket.toHaLowUser(route: String): HaLowUser? {
 
 fun HaLowUser.withFallbackLocationAndMarker(previous: HaLowUser?): HaLowUser {
     val resolvedMarker = NodeMapMarker.normalize(marker)
-    if (latitude != null && longitude != null) return copy(marker = resolvedMarker)
-    if (previous?.latitude == null || previous.longitude == null) return copy(marker = resolvedMarker)
+    val resolvedDeviceType = if (deviceType == EdgeZDeviceType.UNSPECIFIED) {
+        previous?.deviceType ?: EdgeZDeviceType.UNSPECIFIED
+    } else {
+        deviceType
+    }
+    val resolvedGeoFence = geoFence ?: previous?.geoFence
+    if (latitude != null && longitude != null) {
+        return copy(marker = resolvedMarker, deviceType = resolvedDeviceType, geoFence = resolvedGeoFence)
+    }
+    if (previous?.latitude == null || previous.longitude == null) {
+        return copy(marker = resolvedMarker, deviceType = resolvedDeviceType, geoFence = resolvedGeoFence)
+    }
     val updated = copy(
         latitude = previous.latitude,
         longitude = previous.longitude,
         locationTimestampMs = previous.locationTimestampMs,
         marker = resolvedMarker,
+        deviceType = resolvedDeviceType,
+        geoFence = resolvedGeoFence,
     )
     Log.d(
         TAG_USERS,
         "kept previous location node=${updated.nodeId} lat=${updated.latitude} lon=${updated.longitude} locTs=${updated.locationTimestampMs} marker=${updated.marker}",
     )
     return updated
+}
+
+fun NetworkPacket.beaconSensorData(): EdgeZSensorData? {
+    return beacon?.sensorData
 }

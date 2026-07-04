@@ -317,6 +317,7 @@ fun EdgeZApp() {
             val message = decodeHaLowSyncFrame(frame, meshPassphrase)
             val status = message?.halowStatus ?: decodeHaLowStatusFrame(frame, meshPassphrase)
             val user = message?.toHaLowUser(source.name)
+            val sensorData = message?.beaconSensorData()
             val conversationMessage = message?.conversationMessage
             if (status == null && user == null && conversationMessage == null) return
             if (status != null) {
@@ -343,6 +344,9 @@ fun EdgeZApp() {
                                 "selected=${selectedConversationUser?.let { conversationKey(it) } == updatedUserKey}",
                         )
                         edgeZDatabase.upsertUser(updatedUser)
+                        sensorData?.let {
+                            edgeZDatabase.insertSensorData(updatedUserKey, updatedUser.nodeNum, updatedUser.lastSeenMs, it)
+                        }
                         haLowUsers = (if (previousUser != null && previousUser.nodeNum != updatedUser.nodeNum) {
                             haLowUsers - previousUser.nodeNum
                         } else {

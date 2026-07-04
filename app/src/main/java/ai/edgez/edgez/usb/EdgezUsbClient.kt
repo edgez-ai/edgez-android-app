@@ -14,6 +14,8 @@ import android.util.Log
 import ai.edgez.halow.UsbControl
 import ai.edgez.edgez.DeviceGeoFence
 import ai.edgez.edgez.DeviceSensorType
+import ai.edgez.edgez.EdgeZDeviceType
+import ai.edgez.edgez.EdgeZSensorData
 import ai.edgez.edgez.GeoFenceAlertCondition
 import ai.edgez.edgez.NodeMapMarker
 import com.google.protobuf.ByteString
@@ -105,6 +107,10 @@ data class EdgeZAssocMetadata(
     val longitude: Double? = null,
     val locationTimestampMs: Long = 0,
     val marker: String = NodeMapMarker.DEFAULT.id,
+    val deviceType: EdgeZDeviceType = EdgeZDeviceType.UNSPECIFIED,
+    val geoFence: DeviceGeoFence? = null,
+    val sleeping: Boolean = false,
+    val sensorData: EdgeZSensorData? = null,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -118,7 +124,11 @@ data class EdgeZAssocMetadata(
             latitude == other.latitude &&
             longitude == other.longitude &&
             locationTimestampMs == other.locationTimestampMs &&
-            marker == other.marker
+            marker == other.marker &&
+            deviceType == other.deviceType &&
+            geoFence == other.geoFence &&
+            sleeping == other.sleeping &&
+            sensorData == other.sensorData
     }
 
     override fun hashCode(): Int {
@@ -130,6 +140,10 @@ data class EdgeZAssocMetadata(
         result = 31 * result + (longitude?.hashCode() ?: 0)
         result = 31 * result + locationTimestampMs.hashCode()
         result = 31 * result + marker.hashCode()
+        result = 31 * result + deviceType.hashCode()
+        result = 31 * result + (geoFence?.hashCode() ?: 0)
+        result = 31 * result + sleeping.hashCode()
+        result = 31 * result + (sensorData?.hashCode() ?: 0)
         return result
     }
 }
@@ -936,7 +950,22 @@ object EdgezUsbControlProto {
             longitude = longitude.toDouble().takeIf { longitude != 0f },
             locationTimestampMs = 0,
             marker = decodedUserName.marker,
+            deviceType = EdgeZDeviceType.fromProtoValue(deviceTypeValue),
+            geoFence = if (hasGeoFence()) geoFence.toAppGeoFence() else null,
+            sleeping = sleeping,
+            sensorData = if (hasSensorData()) sensorData.toAppSensorData() else null,
         )
+    }
+
+    private fun UsbControl.SensorData.toAppSensorData(): EdgeZSensorData? {
+        return EdgeZSensorData(
+            latitude = latitude.toDouble().takeIf { latitude != 0f },
+            longitude = longitude.toDouble().takeIf { longitude != 0f },
+            altitude = altitude.toDouble().takeIf { altitude != 0f },
+            temperature = temperature.toDouble().takeIf { temperature != 0f },
+            humidity = humidity.toDouble().takeIf { humidity != 0f },
+            pressure = pressure.toDouble().takeIf { pressure != 0f },
+        ).takeIf { it.hasAnyValue }
     }
 
     private fun encodeBeaconUserName(userName: String, marker: String): String {
