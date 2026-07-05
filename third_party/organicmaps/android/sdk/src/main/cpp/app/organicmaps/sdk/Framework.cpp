@@ -41,6 +41,9 @@
 #include "indexer/feature_altitude.hpp"
 #include "indexer/validate_and_format_contacts.hpp"
 
+#include "kml/type_utils.hpp"
+#include "kml/types.hpp"
+
 #include "routing/following_info.hpp"
 #include "routing/speed_camera_manager.hpp"
 
@@ -97,6 +100,26 @@ static_assert(sizeof(int) >= 4, "Size of jint is less than 4 bytes.");
 namespace
 {
 jobject g_placePageActivationListener = nullptr;
+std::vector<kml::TrackId> g_edgeZGeoFenceTrackIds;
+
+uint32_t ToTrackRgba(jint argb)
+{
+  auto const color = static_cast<uint32_t>(argb);
+  auto const alpha = (color >> 24) & 0xFF;
+  return ((color & 0x00FFFFFF) << 8) | alpha;
+}
+
+void ClearEdgeZGeoFenceLines()
+{
+  auto & bm = frm()->GetBookmarkManager();
+  auto session = bm.GetEditSession();
+  for (auto const trackId : g_edgeZGeoFenceTrackIds)
+  {
+    if (bm.GetTrack(trackId) != nullptr)
+      session.DeleteTrack(trackId);
+  }
+  g_edgeZGeoFenceTrackIds.clear();
+}
 
 android::AndroidVulkanContextFactory * CastFactory(drape_ptr<dp::GraphicsContextFactory> const & f)
 {
@@ -834,6 +857,67 @@ JNIEXPORT jint Java_app_organicmaps_sdk_Framework_nativeParseAndSetApiUrl(JNIEnv
 JNIEXPORT void Java_app_organicmaps_sdk_Framework_nativeSetApiPointsFromUrl(JNIEnv * env, jclass clazz)
 {
   frm()->SetApiMarksFromParsedMapApi();
+}
+
+JNIEXPORT void Java_app_organicmaps_sdk_Framework_nativeSetEdgeZGeoFenceLines(JNIEnv * env, jclass clazz,
+                                                                              jdoubleArray jLatLonPairs,
+                                                                              jintArray jPointCounts,
+                                                                              jintArray jColors,
+                                                                              jobjectArray jNames)
+{
+  ClearEdgeZGeoFenceLines();
+
+  if (jLatLonPairs == nullptr || jPointCounts == nullptr || jColors == nullptr || jNames == nullptr)
+    return;
+
+  auto const groupCount = env->GetArrayLength(jPointCounts);
+  if (groupCount == 0 || env->GetArrayLength(jColors) != groupCount || env->GetArrayLength(jNames) != groupCount)
+    return;
+
+  auto const pairValueCount = env->GetArrayLength(jLatLonPairs);
+  if (pairValueCount % 2 != 0)
+    return;
+
+  std::vector<jdouble> latLonPairs(static_cast<size_t>(pairValueCount));
+  std::vector<jint> pointCounts(static_cast<size_t>(groupCount));
+  std::vector<jint> colors(static_cast<size_t>(groupCount));
+  env->GetDoubleArrayRegion(jLatLonPairs, 0, pairValueCount, latLonPairs.data());
+  env->GetIntArrayRegion(jPointCounts, 0, groupCount, pointCounts.data());
+  env->GetIntArrayRegion(jColors, 0, groupCount, colors.data());
+
+  size_t pairIndex = 0;
+  auto session = frm()->GetBookmarkManager().GetEditSession();
+  for (jsize groupIndex = 0; groupIndex < groupCount; ++groupIndex)
+  {
+    auto const pointCount = pointCounts[groupIndex];
+    if (pointCount < 2 || pairIndex + static_cast<size_t>(pointCount) * 2 > latLonPairs.size())
+      break;
+
+    kml::TrackGeometry line;
+    line.reserve(static_cast<size_t>(pointCount));
+    for (jint pointIndex = 0; pointIndex < pointCount; ++pointIndex)
+    {
+      auto const latitude = latLonPairs[pairIndex++];
+      auto const longitude = latLonPairs[pairIndex++];
+      line.emplace_back(mercator::FromLatLon(latitude, longitude), geometry::kInvalidAltitude);
+    }
+
+    kml::TrackData trackData;
+    kml::SetDefaultStr(trackData.m_name, "Geo fence");
+    jni::ScopedLocalRef<jstring> const name(env, static_cast<jstring>(env->GetObjectArrayElement(jNames, groupIndex)));
+    if (name.get() != nullptr)
+      kml::SetDefaultStr(trackData.m_name, jni::ToNativeString(env, name.get()));
+    trackData.m_layers.emplace_back();
+    trackData.m_layers[0].m_lineWidth = 6.0;
+    trackData.m_layers[0].m_color.m_predefinedColor = kml::PredefinedColor::None;
+    trackData.m_layers[0].m_color.m_rgba = ToTrackRgba(colors[groupIndex]);
+    trackData.m_geometry.m_lines.push_back(std::move(line));
+    trackData.m_geometry.m_timestamps.emplace_back();
+
+    auto const * track = session.CreateTrack(std::move(trackData));
+    if (track != nullptr)
+      g_edgeZGeoFenceTrackIds.push_back(track->GetId());
+  }
 }
 
 JNIEXPORT jobject Java_app_organicmaps_sdk_Framework_nativeGetParsedRoutingData(JNIEnv * env, jclass clazz)

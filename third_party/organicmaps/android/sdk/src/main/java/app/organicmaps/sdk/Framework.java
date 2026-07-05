@@ -383,6 +383,8 @@ public class Framework
   public static native void nativeSetViewportCenter(double lat, double lon, int zoom);
   public static native void nativeStopLocationFollow();
   public static native void nativeSetGpsCursorColor(long argb);
+  public static native void nativeSetEdgeZGeoFenceLines(@NonNull double[] latLonPairs, @NonNull int[] pointCounts,
+                                                        @NonNull int[] colors, @NonNull String[] names);
 
   public static native void nativeSetSearchViewport(double lat, double lon, int zoom);
 

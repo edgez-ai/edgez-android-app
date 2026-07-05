@@ -56,6 +56,7 @@ private const val MAP_REFRESH_DELAY_MS = 250L
 private const val DOWNLOAD_PROMPT_GESTURE_DELAY_MS = 500L
 private const val MAP_SCALE_READY_RETRY_COUNT = 20
 private const val MAP_SCALE_READY_RETRY_DELAY_MS = 100L
+private const val DEFAULT_GEO_FENCE_LINE_ARGB = 0xFF43A047.toInt()
 
 private data class MapTarget(
     val latitude: Double,
@@ -72,6 +73,17 @@ data class EdgeZMapCamera(
 private data class MapDownloadProgress(
     val countryId: String,
     val progress: Float?,
+)
+
+private data class GeoFenceLinePoint(
+    val latitude: Double,
+    val longitude: Double,
+)
+
+private data class GeoFenceLine(
+    val name: String,
+    val colorArgb: Int,
+    val points: List<GeoFenceLinePoint>,
 )
 
 @Composable
@@ -111,7 +123,8 @@ fun MapScreen(
         users.filter { it.hasValidMapLocation() }
     }
     val markerSignature = markerUsers.joinToString(separator = "|") { user ->
-        "${user.nodeNum}:${user.displayName}:${user.latitude}:${user.longitude}:${user.marker}"
+        "${user.nodeNum}:${user.displayName}:${user.latitude}:${user.longitude}:${user.marker}:" +
+            "${user.geoFence?.key}:${user.geoFence?.marker}:${user.geoIndex}"
     }
 
     var initialized by remember { mutableStateOf(application.organicMaps.arePlatformAndCoreInitialized()) }
@@ -565,18 +578,75 @@ private fun syncUserMapMarkers(users: List<HaLowUser>, controller: MapController
     runCatching {
         if (users.isEmpty()) {
             Framework.nativeClearApiPoints()
+            syncGeoFenceLines(emptyList(), controller)
         } else {
             val url = buildUserMarkerApiUrl(users)
             Log.d(TAG_MAP, "sync user map markers count=${users.size} url=$url")
             Framework.nativeClearApiPoints()
             Framework.nativeParseAndSetApiUrl(url)
             Framework.nativeSetApiPointsFromUrl()
+            syncGeoFenceLines(users, controller)
         }
 
         forceMapRefresh(controller)
     }.onFailure { error ->
         Log.w(TAG_MAP, "Unable to update user map markers", error)
     }
+}
+
+private fun syncGeoFenceLines(users: List<HaLowUser>, controller: MapController?) {
+    val lines = buildGeoFenceLines(users)
+    if (lines.isEmpty()) {
+        Framework.nativeSetEdgeZGeoFenceLines(DoubleArray(0), IntArray(0), IntArray(0), emptyArray<String>())
+        forceMapRefresh(controller)
+        return
+    }
+
+    val pointCounts = IntArray(lines.size)
+    val colors = IntArray(lines.size)
+    val names = Array(lines.size) { index -> lines[index].name }
+    val latLonPairs = DoubleArray(lines.sumOf { it.points.size } * 2)
+    var pairIndex = 0
+    lines.forEachIndexed { lineIndex, line ->
+        pointCounts[lineIndex] = line.points.size
+        colors[lineIndex] = line.colorArgb
+        line.points.forEach { point ->
+            latLonPairs[pairIndex++] = point.latitude
+            latLonPairs[pairIndex++] = point.longitude
+        }
+    }
+    Framework.nativeSetEdgeZGeoFenceLines(latLonPairs, pointCounts, colors, names)
+    forceMapRefresh(controller)
+}
+
+private fun buildGeoFenceLines(users: List<HaLowUser>): List<GeoFenceLine> {
+    return users
+        .filter { it.hasValidMapLocation() && it.geoFence?.isEmptyId == false }
+        .groupBy { it.geoFence?.key.orEmpty() }
+        .values
+        .mapNotNull { fenceUsers ->
+            if (fenceUsers.size < 2) return@mapNotNull null
+            val orderedUsers = fenceUsers.sortedWith(compareBy<HaLowUser> { it.geoIndex }.thenBy { it.nodeNum })
+            val geoFence = orderedUsers.firstNotNullOfOrNull { it.geoFence } ?: return@mapNotNull null
+            val points = orderedUsers.mapNotNull { user ->
+                val latitude = user.latitude
+                val longitude = user.longitude
+                if (latitude != null && longitude != null) {
+                    GeoFenceLinePoint(latitude, longitude)
+                } else {
+                    null
+                }
+            }
+            if (points.size < 2) return@mapNotNull null
+            val lineColor = NodeMapMarker.fromId(geoFence.marker).colorArgb
+                ?: NodeMapMarker.fromId(orderedUsers.firstOrNull()?.marker).colorArgb
+                ?: DEFAULT_GEO_FENCE_LINE_ARGB.toLong()
+            GeoFenceLine(
+                name = geoFence.name.ifBlank { "Geo fence" },
+                colorArgb = lineColor.toInt(),
+                points = points,
+            )
+        }
 }
 
 private fun buildUserMarkerApiUrl(users: List<HaLowUser>): String {
