@@ -3787,6 +3787,12 @@ public final class UsbControl {
      * @return The pressure.
      */
     float getPressure();
+
+    /**
+     * <code>float vibration_average = 10;</code>
+     * @return The vibrationAverage.
+     */
+    float getVibrationAverage();
   }
   /**
    * Protobuf type {@code ai.edgez.halow.SensorData}
@@ -3952,6 +3958,32 @@ public final class UsbControl {
     private void clearPressure() {
 
       pressure_ = 0F;
+    }
+
+    public static final int VIBRATION_AVERAGE_FIELD_NUMBER = 10;
+    private float vibrationAverage_;
+    /**
+     * <code>float vibration_average = 10;</code>
+     * @return The vibrationAverage.
+     */
+    @java.lang.Override
+    public float getVibrationAverage() {
+      return vibrationAverage_;
+    }
+    /**
+     * <code>float vibration_average = 10;</code>
+     * @param value The vibrationAverage to set.
+     */
+    private void setVibrationAverage(float value) {
+      
+      vibrationAverage_ = value;
+    }
+    /**
+     * <code>float vibration_average = 10;</code>
+     */
+    private void clearVibrationAverage() {
+
+      vibrationAverage_ = 0F;
     }
 
     public static ai.edgez.halow.UsbControl.SensorData parseFrom(
@@ -4219,6 +4251,34 @@ public final class UsbControl {
         return this;
       }
 
+      /**
+       * <code>float vibration_average = 10;</code>
+       * @return The vibrationAverage.
+       */
+      @java.lang.Override
+      public float getVibrationAverage() {
+        return instance.getVibrationAverage();
+      }
+      /**
+       * <code>float vibration_average = 10;</code>
+       * @param value The vibrationAverage to set.
+       * @return This builder for chaining.
+       */
+      public Builder setVibrationAverage(float value) {
+        copyOnWrite();
+        instance.setVibrationAverage(value);
+        return this;
+      }
+      /**
+       * <code>float vibration_average = 10;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearVibrationAverage() {
+        copyOnWrite();
+        instance.clearVibrationAverage();
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:ai.edgez.halow.SensorData)
     }
     @java.lang.Override
@@ -4241,10 +4301,11 @@ public final class UsbControl {
               "temperature_",
               "humidity_",
               "pressure_",
+              "vibrationAverage_",
             };
             java.lang.String info =
-                "\u0000\u0006\u0000\u0000\u0004\t\u0006\u0000\u0000\u0000\u0004\u0001\u0005\u0001" +
-                "\u0006\u0001\u0007\u0001\b\u0001\t\u0001";
+                "\u0000\u0007\u0000\u0000\u0004\n\u0007\u0000\u0000\u0000\u0004\u0001\u0005\u0001" +
+                "\u0006\u0001\u0007\u0001\b\u0001\t\u0001\n\u0001";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         // fall through

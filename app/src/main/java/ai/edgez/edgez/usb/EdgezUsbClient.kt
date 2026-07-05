@@ -1056,6 +1056,7 @@ object EdgezUsbControlProto {
             temperature = temperature.toDouble().takeIf { temperature != 0f },
             humidity = humidity.toDouble().takeIf { humidity != 0f },
             pressure = pressure.toDouble().takeIf { pressure != 0f },
+            vibrationAverage = vibrationAverage.toDouble().takeIf { vibrationAverage != 0f },
         ).takeIf { it.hasAnyValue }
     }
 

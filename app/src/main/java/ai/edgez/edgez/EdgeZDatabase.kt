@@ -9,7 +9,7 @@ import ai.edgez.edgez.usb.PacketMime
 import java.util.UUID
 
 private const val DATABASE_NAME = "edgez_local.db"
-private const val DATABASE_VERSION = 6
+private const val DATABASE_VERSION = 7
 private const val TABLE_USERS = "halow_users"
 private const val TABLE_MESSAGES = "conversation_messages"
 private const val TABLE_SENSOR_DATA = "sensor_data"
@@ -104,6 +104,9 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
             migrateGeoFenceTableToUuid(db)
             migrateUserGeoFenceUuids(db)
             migrateUserGeoFences(db)
+        }
+        if (oldVersion < 7) {
+            addColumnIfMissing(db, TABLE_SENSOR_DATA, "vibration_average", "REAL")
         }
     }
 
@@ -381,11 +384,12 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 putNullableDouble("temperature", sensorData.temperature)
                 putNullableDouble("humidity", sensorData.humidity)
                 putNullableDouble("pressure", sensorData.pressure)
+                putNullableDouble("vibration_average", sensorData.vibrationAverage)
             },
         )
         Log.d(
             TAG_USERS,
-            "insert sensor rowId=$rowId peer=$peerUserUuid node=0x%012x ts=$timestampMs temp=${sensorData.temperature} humidity=${sensorData.humidity} pressure=${sensorData.pressure} lat=${sensorData.latitude} lon=${sensorData.longitude} alt=${sensorData.altitude}"
+            "insert sensor rowId=$rowId peer=$peerUserUuid node=0x%012x ts=$timestampMs temp=${sensorData.temperature} humidity=${sensorData.humidity} pressure=${sensorData.pressure} vibration=${sensorData.vibrationAverage} lat=${sensorData.latitude} lon=${sensorData.longitude} alt=${sensorData.altitude}"
                 .format(nodeNum),
         )
     }
@@ -402,6 +406,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 "temperature",
                 "humidity",
                 "pressure",
+                "vibration_average",
             ),
             "peer_user_uuid = ?",
             arrayOf(peerUserUuid),
@@ -417,6 +422,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
             val temperatureIndex = cursor.getColumnIndexOrThrow("temperature")
             val humidityIndex = cursor.getColumnIndexOrThrow("humidity")
             val pressureIndex = cursor.getColumnIndexOrThrow("pressure")
+            val vibrationAverageIndex = cursor.getColumnIndexOrThrow("vibration_average")
             while (cursor.moveToNext()) {
                 val data = EdgeZSensorData(
                     latitude = cursor.getNullableDouble(latitudeIndex),
@@ -425,6 +431,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                     temperature = cursor.getNullableDouble(temperatureIndex),
                     humidity = cursor.getNullableDouble(humidityIndex),
                     pressure = cursor.getNullableDouble(pressureIndex),
+                    vibrationAverage = cursor.getNullableDouble(vibrationAverageIndex),
                 )
                 samples += SensorSample(
                     timestampMs = cursor.getLong(timestampIndex),
@@ -503,6 +510,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 temperature REAL,
                 humidity REAL,
                 pressure REAL,
+                vibration_average REAL,
                 FOREIGN KEY(peer_user_uuid) REFERENCES $TABLE_USERS(user_uuid) ON DELETE CASCADE
             )
             """.trimIndent(),

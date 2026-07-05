@@ -123,6 +123,7 @@ message SensorData {
   float temperature = 7;
   float humidity = 8;
   float pressure = 9;
+  float vibration_average = 10;
 }
 
 message Beacon {

@@ -81,4 +81,24 @@
             icon="mdi:counter"
             suggested_display_precision="3" />
     </sensor>
+
+    <sensor
+        interface="rs485"
+        key="2003-1"
+        id="2003"
+        version="1"
+        name="RS485 Vibration Sensor"
+        script="rs485/scripts/vibration_sensor_rs485.lua">
+        <lwm2m-object
+            object="0"
+            instance="0"
+            resource="10"
+            type="sensor"
+            name="Vibration Average"
+            device_class="acceleration"
+            state_class="measurement"
+            unit_of_measurement="g"
+            icon="mdi:vibrate"
+            suggested_display_precision="3" />
+    </sensor>
 </sensors>

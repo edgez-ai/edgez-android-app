@@ -174,6 +174,7 @@ private fun SensorValueRows(data: EdgeZSensorData) {
         SensorValueRow("Temperature", data.temperature, "°C")
         SensorValueRow("Humidity", data.humidity, "%")
         SensorValueRow("Pressure", data.pressure, "hPa")
+        SensorValueRow("Vibration", data.vibrationAverage, "g")
         SensorValueRow("Altitude", data.altitude, "m")
         if (data.latitude != null && data.longitude != null) {
             Text(
