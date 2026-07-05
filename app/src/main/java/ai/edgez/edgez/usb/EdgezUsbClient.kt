@@ -593,7 +593,7 @@ object EdgezUsbControlProto {
         to: Long,
         mime: PacketMime = PacketMime.TEXT,
         maxHop: Int = 0,
-        sequence: Int = 0,
+        sequence: Int = 1,
         messageIdHigh: Long = 0,
         messageIdLow: Long = 0,
         userIdHigh: Long,
@@ -648,7 +648,7 @@ object EdgezUsbControlProto {
             userIdLow = userIdLow,
             mime = PacketMime.TEXT,
             maxHop = maxHop,
-        ).setPayload(ByteString.copyFrom(ByteArray(0))).build().toByteArray()
+        ).build().toByteArray()
     }
 
     private fun encodeScriptConfig(
@@ -1374,7 +1374,7 @@ class EdgezUsbClient(private val context: Context) {
         to: Long,
         mime: PacketMime = PacketMime.TEXT,
         maxHop: Int = 0,
-        sequence: Int = 0,
+        sequence: Int = 1,
         messageIdHigh: Long = 0,
         messageIdLow: Long = 0,
         userIdHigh: Long,

@@ -380,7 +380,12 @@ fun EdgeZApp() {
             val user = message?.toHaLowUser(source.name)
             val sensorData = message?.beaconSensorData()
             val conversationMessage = message?.conversationMessage
-            val conversationAck = message?.operation == UsbControl.Operation.ACKNOWLEDGE.number
+            val conversationAck = message?.let {
+                val localNode = haLowStatus?.macAddress?.takeIf { node -> node != 0L }
+                it.operation == UsbControl.Operation.ACKNOWLEDGE.number &&
+                    it.sequence == 0 &&
+                    (localNode == null || it.from != localNode)
+            } == true
             if (status == null && user == null && conversationMessage == null && !conversationAck) return
             if (status != null) {
                 triggerHaLowInitIfNeeded(source, status)

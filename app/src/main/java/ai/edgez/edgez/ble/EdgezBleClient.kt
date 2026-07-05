@@ -242,7 +242,7 @@ class EdgezBleClient(private val context: Context) {
         to: Long,
         mime: PacketMime = PacketMime.TEXT,
         maxHop: Int = 0,
-        sequence: Int = 0,
+        sequence: Int = 1,
         messageIdHigh: Long = 0,
         messageIdLow: Long = 0,
         userIdHigh: Long,
