@@ -638,13 +638,18 @@ private fun buildGeoFenceLines(users: List<HaLowUser>): List<GeoFenceLine> {
                 }
             }
             if (points.size < 2) return@mapNotNull null
+            val closedPoints = if (points.first() == points.last()) {
+                points
+            } else {
+                points + points.first()
+            }
             val lineColor = NodeMapMarker.fromId(geoFence.marker).colorArgb
                 ?: NodeMapMarker.fromId(orderedUsers.firstOrNull()?.marker).colorArgb
                 ?: DEFAULT_GEO_FENCE_LINE_ARGB.toLong()
             GeoFenceLine(
                 name = geoFence.name.ifBlank { "Geo fence" },
                 colorArgb = lineColor.toInt(),
-                points = points,
+                points = closedPoints,
             )
         }
 }

@@ -623,6 +623,34 @@ object EdgezUsbControlProto {
         ).setPayload(ByteString.copyFrom(conversationPayload)).build().toByteArray()
     }
 
+    fun encodeConversationAck(
+        messageIdHigh: Long,
+        messageIdLow: Long,
+        from: Long,
+        to: Long,
+        userIdHigh: Long,
+        userIdLow: Long,
+        maxHop: Int = 0,
+    ): ByteArray {
+        require(messageIdHigh != 0L || messageIdLow != 0L) {
+            "NetworkPacket conversation ACK requires a message UUID"
+        }
+        require(userIdHigh != 0L || userIdLow != 0L) {
+            "NetworkPacket conversation ACK requires a user UUID"
+        }
+        return encodeNetworkPacketBuilder(
+            operation = UsbControl.Operation.ACKNOWLEDGE,
+            messageIdHigh = messageIdHigh,
+            messageIdLow = messageIdLow,
+            from = from,
+            to = to,
+            userIdHigh = userIdHigh,
+            userIdLow = userIdLow,
+            mime = PacketMime.TEXT,
+            maxHop = maxHop,
+        ).setPayload(ByteString.copyFrom(ByteArray(0))).build().toByteArray()
+    }
+
     private fun encodeScriptConfig(
         action: UsbControl.ScriptConfigAction,
         config: DeviceSensorScriptConfig,
@@ -1365,6 +1393,32 @@ class EdgezUsbClient(private val context: Context) {
                 messageIdLow = messageIdLow,
                 userIdHigh = userIdHigh,
                 userIdLow = userIdLow,
+            )
+        }.getOrElse { error ->
+            return Result.failure(error)
+        }
+        return sendFrame(packet, timeoutMs)
+    }
+
+    fun sendConversationAck(
+        messageIdHigh: Long,
+        messageIdLow: Long,
+        from: Long,
+        to: Long,
+        userIdHigh: Long,
+        userIdLow: Long,
+        maxHop: Int = 0,
+        timeoutMs: Int = 1500,
+    ): Result<String> {
+        val packet = runCatching {
+            EdgezUsbControlProto.encodeConversationAck(
+                messageIdHigh = messageIdHigh,
+                messageIdLow = messageIdLow,
+                from = from,
+                to = to,
+                userIdHigh = userIdHigh,
+                userIdLow = userIdLow,
+                maxHop = maxHop,
             )
         }.getOrElse { error ->
             return Result.failure(error)

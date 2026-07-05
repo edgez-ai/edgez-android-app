@@ -30,6 +30,7 @@ import ai.edgez.edgez.ble.EdgezBleClient
 import ai.edgez.edgez.usb.EdgezUsbClient
 import ai.edgez.edgez.usb.HaLowInterfaceStatus
 import ai.edgez.edgez.usb.PacketMime
+import ai.edgez.halow.UsbControl
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
@@ -75,6 +76,18 @@ private fun newMessageUuid(): MessageUuid {
 
 private fun conversationKey(user: HaLowUser): String = user.userUuid.ifBlank { user.nodeNum.toString() }
 
+private fun sortNodesByName(users: Collection<HaLowUser>): List<HaLowUser> {
+    return users.sortedWith(
+        compareBy<HaLowUser> { it.displayName.lowercase() }
+            .thenBy { it.nodeId },
+    )
+}
+
+private fun isSameConversationUser(first: HaLowUser, second: HaLowUser): Boolean {
+    return first.nodeNum == second.nodeNum ||
+        (first.userUuid.isNotBlank() && first.userUuid == second.userUuid)
+}
+
 private fun packetUserUuid(high: Long, low: Long): String = formatMessageUuid(high, low)
 
 private data class PendingVoiceMessage(
@@ -111,6 +124,7 @@ fun EdgeZApp() {
     val haLowInitExecutor = remember { Executors.newSingleThreadExecutor() }
     val reconnectExecutor = remember { Executors.newSingleThreadExecutor() }
     val beaconExecutor = remember { Executors.newSingleThreadExecutor() }
+    val messageAckExecutor = remember { Executors.newSingleThreadExecutor() }
     val pendingHaLowInitKey = remember { AtomicReference<String?>(null) }
     val pendingVoiceMessages = remember { mutableMapOf<String, PendingVoiceMessage>() }
     val reconnectRequested = remember { AtomicReference<ActiveConnection?>(null) }
@@ -137,14 +151,17 @@ fun EdgeZApp() {
     }
 
     fun markTransportConnected(connection: ActiveConnection) {
+        val wasActiveConnection = activeConnection == connection
         clearReconnect()
         activeConnection = connection
-        haLowStatus = null
-        selectedConversationUser = null
-        resetHaLowInitTrigger()
+        if (!wasActiveConnection) {
+            haLowStatus = null
+            selectedConversationUser = null
+            resetHaLowInitTrigger()
+            EdgeZBeaconRunner.setHaLowStatus(null)
+        }
         lastConnectionPreferences.setLastSuccessfulConnection(connection)
         EdgeZBeaconRunner.setActiveConnection(connection)
-        EdgeZBeaconRunner.setHaLowStatus(null)
         when (connection) {
             ActiveConnection.USB -> {
                 bleClient.close()
@@ -311,6 +328,50 @@ fun EdgeZApp() {
             }
         }
 
+        fun markConversationDelivered(message: ai.edgez.edgez.usb.NetworkPacket) {
+            val messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow)
+            if (messageUuid.isBlank()) return
+            val ackSenderUuid = packetUserUuid(message.userHigh, message.userLow)
+            val ackSenderUser = if (ackSenderUuid.isNotBlank()) {
+                haLowUsers.values.firstOrNull { it.userUuid == ackSenderUuid }
+            } else {
+                haLowUsers[message.from]
+            }
+            val conversationUserKey = ackSenderUser?.let(::conversationKey)
+                ?: ackSenderUuid.takeIf { it.isNotBlank() }
+                ?: message.from.takeIf { it != 0L }?.toString()
+                ?: return
+            edgeZDatabase.updateMessageStatusByUuid(conversationUserKey, messageUuid, "Delivered")
+            conversations = conversations + (
+                conversationUserKey to ((conversations[conversationUserKey] ?: emptyList()).map {
+                    if (it.mine && it.messageUuid == messageUuid) {
+                        it.copy(status = "Delivered")
+                    } else {
+                        it
+                    }
+                })
+                )
+        }
+
+        fun sendConversationAck(source: ActiveConnection, message: ai.edgez.edgez.usb.NetworkPacket) {
+            if (message.messageIdHigh == 0L && message.messageIdLow == 0L) return
+            val identity = lastConnectionPreferences.getOrCreateUserIdentity()
+            val fromNode = haLowStatus?.macAddress?.takeIf { it != 0L } ?: message.to.takeIf { it != 0L } ?: return
+            val toNode = message.from
+            if (toNode == 0L || toNode == HALOW_BROADCAST_NODE_48 || toNode == HALOW_BROADCAST_NODE_32) return
+            val maxHop = lastConnectionPreferences.getMeshMaxHop()
+            messageAckExecutor.execute {
+                val result = when (source) {
+                    ActiveConnection.USB -> usbClient.sendConversationAck(message.messageIdHigh, message.messageIdLow, fromNode, toNode, identity.userIdHigh, identity.userIdLow, maxHop)
+                    ActiveConnection.BLE -> bleClient.sendConversationAck(message.messageIdHigh, message.messageIdLow, fromNode, toNode, identity.userIdHigh, identity.userIdLow, maxHop)
+                    ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+                }
+                result.onFailure {
+                    Log.w(TAG_USERS, "conversation ACK send failed messageId=${formatMessageUuid(message.messageIdHigh, message.messageIdLow)}", it)
+                }
+            }
+        }
+
         fun handleTransportFrame(source: ActiveConnection, frame: ByteArray) {
             if (source != currentActiveConnection) return
             val meshPassphrase = lastConnectionPreferences.getMeshPassphrase()
@@ -319,7 +380,8 @@ fun EdgeZApp() {
             val user = message?.toHaLowUser(source.name)
             val sensorData = message?.beaconSensorData()
             val conversationMessage = message?.conversationMessage
-            if (status == null && user == null && conversationMessage == null) return
+            val conversationAck = message?.operation == UsbControl.Operation.ACKNOWLEDGE.number
+            if (status == null && user == null && conversationMessage == null && !conversationAck) return
             if (status != null) {
                 triggerHaLowInitIfNeeded(source, status)
             }
@@ -330,8 +392,7 @@ fun EdgeZApp() {
                         EdgeZBeaconRunner.setHaLowStatus(status)
                     }
                     if (user != null) {
-                        val userKey = conversationKey(user)
-                        val previousUser = haLowUsers.values.firstOrNull { conversationKey(it) == userKey }
+                        val previousUser = haLowUsers.values.firstOrNull { isSameConversationUser(it, user) }
                         val updatedUser = user.withFallbackLocationAndMarker(previousUser)
                         val updatedUserKey = conversationKey(updatedUser)
                         Log.d(
@@ -341,7 +402,7 @@ fun EdgeZApp() {
                                 "previousLat=${previousUser?.latitude} previousLon=${previousUser?.longitude} " +
                                 "newLat=${updatedUser.latitude} newLon=${updatedUser.longitude} locTs=${updatedUser.locationTimestampMs} " +
                                 "previousMarker=${previousUser?.marker} beaconMarker=${user.marker} marker=${updatedUser.marker} " +
-                                "selected=${selectedConversationUser?.let { conversationKey(it) } == updatedUserKey}",
+                                "selected=${selectedConversationUser?.let { isSameConversationUser(it, updatedUser) } == true}",
                         )
                         edgeZDatabase.upsertUser(updatedUser)
                         sensorData?.let {
@@ -352,10 +413,21 @@ fun EdgeZApp() {
                         } else {
                             haLowUsers
                         }) + (updatedUser.nodeNum to updatedUser)
-                        if (selectedConversationUser?.let { conversationKey(it) } == updatedUserKey) {
+                        if (selectedConversationUser?.let { isSameConversationUser(it, updatedUser) } == true) {
+                            val previousConversationKey = selectedConversationUser?.let { conversationKey(it) }
+                            if (previousConversationKey != null && previousConversationKey != updatedUserKey) {
+                                val previousMessages = conversations[previousConversationKey].orEmpty()
+                                val updatedMessages = conversations[updatedUserKey].orEmpty()
+                                if (previousMessages.isNotEmpty()) {
+                                    conversations = conversations + (updatedUserKey to (updatedMessages + previousMessages).distinctBy { it.timestampMs to it.messageUuid })
+                                }
+                            }
                             selectedConversationUser = updatedUser
                             Log.d(TAG_USERS, "refreshed selected conversation user node=${updatedUser.nodeId}")
                         }
+                    }
+                    if (message != null && conversationAck) {
+                        markConversationDelivered(message)
                     }
                     if (message != null && conversationMessage != null) {
                         val identity = lastConnectionPreferences.getOrCreateUserIdentity()
@@ -436,6 +508,7 @@ fun EdgeZApp() {
                                 conversations = conversations + (
                                     senderKey to ((conversations[senderKey] ?: emptyList()) + entry)
                                     )
+                                sendConversationAck(source, message)
                             }
                         }
                     }
@@ -480,6 +553,7 @@ fun EdgeZApp() {
             haLowInitExecutor.shutdownNow()
             reconnectExecutor.shutdownNow()
             beaconExecutor.shutdownNow()
+            messageAckExecutor.shutdownNow()
         }
     }
 
@@ -749,7 +823,7 @@ fun EdgeZApp() {
                     NodesScreen(
                         activeConnection = activeConnection,
                         haLowStatus = haLowStatus,
-                        users = haLowUsers.values.sortedByDescending { it.lastSeenMs },
+                        users = sortNodesByName(haLowUsers.values),
                         onRemoveNode = { user ->
                             val userKey = conversationKey(user)
                             edgeZDatabase.deleteUser(userKey)
