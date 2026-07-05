@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<sensors>
+    <sensor
+        interface="uart_i2c"
+        key="1002-1"
+        id="1002"
+        version="1"
+        name="SHT3x Temperature/Humidity"
+        script="uart_i2c/scripts/sht3x_temperature_humidity.lua">
+        <lwm2m-object
+            object="3303"
+            instance="0"
+            resource="5700"
+            type="sensor"
+            name="Temperature"
+            device_class="temperature"
+            state_class="measurement"
+            unit_of_measurement="°C"
+            icon="mdi:thermometer"
+            suggested_display_precision="1" />
+        <lwm2m-object
+            object="3304"
+            instance="0"
+            resource="5700"
+            type="sensor"
+            name="Humidity"
+            device_class="humidity"
+            state_class="measurement"
+            unit_of_measurement="%"
+            icon="mdi:water-percent"
+            suggested_display_precision="1" />
+    </sensor>
+
+    <sensor
+        interface="uart_i2c"
+        key="1003-1"
+        id="1003"
+        version="1"
+        name="Random Temperature (Sample)"
+        script="uart_i2c/scripts/random_temperature_sample.lua">
+        <lwm2m-object
+            object="3303"
+            instance="0"
+            resource="5700"
+            type="sensor"
+            name="Temperature"
+            device_class="temperature"
+            state_class="measurement"
+            unit_of_measurement="°C"
+            icon="mdi:thermometer"
+            suggested_display_precision="1" />
+    </sensor>
+
+    <sensor
+        interface="rs485"
+        key="2002-1"
+        id="2002"
+        version="1"
+        name="Flow Meter RS485"
+        script="rs485/scripts/flow_meter_rs485.lua">
+        <lwm2m-object
+            object="3346"
+            instance="0"
+            resource="5700"
+            type="sensor"
+            name="Flow Rate"
+            device_class="volume_flow_rate"
+            state_class="measurement"
+            unit_of_measurement="m³/h"
+            icon="mdi:water"
+            suggested_display_precision="2" />
+        <lwm2m-object
+            object="3424"
+            instance="0"
+            resource="1"
+            type="sensor"
+            name="Total Volume"
+            device_class="water"
+            state_class="total_increasing"
+            unit_of_measurement="m³"
+            icon="mdi:counter"
+            suggested_display_precision="3" />
+    </sensor>
+</sensors>

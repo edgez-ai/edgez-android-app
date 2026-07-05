@@ -1,7 +1,8 @@
 package ai.edgez.edgez
 
 import android.content.Context
-import org.json.JSONObject
+import android.util.Xml
+import org.xmlpull.v1.XmlPullParser
 import java.util.UUID
 
 enum class GeoFenceAlertCondition(val protoValue: Int, val label: String) {
@@ -97,32 +98,59 @@ object DeviceSensorCatalog {
     )
 
     fun sensorDefinitionsFor(context: Context, connector: DeviceSensorConnector): List<DeviceSensorDefinition> {
-        val assetDir = "sensors/${connector.assetFolder}"
-        val names = context.assets.list(assetDir).orEmpty()
-        val definitions = names
-            .filter { it.endsWith(".json") }
-            .mapNotNull { fileName ->
-                runCatching {
-                    val raw = context.assets.open("$assetDir/$fileName").bufferedReader().use { it.readText() }
-                    val json = JSONObject(raw)
-                    val id = json.optInt("id", 0)
-                    val version = json.optInt("version", 0)
-                    val script = json.optString("script")
-                    if (id <= 0 || version <= 0 || script.isBlank()) {
-                        null
-                    } else {
-                        DeviceSensorDefinition(
-                            key = fileName.removeSuffix(".json"),
-                            id = id,
-                            version = version,
-                            name = json.optString("name").ifBlank { fileName.removeSuffix(".json") },
-                            script = script,
-                        )
-                    }
-                }.getOrNull()
-            }
+        val definitions = readManifestDefinitions(context, connector)
             .sortedWith(compareBy<DeviceSensorDefinition> { it.name.lowercase() }.thenBy { it.key })
         return listOf(noneSensor) + definitions
+    }
+
+    private fun readManifestDefinitions(
+        context: Context,
+        connector: DeviceSensorConnector,
+    ): List<DeviceSensorDefinition> {
+        return runCatching {
+            context.assets.open("sensors/manifest.xml").use { input ->
+                val parser = Xml.newPullParser()
+                parser.setInput(input, Charsets.UTF_8.name())
+                val definitions = mutableListOf<DeviceSensorDefinition>()
+                var event = parser.eventType
+                while (event != XmlPullParser.END_DOCUMENT) {
+                    if (event == XmlPullParser.START_TAG && parser.name == "sensor") {
+                        parseSensorDefinition(context, connector, parser)?.let { definitions += it }
+                    }
+                    event = parser.next()
+                }
+                definitions
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun parseSensorDefinition(
+        context: Context,
+        connector: DeviceSensorConnector,
+        parser: XmlPullParser,
+    ): DeviceSensorDefinition? {
+        val sensorInterface = parser.getAttributeValue(null, "interface").orEmpty()
+        if (sensorInterface != connector.assetFolder) return null
+
+        val id = parser.getAttributeValue(null, "id")?.toIntOrNull() ?: 0
+        val version = parser.getAttributeValue(null, "version")?.toIntOrNull() ?: 0
+        val key = parser.getAttributeValue(null, "key").orEmpty().ifBlank { "$id-$version" }
+        val name = parser.getAttributeValue(null, "name").orEmpty().ifBlank { key }
+        val scriptPath = parser.getAttributeValue(null, "script").orEmpty()
+        if (id <= 0 || version <= 0 || scriptPath.isBlank()) return null
+
+        val script = runCatching {
+            context.assets.open("sensors/$scriptPath").bufferedReader().use { it.readText() }
+        }.getOrDefault("")
+        if (script.isBlank()) return null
+
+        return DeviceSensorDefinition(
+            key = key,
+            id = id,
+            version = version,
+            name = name,
+            script = script,
+        )
     }
 
     fun definitionFor(
