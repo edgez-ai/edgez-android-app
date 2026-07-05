@@ -76,6 +76,11 @@ data class DeviceSensorDefinition(
         get() = if (key.isBlank()) name else "$name [id=$id, v=$version]"
 }
 
+enum class DeviceSensorScriptAction {
+    UPLOAD,
+    DELETE,
+}
+
 data class DeviceSensorScriptConfig(
     val scriptId: Int,
     val version: Int,
@@ -86,6 +91,7 @@ data class DeviceSensorScriptConfig(
     val script: String,
     val globalBufferSize: Int = 4096,
     val mimeType: String = "application/x-lua",
+    val action: DeviceSensorScriptAction = DeviceSensorScriptAction.UPLOAD,
 )
 
 object DeviceSensorCatalog {
@@ -191,17 +197,50 @@ object DeviceSensorCatalog {
         )
     }
 
+    private fun deleteScriptConfigFor(
+        context: Context,
+        connector: DeviceSensorConnector,
+        key: String,
+    ): DeviceSensorScriptConfig? {
+        if (key.isBlank()) return null
+        val definition = definitionFor(context, connector, key)
+        val scriptId = definition?.id ?: key.substringBefore("-").toIntOrNull() ?: return null
+        val version = definition?.version ?: key.substringAfter("-", "0").toIntOrNull().orZero()
+        return DeviceSensorScriptConfig(
+            scriptId = scriptId,
+            version = version,
+            name = definition?.name ?: key,
+            sensorType = key,
+            selectUartI2c = connector == DeviceSensorConnector.UART_I2C,
+            selectRs485 = connector == DeviceSensorConnector.RS485,
+            script = "",
+            action = DeviceSensorScriptAction.DELETE,
+        )
+    }
+
     fun scriptConfigsFor(
         context: Context,
         uartI2cSensorType: String,
         rs485SensorType: String,
+        previousUartI2cSensorType: String = "",
+        previousRs485SensorType: String = "",
     ): List<DeviceSensorScriptConfig> {
-        return listOfNotNull(
-            scriptConfigFor(context, DeviceSensorConnector.UART_I2C, uartI2cSensorType),
-            scriptConfigFor(context, DeviceSensorConnector.RS485, rs485SensorType),
-        )
+        val configs = mutableListOf<DeviceSensorScriptConfig>()
+        if (previousUartI2cSensorType.isNotBlank() && uartI2cSensorType.isBlank()) {
+            deleteScriptConfigFor(context, DeviceSensorConnector.UART_I2C, previousUartI2cSensorType)?.let { configs += it }
+        } else {
+            scriptConfigFor(context, DeviceSensorConnector.UART_I2C, uartI2cSensorType)?.let { configs += it }
+        }
+        if (previousRs485SensorType.isNotBlank() && rs485SensorType.isBlank()) {
+            deleteScriptConfigFor(context, DeviceSensorConnector.RS485, previousRs485SensorType)?.let { configs += it }
+        } else {
+            scriptConfigFor(context, DeviceSensorConnector.RS485, rs485SensorType)?.let { configs += it }
+        }
+        return configs
     }
 }
+
+private fun Int?.orZero(): Int = this ?: 0
 
 enum class EdgeZDeviceType(val protoValue: Int, val label: String) {
     UNSPECIFIED(0, "Unspecified"),

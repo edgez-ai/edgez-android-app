@@ -14,6 +14,7 @@ import android.util.Log
 import ai.edgez.halow.UsbControl
 import ai.edgez.edgez.DeviceGeoFence
 import ai.edgez.edgez.DeviceSensorScriptConfig
+import ai.edgez.edgez.DeviceSensorScriptAction
 import ai.edgez.edgez.EdgeZDeviceType
 import ai.edgez.edgez.EdgeZSensorData
 import ai.edgez.edgez.GeoFenceAlertCondition
@@ -556,6 +557,17 @@ object EdgezUsbControlProto {
     }
 
     fun encodeScriptConfigUpload(config: DeviceSensorScriptConfig): List<ByteArray> {
+        if (config.action == DeviceSensorScriptAction.DELETE) {
+            return listOf(
+                encodeScriptConfig(
+                    action = UsbControl.ScriptConfigAction.SCRIPT_CONFIG_DELETE,
+                    config = config,
+                    totalSize = 0,
+                    offset = 0,
+                    chunk = ByteArray(0),
+                ),
+            )
+        }
         val scriptBytes = config.script.toByteArray(StandardCharsets.UTF_8)
         val packets = mutableListOf<ByteArray>()
         packets += encodeScriptConfig(

@@ -439,6 +439,8 @@ fun SettingsScreen(
                     context = context,
                     uartI2cSensorType = uartI2cSensorType,
                     rs485SensorType = rs485SensorType,
+                    previousUartI2cSensorType = lastSavedDeviceUartI2cSensorType,
+                    previousRs485SensorType = lastSavedDeviceRs485SensorType,
                 )
             } else {
                 emptyList()
@@ -467,7 +469,7 @@ fun SettingsScreen(
                         if (scriptConfigs.isEmpty()) {
                             "$label sent"
                         } else {
-                            "$label and ${scriptConfigs.size} sensor script(s) sent"
+                            "$label and ${scriptConfigs.size} sensor config(s) sent"
                         }
                     },
                     onFailure = { it.message ?: "$label save failed" },
