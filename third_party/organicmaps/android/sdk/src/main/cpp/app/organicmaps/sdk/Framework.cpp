@@ -28,6 +28,7 @@
 #include "drape_frontend/user_event_stream.hpp"
 #include "drape_frontend/visual_params.hpp"
 #include "drape_frontend/my_position.hpp"
+#include "drape_frontend/drape_api.hpp"
 
 #include "drape/pointers.hpp"
 #include "drape/support_manager.hpp"
@@ -40,9 +41,6 @@
 
 #include "indexer/feature_altitude.hpp"
 #include "indexer/validate_and_format_contacts.hpp"
-
-#include "kml/type_utils.hpp"
-#include "kml/types.hpp"
 
 #include "routing/following_info.hpp"
 #include "routing/speed_camera_manager.hpp"
@@ -100,25 +98,20 @@ static_assert(sizeof(int) >= 4, "Size of jint is less than 4 bytes.");
 namespace
 {
 jobject g_placePageActivationListener = nullptr;
-std::vector<kml::TrackId> g_edgeZGeoFenceTrackIds;
+std::vector<std::string> g_edgeZGeoFenceLineIds;
 
-uint32_t ToTrackRgba(jint argb)
+dp::Color ToDrapeColor(jint argb)
 {
   auto const color = static_cast<uint32_t>(argb);
-  auto const alpha = (color >> 24) & 0xFF;
-  return ((color & 0x00FFFFFF) << 8) | alpha;
+  return dp::Color((color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF, (color >> 24) & 0xFF);
 }
 
 void ClearEdgeZGeoFenceLines()
 {
-  auto & bm = frm()->GetBookmarkManager();
-  auto session = bm.GetEditSession();
-  for (auto const trackId : g_edgeZGeoFenceTrackIds)
-  {
-    if (bm.GetTrack(trackId) != nullptr)
-      session.DeleteTrack(trackId);
-  }
-  g_edgeZGeoFenceTrackIds.clear();
+  auto & drapeApi = frm()->GetDrapeApi();
+  for (auto const & lineId : g_edgeZGeoFenceLineIds)
+    drapeApi.RemoveLine(lineId);
+  g_edgeZGeoFenceLineIds.clear();
 }
 
 android::AndroidVulkanContextFactory * CastFactory(drape_ptr<dp::GraphicsContextFactory> const & f)
@@ -886,37 +879,28 @@ JNIEXPORT void Java_app_organicmaps_sdk_Framework_nativeSetEdgeZGeoFenceLines(JN
   env->GetIntArrayRegion(jColors, 0, groupCount, colors.data());
 
   size_t pairIndex = 0;
-  auto session = frm()->GetBookmarkManager().GetEditSession();
   for (jsize groupIndex = 0; groupIndex < groupCount; ++groupIndex)
   {
     auto const pointCount = pointCounts[groupIndex];
     if (pointCount < 2 || pairIndex + static_cast<size_t>(pointCount) * 2 > latLonPairs.size())
       break;
 
-    kml::TrackGeometry line;
-    line.reserve(static_cast<size_t>(pointCount));
+    std::vector<m2::PointD> points;
+    points.reserve(static_cast<size_t>(pointCount));
     for (jint pointIndex = 0; pointIndex < pointCount; ++pointIndex)
     {
       auto const latitude = latLonPairs[pairIndex++];
       auto const longitude = latLonPairs[pairIndex++];
-      line.emplace_back(mercator::FromLatLon(latitude, longitude), geometry::kInvalidAltitude);
+      points.push_back(mercator::FromLatLon(latitude, longitude));
     }
 
-    kml::TrackData trackData;
-    kml::SetDefaultStr(trackData.m_name, "Geo fence");
+    std::string lineId = "edgez-geofence-" + std::to_string(groupIndex);
     jni::ScopedLocalRef<jstring> const name(env, static_cast<jstring>(env->GetObjectArrayElement(jNames, groupIndex)));
     if (name.get() != nullptr)
-      kml::SetDefaultStr(trackData.m_name, jni::ToNativeString(env, name.get()));
-    trackData.m_layers.emplace_back();
-    trackData.m_layers[0].m_lineWidth = 6.0;
-    trackData.m_layers[0].m_color.m_predefinedColor = kml::PredefinedColor::None;
-    trackData.m_layers[0].m_color.m_rgba = ToTrackRgba(colors[groupIndex]);
-    trackData.m_geometry.m_lines.push_back(std::move(line));
-    trackData.m_geometry.m_timestamps.emplace_back();
+      lineId += "-" + jni::ToNativeString(env, name.get());
 
-    auto const * track = session.CreateTrack(std::move(trackData));
-    if (track != nullptr)
-      g_edgeZGeoFenceTrackIds.push_back(track->GetId());
+    frm()->GetDrapeApi().AddLine(lineId, df::DrapeApiLineData(points, ToDrapeColor(colors[groupIndex])).Width(6.0f));
+    g_edgeZGeoFenceLineIds.push_back(std::move(lineId));
   }
 }
 
