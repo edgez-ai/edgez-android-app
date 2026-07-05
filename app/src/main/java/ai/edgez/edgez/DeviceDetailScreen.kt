@@ -18,6 +18,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -34,6 +35,15 @@ private data class SensorSeries(
     val color: Color,
     val values: List<Pair<Long, Double>>,
 )
+
+private data class SensorChartScale(
+    val minTime: Long,
+    val maxTime: Long,
+    val minValue: Double,
+    val maxValue: Double,
+)
+
+private const val SENSOR_CHART_WINDOW_MS = 60L * 60L * 1000L
 
 @Composable
 fun DeviceDetailScreen(
@@ -190,11 +200,23 @@ private fun SensorChartCard(samples: List<SensorSample>) {
     val tertiary = MaterialTheme.colorScheme.tertiary
     val outline = MaterialTheme.colorScheme.outline
     val onSurface = MaterialTheme.colorScheme.onSurfaceVariant
+    val nowMs = System.currentTimeMillis()
+    val chartStartMs = nowMs - SENSOR_CHART_WINDOW_MS
+    val chartSamples = samples.filter { it.timestampMs >= chartStartMs }
     val series = listOf(
-        SensorSeries("Temperature", "°C", primary, samples.mapNotNull { sample -> sample.data.temperature?.let { sample.timestampMs to it } }),
-        SensorSeries("Humidity", "%", secondary, samples.mapNotNull { sample -> sample.data.humidity?.let { sample.timestampMs to it } }),
-        SensorSeries("Pressure", "hPa", tertiary, samples.mapNotNull { sample -> sample.data.pressure?.let { sample.timestampMs to it } }),
+        SensorSeries("Temperature", "°C", primary, chartSamples.mapNotNull { sample -> sample.data.temperature?.let { sample.timestampMs to it } }),
+        SensorSeries("Humidity", "%", secondary, chartSamples.mapNotNull { sample -> sample.data.humidity?.let { sample.timestampMs to it } }),
+        SensorSeries("Pressure", "hPa", tertiary, chartSamples.mapNotNull { sample -> sample.data.pressure?.let { sample.timestampMs to it } }),
     ).filter { it.values.isNotEmpty() }
+    val allValues = series.flatMap { it.values }
+    val minValue = allValues.minOfOrNull { it.second } ?: 0.0
+    val maxValue = allValues.maxOfOrNull { it.second }?.takeIf { it > minValue } ?: (minValue + 1.0)
+    val scale = SensorChartScale(
+        minTime = chartStartMs,
+        maxTime = nowMs.takeIf { it > chartStartMs } ?: (chartStartMs + 1L),
+        minValue = minValue,
+        maxValue = maxValue,
+    )
 
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
         Column(
@@ -205,9 +227,9 @@ private fun SensorChartCard(samples: List<SensorSample>) {
         ) {
             Text("Sensor time series", style = MaterialTheme.typography.titleMedium)
             if (series.isEmpty()) {
-                Text("No chartable sensor values yet", style = MaterialTheme.typography.bodyMedium)
+                Text("No chartable sensor values in the last hour", style = MaterialTheme.typography.bodyMedium)
             } else {
-                SensorLineChart(series = series, outline = outline)
+                SensorLineChart(series = series, scale = scale, outline = outline, labelColor = onSurface)
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     series.forEach {
                         Row {
@@ -225,46 +247,71 @@ private fun SensorChartCard(samples: List<SensorSample>) {
 }
 
 @Composable
-private fun SensorLineChart(series: List<SensorSeries>, outline: Color) {
-    Canvas(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(180.dp),
-    ) {
-        val paddingLeft = 8.dp.toPx()
-        val paddingRight = 8.dp.toPx()
-        val paddingTop = 12.dp.toPx()
-        val paddingBottom = 20.dp.toPx()
-        val chartLeft = paddingLeft
-        val chartRight = size.width - paddingRight
-        val chartTop = paddingTop
-        val chartBottom = size.height - paddingBottom
-        val allValues = series.flatMap { it.values }
-        val minTime = allValues.minOf { it.first }
-        val maxTime = allValues.maxOf { it.first }.takeIf { it > minTime } ?: (minTime + 1L)
-        val minValue = allValues.minOf { it.second }
-        val maxValue = allValues.maxOf { it.second }.takeIf { it > minValue } ?: (minValue + 1.0)
-
-        drawLine(outline, Offset(chartLeft, chartBottom), Offset(chartRight, chartBottom), strokeWidth = 1.dp.toPx())
-        drawLine(outline, Offset(chartLeft, chartTop), Offset(chartLeft, chartBottom), strokeWidth = 1.dp.toPx())
-
-        series.forEach { sensorSeries ->
-            val points = sensorSeries.values.map { (timestamp, value) ->
-                val x = chartLeft + ((timestamp - minTime).toFloat() / (maxTime - minTime).toFloat()) * (chartRight - chartLeft)
-                val y = chartBottom - ((value - minValue).toFloat() / (maxValue - minValue).toFloat()) * (chartBottom - chartTop)
-                Offset(x, y)
+private fun SensorLineChart(series: List<SensorSeries>, scale: SensorChartScale, outline: Color, labelColor: Color) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier
+                    .width(56.dp)
+                    .height(180.dp),
+                verticalArrangement = Arrangement.SpaceBetween,
+                horizontalAlignment = Alignment.End,
+            ) {
+                Text(formatSensorValue(scale.maxValue), style = MaterialTheme.typography.labelSmall, color = labelColor, textAlign = TextAlign.End)
+                Text(formatSensorValue((scale.minValue + scale.maxValue) / 2.0), style = MaterialTheme.typography.labelSmall, color = labelColor, textAlign = TextAlign.End)
+                Text(formatSensorValue(scale.minValue), style = MaterialTheme.typography.labelSmall, color = labelColor, textAlign = TextAlign.End)
             }
-            points.zipWithNext().forEach { (start, end) ->
-                drawLine(
-                    color = sensorSeries.color,
-                    start = start,
-                    end = end,
-                    strokeWidth = 2.dp.toPx(),
-                    cap = StrokeCap.Round,
-                )
+            Spacer(Modifier.width(6.dp))
+            Canvas(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(180.dp),
+            ) {
+                val paddingLeft = 4.dp.toPx()
+                val paddingRight = 8.dp.toPx()
+                val paddingTop = 12.dp.toPx()
+                val paddingBottom = 20.dp.toPx()
+                val chartLeft = paddingLeft
+                val chartRight = size.width - paddingRight
+                val chartTop = paddingTop
+                val chartBottom = size.height - paddingBottom
+                val midY = chartTop + (chartBottom - chartTop) / 2f
+
+                drawLine(outline.copy(alpha = 0.45f), Offset(chartLeft, chartTop), Offset(chartRight, chartTop), strokeWidth = 1.dp.toPx())
+                drawLine(outline.copy(alpha = 0.45f), Offset(chartLeft, midY), Offset(chartRight, midY), strokeWidth = 1.dp.toPx())
+                drawLine(outline, Offset(chartLeft, chartBottom), Offset(chartRight, chartBottom), strokeWidth = 1.dp.toPx())
+                drawLine(outline, Offset(chartLeft, chartTop), Offset(chartLeft, chartBottom), strokeWidth = 1.dp.toPx())
+
+                series.forEach { sensorSeries ->
+                    val points = sensorSeries.values.map { (timestamp, value) ->
+                        val clampedTimestamp = timestamp.coerceIn(scale.minTime, scale.maxTime)
+                        val x = chartLeft + ((clampedTimestamp - scale.minTime).toFloat() / (scale.maxTime - scale.minTime).toFloat()) * (chartRight - chartLeft)
+                        val y = chartBottom - ((value - scale.minValue).toFloat() / (scale.maxValue - scale.minValue).toFloat()) * (chartBottom - chartTop)
+                        Offset(x, y)
+                    }
+                    points.zipWithNext().forEach { (start, end) ->
+                        drawLine(
+                            color = sensorSeries.color,
+                            start = start,
+                            end = end,
+                            strokeWidth = 2.dp.toPx(),
+                            cap = StrokeCap.Round,
+                        )
+                    }
+                    points.forEach { point ->
+                        drawCircle(sensorSeries.color, radius = 3.dp.toPx(), center = point, style = Stroke(width = 1.5.dp.toPx()))
+                    }
+                }
             }
-            points.forEach { point ->
-                drawCircle(sensorSeries.color, radius = 3.dp.toPx(), center = point, style = Stroke(width = 1.5.dp.toPx()))
+        }
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Spacer(Modifier.width(62.dp))
+            Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("60m ago", style = MaterialTheme.typography.labelSmall, color = labelColor)
+                Text("Now", style = MaterialTheme.typography.labelSmall, color = labelColor)
             }
         }
     }

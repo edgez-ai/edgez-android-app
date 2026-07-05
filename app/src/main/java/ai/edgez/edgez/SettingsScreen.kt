@@ -135,6 +135,8 @@ fun SettingsScreen(
     var deviceGeoIndex by rememberSaveable { mutableStateOf(0) }
     var deviceUartI2cSensorType by rememberSaveable { mutableStateOf("") }
     var deviceRs485SensorType by rememberSaveable { mutableStateOf("") }
+    var lastSavedDeviceUartI2cSensorType by rememberSaveable { mutableStateOf("") }
+    var lastSavedDeviceRs485SensorType by rememberSaveable { mutableStateOf("") }
     var uartI2cSensorDropdownExpanded by remember { mutableStateOf(false) }
     var rs485SensorDropdownExpanded by remember { mutableStateOf(false) }
     var deviceMode by rememberSaveable { mutableStateOf(DeviceModeState.enabled) }
@@ -323,8 +325,12 @@ fun SettingsScreen(
             connectionPreferences.setSelectedDeviceGeoFenceKey(geoFence.key)
         }
         deviceGeoIndex = settings.geoIndex.coerceAtLeast(0)
-        deviceUartI2cSensorType = settings.uartI2cSensorType
-        deviceRs485SensorType = settings.rs485SensorType
+        val loadedUartI2cSensorType = settings.uartI2cSensorType.take(32)
+        val loadedRs485SensorType = settings.rs485SensorType.take(32)
+        deviceUartI2cSensorType = loadedUartI2cSensorType
+        deviceRs485SensorType = loadedRs485SensorType
+        lastSavedDeviceUartI2cSensorType = loadedUartI2cSensorType
+        lastSavedDeviceRs485SensorType = loadedRs485SensorType
         if (deviceIdentity == null && (settings.userIdHigh != 0L || settings.userIdLow != 0L) && settings.userPrivateKey.size == 32) {
             val publicKey = if (settings.userPublicKey.size == 32) {
                 settings.userPublicKey
@@ -424,11 +430,19 @@ fun SettingsScreen(
         }
         status = "Saving $label..."
         executor.execute {
-            val scriptConfigs = DeviceSensorCatalog.scriptConfigsFor(
-                context = context,
-                uartI2cSensorType = settings.uartI2cSensorType,
-                rs485SensorType = settings.rs485SensorType,
-            )
+            val uartI2cSensorType = settings.uartI2cSensorType.take(32)
+            val rs485SensorType = settings.rs485SensorType.take(32)
+            val sensorSelectionChanged = uartI2cSensorType != lastSavedDeviceUartI2cSensorType ||
+                rs485SensorType != lastSavedDeviceRs485SensorType
+            val scriptConfigs = if (sensorSelectionChanged) {
+                DeviceSensorCatalog.scriptConfigsFor(
+                    context = context,
+                    uartI2cSensorType = uartI2cSensorType,
+                    rs485SensorType = rs485SensorType,
+                )
+            } else {
+                emptyList()
+            }
             var result: Result<String> = Result.success("No sensor scripts")
             for (scriptConfig in scriptConfigs) {
                 result = when (connection) {
@@ -448,6 +462,8 @@ fun SettingsScreen(
             activity?.runOnUiThread {
                 status = result.fold(
                     onSuccess = {
+                        lastSavedDeviceUartI2cSensorType = uartI2cSensorType
+                        lastSavedDeviceRs485SensorType = rs485SensorType
                         if (scriptConfigs.isEmpty()) {
                             "$label sent"
                         } else {
