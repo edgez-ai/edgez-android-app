@@ -208,6 +208,13 @@ fun SettingsScreen(
         return generated
     }
 
+    fun regenerateDeviceIdentity() {
+        val generated = newDeviceIdentity(deviceUserName.ifBlank { "EdgeZ Device" })
+        deviceIdentity = generated
+        deviceUserName = generated.name
+        status = "Device user ID regenerated; save settings to apply"
+    }
+
     fun requestBlePermissions() {
         val required = if (Build.VERSION.SDK_INT >= 33) {
             bleClient.requiredPermissions() + Manifest.permission.POST_NOTIFICATIONS
@@ -747,12 +754,8 @@ fun SettingsScreen(
                         Text("X25519 private key", style = MaterialTheme.typography.titleSmall)
                         Text(deviceIdentity?.privateKey?.let(::formatHex) ?: "Not loaded", style = MaterialTheme.typography.bodySmall)
                         Spacer(Modifier.height(10.dp))
-                        Button(onClick = {
-                            deviceIdentity = newDeviceIdentity(deviceUserName.ifBlank { "EdgeZ Device" })
-                            deviceUserName = deviceIdentity?.name ?: "EdgeZ Device"
-                            status = "Device X25519 key pair regenerated"
-                        }) {
-                            Text("Generate device key pair")
+                        Button(onClick = { regenerateDeviceIdentity() }) {
+                            Text("Regenerate device user ID")
                         }
                     } else {
                         Spacer(Modifier.height(10.dp))
