@@ -211,6 +211,7 @@ private fun SensorChartCard(samples: List<SensorSample>) {
         SensorSeries("Temperature", "°C", primary, chartSamples.mapNotNull { sample -> sample.data.temperature?.let { sample.timestampMs to it } }),
         SensorSeries("Humidity", "%", secondary, chartSamples.mapNotNull { sample -> sample.data.humidity?.let { sample.timestampMs to it } }),
         SensorSeries("Pressure", "hPa", tertiary, chartSamples.mapNotNull { sample -> sample.data.pressure?.let { sample.timestampMs to it } }),
+        SensorSeries("Pass-by score", "", outline, chartSamples.mapNotNull { sample -> sample.data.vibrationAverage?.let { sample.timestampMs to it } }),
     ).filter { it.values.isNotEmpty() }
     val allValues = series.flatMap { it.values }
     val minValue = allValues.minOfOrNull { it.second } ?: 0.0
@@ -241,7 +242,7 @@ private fun SensorChartCard(samples: List<SensorSample>) {
                                 drawCircle(it.color)
                             }
                             Spacer(Modifier.width(4.dp))
-                            Text("${it.label} ${it.unit}", style = MaterialTheme.typography.bodySmall, color = onSurface)
+                            Text(it.displayLabel, style = MaterialTheme.typography.bodySmall, color = onSurface)
                         }
                     }
                 }
@@ -328,6 +329,9 @@ private fun formatSensorValue(value: Double): String {
         String.format(Locale.US, "%.2f", value)
     }
 }
+
+private val SensorSeries.displayLabel: String
+    get() = if (unit.isBlank()) label else "$label $unit"
 
 private fun formatCoordinate(value: Double): String {
     return String.format(Locale.US, "%.6f", value)
