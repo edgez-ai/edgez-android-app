@@ -42,6 +42,17 @@ private const val RECONNECT_DELAY_MS = 2_000L
 private const val TAG_USERS = "EdgeZUsers"
 private const val HALOW_BROADCAST_NODE_48 = 0xffffffffffffL
 private const val HALOW_BROADCAST_NODE_32 = 0xffffffffL
+private const val VOICE_CHUNK_SEND_SPACING_MS = 120L
+
+private fun paceVoiceChunkSend(index: Int, totalChunks: Int) {
+    if (index >= totalChunks - 1) return
+    try {
+        Thread.sleep(VOICE_CHUNK_SEND_SPACING_MS)
+    } catch (_: InterruptedException) {
+        Thread.currentThread().interrupt()
+    }
+}
+
 private data class MessageUuid(
     val high: Long,
     val low: Long,
@@ -739,6 +750,7 @@ fun EdgeZApp() {
                                                 ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
                                             }
                                             sendResult.getOrThrow()
+                                            paceVoiceChunkSend(index, chunks.size)
                                     }
                                 }
                                 result.fold(
@@ -807,6 +819,7 @@ fun EdgeZApp() {
                                             ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
                                         }
                                         sendResult.getOrThrow()
+                                        paceVoiceChunkSend(index, chunks.size)
                                     }
                                 }
                                 result.fold(
