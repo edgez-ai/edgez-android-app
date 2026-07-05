@@ -174,7 +174,7 @@ private fun SensorValueRows(data: EdgeZSensorData) {
         SensorValueRow("Temperature", data.temperature, "°C")
         SensorValueRow("Humidity", data.humidity, "%")
         SensorValueRow("Pressure", data.pressure, "hPa")
-        SensorValueRow("Vibration", data.vibrationAverage, "g")
+        SensorValueRow("Pass-by score", data.vibrationAverage, "")
         SensorValueRow("Altitude", data.altitude, "m")
         if (data.latitude != null && data.longitude != null) {
             Text(
@@ -190,7 +190,10 @@ private fun SensorValueRow(label: String, value: Double?, unit: String) {
     if (value == null) return
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(label, style = MaterialTheme.typography.bodyMedium)
-        Text("${formatSensorValue(value)} $unit", style = MaterialTheme.typography.bodyMedium)
+        Text(
+            if (unit.isBlank()) formatSensorValue(value) else "${formatSensorValue(value)} $unit",
+            style = MaterialTheme.typography.bodyMedium,
+        )
     }
 }
 

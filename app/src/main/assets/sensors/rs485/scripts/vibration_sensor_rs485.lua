@@ -10,12 +10,17 @@ local cfg = {
 local VIBRATION_OBJECT = tonumber(rawget(_G, "VIBRATION_LWM2M_OBJECT")) or 0
 local VIBRATION_RESOURCE = tonumber(rawget(_G, "VIBRATION_LWM2M_RESOURCE")) or 10
 local VIBRATION_INSTANCE = tonumber(rawget(_G, "VIBRATION_LWM2M_INSTANCE")) or 0
-local ACCEL_START = 0x34
-local ACCEL_COUNT = 3
-local SAMPLE_HZ = tonumber(rawget(_G, "VIBRATION_SAMPLE_HZ")) or 100
-local SAMPLE_SECONDS = tonumber(rawget(_G, "VIBRATION_SAMPLE_SECONDS")) or 1
-local SAMPLE_INTERVAL = 1.0 / SAMPLE_HZ
-local SAMPLE_COUNT = SAMPLE_HZ * SAMPLE_SECONDS
+local FEATURE_START = 0x3A
+local FEATURE_END = 0x6A
+local FEATURE_COUNT = FEATURE_END - FEATURE_START + 1
+local SAMPLE_COUNT = tonumber(rawget(_G, "VIBRATION_SCORE_SAMPLES")) or 5
+local SAMPLE_INTERVAL = tonumber(rawget(_G, "VIBRATION_SCORE_INTERVAL")) or 0.2
+local VX_SCALE = tonumber(rawget(_G, "VIBRATION_VELOCITY_SCALE")) or 100.0
+local VRMS_SCALE = tonumber(rawget(_G, "VIBRATION_VRMS_SCALE")) or 100.0
+local DRMS_SCALE = tonumber(rawget(_G, "VIBRATION_DRMS_SCALE")) or 100.0
+local INSTANT_VELOCITY_WEIGHT = tonumber(rawget(_G, "VIBRATION_INSTANT_VELOCITY_WEIGHT")) or 0.35
+local RMS_VELOCITY_WEIGHT = tonumber(rawget(_G, "VIBRATION_RMS_VELOCITY_WEIGHT")) or 0.50
+local RMS_DISPLACEMENT_WEIGHT = tonumber(rawget(_G, "VIBRATION_RMS_DISPLACEMENT_WEIGHT")) or 0.15
 
 local function log(msg)
   util_log({ quiet = cfg.quiet }, "Vibration", msg)
@@ -32,13 +37,6 @@ local function sleep_seconds(seconds)
   local deadline = os.clock() + seconds
   while os.clock() < deadline do
   end
-end
-
-local function to_signed16(v)
-  if (v & 0x8000) ~= 0 then
-    return v - 0x10000
-  end
-  return v
 end
 
 local function read_holding_registers(address, count)
@@ -81,20 +79,51 @@ local function read_holding_registers(address, count)
   return nil, "no valid Modbus response frame received"
 end
 
-local function acceleration_g(reg)
-  return to_signed16(reg) / 32768.0 * 16.0
+local function reg_at(regs, address)
+  return regs[address - FEATURE_START + 1] or 0
 end
 
-local function read_vibration_magnitude_g()
-  local regs, err = read_holding_registers(ACCEL_START, ACCEL_COUNT)
+local function vector_magnitude(x, y, z)
+  return math.sqrt((x * x) + (y * y) + (z * z))
+end
+
+local function decode_velocity(raw)
+  return raw / VX_SCALE
+end
+
+local function decode_vrms(raw)
+  return raw / VRMS_SCALE
+end
+
+local function decode_drms(raw)
+  return raw / DRMS_SCALE
+end
+
+local function read_passby_score()
+  local regs, err = read_holding_registers(FEATURE_START, FEATURE_COUNT)
   if not regs then
     return nil, err
   end
 
-  local ax = acceleration_g(regs[1])
-  local ay = acceleration_g(regs[2])
-  local az = acceleration_g(regs[3])
-  return math.sqrt((ax * ax) + (ay * ay) + (az * az))
+  local vx_mag = vector_magnitude(
+    decode_velocity(reg_at(regs, 0x3A)),
+    decode_velocity(reg_at(regs, 0x3B)),
+    decode_velocity(reg_at(regs, 0x3C))
+  )
+  local vrms_mag = vector_magnitude(
+    decode_vrms(reg_at(regs, 0x50)),
+    decode_vrms(reg_at(regs, 0x5C)),
+    decode_vrms(reg_at(regs, 0x68))
+  )
+  local drms_mag = vector_magnitude(
+    decode_drms(reg_at(regs, 0x52)),
+    decode_drms(reg_at(regs, 0x5E)),
+    decode_drms(reg_at(regs, 0x6A))
+  )
+
+  return (INSTANT_VELOCITY_WEIGHT * vx_mag) +
+    (RMS_VELOCITY_WEIGHT * vrms_mag) +
+    (RMS_DISPLACEMENT_WEIGHT * drms_mag)
 end
 
 local ok, err = rs485_connect(cfg.baud)
@@ -106,12 +135,12 @@ end
 local sum = 0
 for sample = 1, SAMPLE_COUNT do
   local cycle_start = os.clock()
-  local magnitude, read_err = read_vibration_magnitude_g()
-  if magnitude == nil then
+  local score, read_err = read_passby_score()
+  if score == nil then
     rs485_safe_close()
-    error("vibration read failed at sample " .. tostring(sample) .. ": " .. tostring(read_err))
+    error("vibration passby score read failed at sample " .. tostring(sample) .. ": " .. tostring(read_err))
   end
-  sum = sum + magnitude
+  sum = sum + score
 
   local sleep_time = SAMPLE_INTERVAL - (os.clock() - cycle_start)
   if sample < SAMPLE_COUNT and sleep_time > 0 then

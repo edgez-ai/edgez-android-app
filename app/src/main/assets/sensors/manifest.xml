@@ -94,10 +94,10 @@
             instance="0"
             resource="10"
             type="sensor"
-            name="Vibration Average"
-            device_class="acceleration"
+            name="Pass-by Vibration Score"
+            device_class="vibration"
             state_class="measurement"
-            unit_of_measurement="g"
+            unit_of_measurement=""
             icon="mdi:vibrate"
             suggested_display_precision="3" />
     </sensor>
