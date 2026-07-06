@@ -192,6 +192,7 @@ data class DeviceSettings(
     val action: Int = 0,
     val deviceModeEnabled: Boolean = false,
     val meshId: String = "",
+    val passphrase: String = "",
     val shareLocation: Boolean = false,
     val userName: String = "",
     val marker: String = NodeMapMarker.DEFAULT.id,
@@ -216,6 +217,7 @@ data class DeviceSettings(
         return action == other.action &&
             deviceModeEnabled == other.deviceModeEnabled &&
             meshId == other.meshId &&
+            passphrase == other.passphrase &&
             shareLocation == other.shareLocation &&
             userName == other.userName &&
             marker == other.marker &&
@@ -237,6 +239,7 @@ data class DeviceSettings(
         var result = action
         result = 31 * result + deviceModeEnabled.hashCode()
         result = 31 * result + meshId.hashCode()
+        result = 31 * result + passphrase.hashCode()
         result = 31 * result + shareLocation.hashCode()
         result = 31 * result + userName.hashCode()
         result = 31 * result + marker.hashCode()
@@ -533,6 +536,7 @@ object EdgezUsbControlProto {
             .setAction(UsbControl.DeviceSettingsAction.DEVICE_SETTINGS_SET)
             .setDeviceModeEnabled(settings.deviceModeEnabled)
             .setMeshId(settings.meshId.take(32))
+            .setPassphrase(settings.passphrase.take(64))
             .setShareLocation(settings.shareLocation)
             .setUserName(settings.userName.take(64))
             .setMarker(NodeMapMarker.fromId(settings.marker).toProtoMarkerColor())
@@ -995,6 +999,7 @@ object EdgezUsbControlProto {
             action = actionValue,
             deviceModeEnabled = deviceModeEnabled,
             meshId = meshId,
+            passphrase = passphrase,
             shareLocation = shareLocation,
             userName = userName,
             marker = marker.toNodeMarkerId(),

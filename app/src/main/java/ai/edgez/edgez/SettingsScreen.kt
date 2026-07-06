@@ -124,6 +124,7 @@ fun SettingsScreen(
     var deviceUserName by rememberSaveable { mutableStateOf("EdgeZ Device") }
     var deviceUserMarker by rememberSaveable { mutableStateOf(NodeMapMarker.DEFAULT.id) }
     var deviceMeshId by rememberSaveable { mutableStateOf("edgez") }
+    var devicePassphrase by rememberSaveable { mutableStateOf(connectionPreferences.getMeshPassphrase()) }
     var deviceMaxHop by rememberSaveable { mutableStateOf(connectionPreferences.getMeshMaxHop().toString()) }
     var deviceBeaconIntervalSeconds by rememberSaveable { mutableStateOf(DEFAULT_BEACON_INTERVAL_SECONDS.toString()) }
     var deviceShareLocation by rememberSaveable { mutableStateOf(false) }
@@ -307,6 +308,7 @@ fun SettingsScreen(
         if (settings.meshId.isNotBlank()) {
             deviceMeshId = settings.meshId
         }
+        devicePassphrase = settings.passphrase
         deviceShareLocation = settings.shareLocation
         deviceUserName = settings.userName.ifBlank { deviceUserName }
         deviceUserMarker = NodeMapMarker.normalize(settings.marker)
@@ -357,6 +359,7 @@ fun SettingsScreen(
         return DeviceSettings(
             deviceModeEnabled = enabled,
             meshId = deviceMeshId.ifBlank { "edgez" },
+            passphrase = devicePassphrase.take(64),
             shareLocation = deviceShareLocation,
             userName = deviceUserName,
             marker = deviceUserMarker,
@@ -984,16 +987,20 @@ fun SettingsScreen(
                         label = { Text("Mesh ID / SSID") },
                         singleLine = true,
                     )
-                    if (!showDeviceSettingsOnly) {
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = passphrase,
-                            onValueChange = { passphrase = it.take(64) },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Passphrase") },
-                            singleLine = true,
-                        )
-                    }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = if (showDeviceSettingsOnly) devicePassphrase else passphrase,
+                        onValueChange = { value ->
+                            if (showDeviceSettingsOnly) {
+                                devicePassphrase = value.take(64)
+                            } else {
+                                passphrase = value.take(64)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Passphrase") },
+                        singleLine = true,
+                    )
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = if (showDeviceSettingsOnly) deviceMaxHop else maxHop,

@@ -7416,6 +7416,18 @@ public final class UsbControl {
         getMeshIdBytes();
 
     /**
+     * <code>string passphrase = 19;</code>
+     * @return The passphrase.
+     */
+    java.lang.String getPassphrase();
+    /**
+     * <code>string passphrase = 19;</code>
+     * @return The bytes for passphrase.
+     */
+    com.google.protobuf.ByteString
+        getPassphraseBytes();
+
+    /**
      * <code>bool share_location = 4;</code>
      * @return The shareLocation.
      */
@@ -7543,6 +7555,7 @@ public final class UsbControl {
       DeviceSettingsOrBuilder {
     private DeviceSettings() {
       meshId_ = "";
+      passphrase_ = "";
       userName_ = "";
       userPublicKey_ = com.google.protobuf.ByteString.EMPTY;
       userPrivateKey_ = com.google.protobuf.ByteString.EMPTY;
@@ -7663,6 +7676,54 @@ public final class UsbControl {
         com.google.protobuf.ByteString value) {
       checkByteStringIsUtf8(value);
       meshId_ = value.toStringUtf8();
+
+    }
+
+    public static final int PASSPHRASE_FIELD_NUMBER = 19;
+    private java.lang.String passphrase_;
+    /**
+     * <code>string passphrase = 19;</code>
+     * @return The passphrase.
+     */
+    @java.lang.Override
+    public java.lang.String getPassphrase() {
+      return passphrase_;
+    }
+    /**
+     * <code>string passphrase = 19;</code>
+     * @return The bytes for passphrase.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getPassphraseBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(passphrase_);
+    }
+    /**
+     * <code>string passphrase = 19;</code>
+     * @param value The passphrase to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setPassphrase(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      passphrase_ = value;
+    }
+    /**
+     * <code>string passphrase = 19;</code>
+     */
+    private void clearPassphrase() {
+
+      passphrase_ = getDefaultInstance().getPassphrase();
+    }
+    /**
+     * <code>string passphrase = 19;</code>
+     * @param value The bytes for passphrase to set.
+     */
+    private void setPassphraseBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      passphrase_ = value.toStringUtf8();
 
     }
 
@@ -8382,6 +8443,55 @@ public final class UsbControl {
       }
 
       /**
+       * <code>string passphrase = 19;</code>
+       * @return The passphrase.
+       */
+      @java.lang.Override
+      public java.lang.String getPassphrase() {
+        return instance.getPassphrase();
+      }
+      /**
+       * <code>string passphrase = 19;</code>
+       * @return The bytes for passphrase.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getPassphraseBytes() {
+        return instance.getPassphraseBytes();
+      }
+      /**
+       * <code>string passphrase = 19;</code>
+       * @param value The passphrase to set.
+       * @return This builder for chaining.
+       */
+      public Builder setPassphrase(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setPassphrase(value);
+        return this;
+      }
+      /**
+       * <code>string passphrase = 19;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearPassphrase() {
+        copyOnWrite();
+        instance.clearPassphrase();
+        return this;
+      }
+      /**
+       * <code>string passphrase = 19;</code>
+       * @param value The bytes for passphrase to set.
+       * @return This builder for chaining.
+       */
+      public Builder setPassphraseBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setPassphraseBytes(value);
+        return this;
+      }
+
+      /**
        * <code>bool share_location = 4;</code>
        * @return The shareLocation.
        */
@@ -8936,12 +9046,13 @@ public final class UsbControl {
               "uartI2CSensorType_",
               "rs485SensorType_",
               "geoIndex_",
+              "passphrase_",
             };
             java.lang.String info =
-                "\u0000\u0012\u0000\u0001\u0001\u0012\u0012\u0000\u0000\u0000\u0001\f\u0002\u0007" +
+                "\u0000\u0013\u0000\u0001\u0001\u0013\u0013\u0000\u0000\u0000\u0001\f\u0002\u0007" +
                 "\u0003\u0208\u0004\u0007\u0005\u0208\u0006\f\u0007\u000b\b\u0003\t\u0003\n\n\u000b" +
                 "\n\f\u0001\r\u0001\u000e\u000b\u000f\u1009\u0000\u0010\u0208\u0011\u0208\u0012\u000b" +
-                "";
+                "\u0013\u0208";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         // fall through
