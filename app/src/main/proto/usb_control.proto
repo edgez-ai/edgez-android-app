@@ -189,6 +189,9 @@ message DeviceSettings {
   string rs485_sensor_type = 17;
   uint32 geo_index = 18;
   string passphrase = 19;
+  string upstream_wifi_ssid = 20;
+  string upstream_wifi_passphrase = 21;
+  uint64 beacon_unicast = 22;
 }
 
 message ScriptConfig {

@@ -58,6 +58,21 @@ import ai.edgez.edgez.usb.UsbCandidate
 import java.util.concurrent.Executors
 import java.util.UUID
 
+private fun parseDeviceMacAddress(input: String): Long {
+    val hex = input.filter { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }
+    if (hex.isBlank()) return 0L
+    if (hex.length != 12) return 0L
+    return hex.toLongOrNull(16)?.let { it and 0xffffffffffffL } ?: 0L
+}
+
+private fun formatDeviceMacAddress(value: Long): String {
+    val masked = value and 0xffffffffffffL
+    if (masked == 0L) return ""
+    return (5 downTo 0).joinToString(":") { byteIndex ->
+        "%02X".format((masked shr (byteIndex * 8)) and 0xffL)
+    }
+}
+
 @Composable
 fun SettingsScreen(
     client: EdgezUsbClient,
@@ -127,6 +142,9 @@ fun SettingsScreen(
     var devicePassphrase by rememberSaveable { mutableStateOf(connectionPreferences.getMeshPassphrase()) }
     var deviceMaxHop by rememberSaveable { mutableStateOf(connectionPreferences.getMeshMaxHop().toString()) }
     var deviceBeaconIntervalSeconds by rememberSaveable { mutableStateOf(DEFAULT_BEACON_INTERVAL_SECONDS.toString()) }
+    var deviceUpstreamWifiSsid by rememberSaveable { mutableStateOf("") }
+    var deviceUpstreamWifiPassphrase by rememberSaveable { mutableStateOf("") }
+    var deviceBeaconUnicast by rememberSaveable { mutableStateOf("") }
     var deviceShareLocation by rememberSaveable { mutableStateOf(false) }
     var deviceLatitude by rememberSaveable { mutableStateOf<Double?>(null) }
     var deviceLongitude by rememberSaveable { mutableStateOf<Double?>(null) }
@@ -309,6 +327,9 @@ fun SettingsScreen(
             deviceMeshId = settings.meshId
         }
         devicePassphrase = settings.passphrase
+        deviceUpstreamWifiSsid = settings.upstreamWifiSsid
+        deviceUpstreamWifiPassphrase = settings.upstreamWifiPassphrase
+        deviceBeaconUnicast = formatDeviceMacAddress(settings.beaconUnicast)
         deviceShareLocation = settings.shareLocation
         deviceUserName = settings.userName.ifBlank { deviceUserName }
         deviceUserMarker = NodeMapMarker.normalize(settings.marker)
@@ -375,6 +396,9 @@ fun SettingsScreen(
             uartI2cSensorType = deviceUartI2cSensorType.take(32),
             rs485SensorType = deviceRs485SensorType.take(32),
             geoIndex = deviceGeoIndex.coerceAtLeast(0),
+            upstreamWifiSsid = deviceUpstreamWifiSsid.take(32),
+            upstreamWifiPassphrase = deviceUpstreamWifiPassphrase.take(64),
+            beaconUnicast = parseDeviceMacAddress(deviceBeaconUnicast),
         )
     }
 
@@ -1032,6 +1056,40 @@ fun SettingsScreen(
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     )
+                    if (showDeviceSettingsOnly) {
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = deviceUpstreamWifiSsid,
+                            onValueChange = { value ->
+                                deviceUpstreamWifiSsid = value.take(32)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Upstream Wi-Fi SSID") },
+                            singleLine = true,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = deviceUpstreamWifiPassphrase,
+                            onValueChange = { value ->
+                                deviceUpstreamWifiPassphrase = value.take(64)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Upstream Wi-Fi passphrase") },
+                            singleLine = true,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = deviceBeaconUnicast,
+                            onValueChange = { value ->
+                                deviceBeaconUnicast = value
+                                    .filter { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' || it == ':' || it == '-' }
+                                    .take(17)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Beacon unicast MAC") },
+                            singleLine = true,
+                        )
+                    }
                     Spacer(Modifier.height(10.dp))
                     Button(onClick = { saveMeshPreferences() }) {
                         Text(if (deviceMode) "Save to device" else "Save settings")

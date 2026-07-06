@@ -7544,6 +7544,36 @@ public final class UsbControl {
      * @return The geoIndex.
      */
     int getGeoIndex();
+
+    /**
+     * <code>string upstream_wifi_ssid = 20;</code>
+     * @return The upstreamWifiSsid.
+     */
+    java.lang.String getUpstreamWifiSsid();
+    /**
+     * <code>string upstream_wifi_ssid = 20;</code>
+     * @return The bytes for upstreamWifiSsid.
+     */
+    com.google.protobuf.ByteString
+        getUpstreamWifiSsidBytes();
+
+    /**
+     * <code>string upstream_wifi_passphrase = 21;</code>
+     * @return The upstreamWifiPassphrase.
+     */
+    java.lang.String getUpstreamWifiPassphrase();
+    /**
+     * <code>string upstream_wifi_passphrase = 21;</code>
+     * @return The bytes for upstreamWifiPassphrase.
+     */
+    com.google.protobuf.ByteString
+        getUpstreamWifiPassphraseBytes();
+
+    /**
+     * <code>uint64 beacon_unicast = 22;</code>
+     * @return The beaconUnicast.
+     */
+    long getBeaconUnicast();
   }
   /**
    * Protobuf type {@code ai.edgez.halow.DeviceSettings}
@@ -7561,6 +7591,8 @@ public final class UsbControl {
       userPrivateKey_ = com.google.protobuf.ByteString.EMPTY;
       uartI2CSensorType_ = "";
       rs485SensorType_ = "";
+      upstreamWifiSsid_ = "";
+      upstreamWifiPassphrase_ = "";
     }
     private int bitField0_;
     public static final int ACTION_FIELD_NUMBER = 1;
@@ -7725,6 +7757,128 @@ public final class UsbControl {
       checkByteStringIsUtf8(value);
       passphrase_ = value.toStringUtf8();
 
+    }
+
+    public static final int UPSTREAM_WIFI_SSID_FIELD_NUMBER = 20;
+    private java.lang.String upstreamWifiSsid_;
+    /**
+     * <code>string upstream_wifi_ssid = 20;</code>
+     * @return The upstreamWifiSsid.
+     */
+    @java.lang.Override
+    public java.lang.String getUpstreamWifiSsid() {
+      return upstreamWifiSsid_;
+    }
+    /**
+     * <code>string upstream_wifi_ssid = 20;</code>
+     * @return The bytes for upstreamWifiSsid.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getUpstreamWifiSsidBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(upstreamWifiSsid_);
+    }
+    /**
+     * <code>string upstream_wifi_ssid = 20;</code>
+     * @param value The upstreamWifiSsid to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setUpstreamWifiSsid(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      upstreamWifiSsid_ = value;
+    }
+    /**
+     * <code>string upstream_wifi_ssid = 20;</code>
+     */
+    private void clearUpstreamWifiSsid() {
+
+      upstreamWifiSsid_ = getDefaultInstance().getUpstreamWifiSsid();
+    }
+    /**
+     * <code>string upstream_wifi_ssid = 20;</code>
+     * @param value The bytes for upstreamWifiSsid to set.
+     */
+    private void setUpstreamWifiSsidBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      upstreamWifiSsid_ = value.toStringUtf8();
+
+    }
+
+    public static final int UPSTREAM_WIFI_PASSPHRASE_FIELD_NUMBER = 21;
+    private java.lang.String upstreamWifiPassphrase_;
+    /**
+     * <code>string upstream_wifi_passphrase = 21;</code>
+     * @return The upstreamWifiPassphrase.
+     */
+    @java.lang.Override
+    public java.lang.String getUpstreamWifiPassphrase() {
+      return upstreamWifiPassphrase_;
+    }
+    /**
+     * <code>string upstream_wifi_passphrase = 21;</code>
+     * @return The bytes for upstreamWifiPassphrase.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getUpstreamWifiPassphraseBytes() {
+      return com.google.protobuf.ByteString.copyFromUtf8(upstreamWifiPassphrase_);
+    }
+    /**
+     * <code>string upstream_wifi_passphrase = 21;</code>
+     * @param value The upstreamWifiPassphrase to set.
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setUpstreamWifiPassphrase(
+        java.lang.String value) {
+      value.getClass();  // minimal bytecode null check
+
+      upstreamWifiPassphrase_ = value;
+    }
+    /**
+     * <code>string upstream_wifi_passphrase = 21;</code>
+     */
+    private void clearUpstreamWifiPassphrase() {
+
+      upstreamWifiPassphrase_ = getDefaultInstance().getUpstreamWifiPassphrase();
+    }
+    /**
+     * <code>string upstream_wifi_passphrase = 21;</code>
+     * @param value The bytes for upstreamWifiPassphrase to set.
+     */
+    private void setUpstreamWifiPassphraseBytes(
+        com.google.protobuf.ByteString value) {
+      checkByteStringIsUtf8(value);
+      upstreamWifiPassphrase_ = value.toStringUtf8();
+
+    }
+
+    public static final int BEACON_UNICAST_FIELD_NUMBER = 22;
+    private long beaconUnicast_;
+    /**
+     * <code>uint64 beacon_unicast = 22;</code>
+     * @return The beaconUnicast.
+     */
+    @java.lang.Override
+    public long getBeaconUnicast() {
+      return beaconUnicast_;
+    }
+    /**
+     * <code>uint64 beacon_unicast = 22;</code>
+     * @param value The beaconUnicast to set.
+     */
+    private void setBeaconUnicast(long value) {
+      
+      beaconUnicast_ = value;
+    }
+    /**
+     * <code>uint64 beacon_unicast = 22;</code>
+     */
+    private void clearBeaconUnicast() {
+
+      beaconUnicast_ = 0L;
     }
 
     public static final int SHARE_LOCATION_FIELD_NUMBER = 4;
@@ -9011,6 +9165,132 @@ public final class UsbControl {
         return this;
       }
 
+      /**
+       * <code>string upstream_wifi_ssid = 20;</code>
+       * @return The upstreamWifiSsid.
+       */
+      @java.lang.Override
+      public java.lang.String getUpstreamWifiSsid() {
+        return instance.getUpstreamWifiSsid();
+      }
+      /**
+       * <code>string upstream_wifi_ssid = 20;</code>
+       * @return The bytes for upstreamWifiSsid.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getUpstreamWifiSsidBytes() {
+        return instance.getUpstreamWifiSsidBytes();
+      }
+      /**
+       * <code>string upstream_wifi_ssid = 20;</code>
+       * @param value The upstreamWifiSsid to set.
+       * @return This builder for chaining.
+       */
+      public Builder setUpstreamWifiSsid(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setUpstreamWifiSsid(value);
+        return this;
+      }
+      /**
+       * <code>string upstream_wifi_ssid = 20;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearUpstreamWifiSsid() {
+        copyOnWrite();
+        instance.clearUpstreamWifiSsid();
+        return this;
+      }
+      /**
+       * <code>string upstream_wifi_ssid = 20;</code>
+       * @param value The bytes for upstreamWifiSsid to set.
+       * @return This builder for chaining.
+       */
+      public Builder setUpstreamWifiSsidBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setUpstreamWifiSsidBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>string upstream_wifi_passphrase = 21;</code>
+       * @return The upstreamWifiPassphrase.
+       */
+      @java.lang.Override
+      public java.lang.String getUpstreamWifiPassphrase() {
+        return instance.getUpstreamWifiPassphrase();
+      }
+      /**
+       * <code>string upstream_wifi_passphrase = 21;</code>
+       * @return The bytes for upstreamWifiPassphrase.
+       */
+      @java.lang.Override
+      public com.google.protobuf.ByteString
+          getUpstreamWifiPassphraseBytes() {
+        return instance.getUpstreamWifiPassphraseBytes();
+      }
+      /**
+       * <code>string upstream_wifi_passphrase = 21;</code>
+       * @param value The upstreamWifiPassphrase to set.
+       * @return This builder for chaining.
+       */
+      public Builder setUpstreamWifiPassphrase(
+          java.lang.String value) {
+        copyOnWrite();
+        instance.setUpstreamWifiPassphrase(value);
+        return this;
+      }
+      /**
+       * <code>string upstream_wifi_passphrase = 21;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearUpstreamWifiPassphrase() {
+        copyOnWrite();
+        instance.clearUpstreamWifiPassphrase();
+        return this;
+      }
+      /**
+       * <code>string upstream_wifi_passphrase = 21;</code>
+       * @param value The bytes for upstreamWifiPassphrase to set.
+       * @return This builder for chaining.
+       */
+      public Builder setUpstreamWifiPassphraseBytes(
+          com.google.protobuf.ByteString value) {
+        copyOnWrite();
+        instance.setUpstreamWifiPassphraseBytes(value);
+        return this;
+      }
+
+      /**
+       * <code>uint64 beacon_unicast = 22;</code>
+       * @return The beaconUnicast.
+       */
+      @java.lang.Override
+      public long getBeaconUnicast() {
+        return instance.getBeaconUnicast();
+      }
+      /**
+       * <code>uint64 beacon_unicast = 22;</code>
+       * @param value The beaconUnicast to set.
+       * @return This builder for chaining.
+       */
+      public Builder setBeaconUnicast(long value) {
+        copyOnWrite();
+        instance.setBeaconUnicast(value);
+        return this;
+      }
+      /**
+       * <code>uint64 beacon_unicast = 22;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearBeaconUnicast() {
+        copyOnWrite();
+        instance.clearBeaconUnicast();
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:ai.edgez.halow.DeviceSettings)
     }
     @java.lang.Override
@@ -9047,12 +9327,15 @@ public final class UsbControl {
               "rs485SensorType_",
               "geoIndex_",
               "passphrase_",
+              "upstreamWifiSsid_",
+              "upstreamWifiPassphrase_",
+              "beaconUnicast_",
             };
             java.lang.String info =
-                "\u0000\u0013\u0000\u0001\u0001\u0013\u0013\u0000\u0000\u0000\u0001\f\u0002\u0007" +
+                "\u0000\u0016\u0000\u0001\u0001\u0016\u0016\u0000\u0000\u0000\u0001\f\u0002\u0007" +
                 "\u0003\u0208\u0004\u0007\u0005\u0208\u0006\f\u0007\u000b\b\u0003\t\u0003\n\n\u000b" +
                 "\n\f\u0001\r\u0001\u000e\u000b\u000f\u1009\u0000\u0010\u0208\u0011\u0208\u0012\u000b" +
-                "\u0013\u0208";
+                "\u0013\u0208\u0014\u0208\u0015\u0208\u0016\u0003";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         // fall through

@@ -208,6 +208,9 @@ data class DeviceSettings(
     val uartI2cSensorType: String = "",
     val rs485SensorType: String = "",
     val geoIndex: Int = 0,
+    val upstreamWifiSsid: String = "",
+    val upstreamWifiPassphrase: String = "",
+    val beaconUnicast: Long = 0,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -232,7 +235,10 @@ data class DeviceSettings(
             geoFence == other.geoFence &&
             uartI2cSensorType == other.uartI2cSensorType &&
             rs485SensorType == other.rs485SensorType &&
-            geoIndex == other.geoIndex
+            geoIndex == other.geoIndex &&
+            upstreamWifiSsid == other.upstreamWifiSsid &&
+            upstreamWifiPassphrase == other.upstreamWifiPassphrase &&
+            beaconUnicast == other.beaconUnicast
     }
 
     override fun hashCode(): Int {
@@ -255,6 +261,9 @@ data class DeviceSettings(
         result = 31 * result + uartI2cSensorType.hashCode()
         result = 31 * result + rs485SensorType.hashCode()
         result = 31 * result + geoIndex
+        result = 31 * result + upstreamWifiSsid.hashCode()
+        result = 31 * result + upstreamWifiPassphrase.hashCode()
+        result = 31 * result + beaconUnicast.hashCode()
         return result
     }
 }
@@ -549,6 +558,9 @@ object EdgezUsbControlProto {
             .setUartI2CSensorType(settings.uartI2cSensorType.take(32))
             .setRs485SensorType(settings.rs485SensorType.take(32))
             .setGeoIndex(settings.geoIndex.coerceAtLeast(0))
+            .setUpstreamWifiSsid(settings.upstreamWifiSsid.take(32))
+            .setUpstreamWifiPassphrase(settings.upstreamWifiPassphrase.take(64))
+            .setBeaconUnicast(settings.beaconUnicast and 0xffffffffffffL)
         settings.geoFence?.let { protoSettings.setGeoFence(it.toProtoGeoFence()) }
         if (settings.latitude != null && settings.longitude != null) {
             protoSettings.setLatitude(settings.latitude.toFloat())
@@ -1015,6 +1027,9 @@ object EdgezUsbControlProto {
             uartI2cSensorType = uartI2CSensorType,
             rs485SensorType = rs485SensorType,
             geoIndex = geoIndex,
+            upstreamWifiSsid = upstreamWifiSsid,
+            upstreamWifiPassphrase = upstreamWifiPassphrase,
+            beaconUnicast = beaconUnicast,
         )
     }
 
