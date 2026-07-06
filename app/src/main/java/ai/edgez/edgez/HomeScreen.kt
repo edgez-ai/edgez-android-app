@@ -24,12 +24,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -55,6 +58,11 @@ fun NodesScreen(
     onOpenConversation: (HaLowUser) -> Unit,
 ) {
     Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
+        var selectedFilter by remember { mutableStateOf(NodeListFilter.USERS) }
+        val filteredUsers = remember(selectedFilter, users) {
+            users.filter { user -> selectedFilter.includes(user) }
+        }
+
         LazyColumn(
             modifier = Modifier
                 .padding(padding)
@@ -72,26 +80,44 @@ fun NodesScreen(
                     HaLowMeshStatusIcon(haLowStatus)
                 }
                 Spacer(Modifier.height(6.dp))
-                Text("Interface: ${activeConnection.name}", style = MaterialTheme.typography.bodyMedium)
-            }
-
-            item {
-                Text("Users / Nodes", style = MaterialTheme.typography.titleMedium)
-            }
-
-            if (users.isEmpty()) {
-                item {
-                    Text("No HaLow users seen yet", style = MaterialTheme.typography.bodyMedium)
+                TabRow(selectedTabIndex = selectedFilter.ordinal) {
+                    NodeListFilter.entries.forEach { filter ->
+                        Tab(
+                            selected = selectedFilter == filter,
+                            onClick = { selectedFilter = filter },
+                            text = { Text(filter.label) },
+                        )
+                    }
                 }
             }
 
-            items(users, key = { user -> user.userUuid.ifBlank { user.nodeNum.toString() } }) { user ->
+            if (filteredUsers.isEmpty()) {
+                item {
+                    Text("No HaLow ${selectedFilter.emptyLabel} seen yet", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+
+            items(filteredUsers, key = { user -> user.userUuid.ifBlank { user.nodeNum.toString() } }) { user ->
                 SwipeToRemoveNodeCard(
                     user = user,
                     onRemove = { onRemoveNode(user) },
                     onOpenConversation = { onOpenConversation(user) },
                 )
             }
+        }
+    }
+}
+
+private enum class NodeListFilter(val label: String, val emptyLabel: String) {
+    USERS("Users", "users"),
+    DEVICES("Devices", "devices");
+
+    fun includes(user: HaLowUser): Boolean {
+        val isUser = user.deviceType == EdgeZDeviceType.USER ||
+            user.deviceType == EdgeZDeviceType.UNSPECIFIED
+        return when (this) {
+            USERS -> isUser
+            DEVICES -> !isUser
         }
     }
 }
