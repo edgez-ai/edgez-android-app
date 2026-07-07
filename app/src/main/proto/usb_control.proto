@@ -78,6 +78,8 @@ message NetworkPacket {
   uint64 user_low = 9;    // low 64 bits of self user UUID
   Mime mime = 10;         // encrypted payload media type
   uint32 max_hop = 11;    // hop limit for forwarding this packet
+  uint64 group_id_high = 12;
+  uint64 group_id_low = 13;
 
   oneof body {
     bytes payload = 100;

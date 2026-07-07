@@ -41,6 +41,8 @@ fun encryptConversationPayload(
     recipient: HaLowUser,
     plaintext: ByteArray,
     senderNode: Long,
+    groupIdHigh: Long = 0,
+    groupIdLow: Long = 0,
 ): ConversationMessage {
     require(recipient.publicKey.size == 32) {
         if (recipient.deviceType == EdgeZDeviceType.GROUP) "Group PSK is missing" else "Remote user public key is missing"
@@ -56,7 +58,15 @@ fun encryptConversationPayload(
     val cipher = Cipher.getInstance("AES/GCM/NoPadding")
     cipher.init(
         Cipher.ENCRYPT_MODE,
-        conversationKey(identity, senderNode, recipient.nodeNum, recipient.publicKey, recipient.deviceType),
+        conversationKey(
+            identity,
+            senderNode,
+            recipient.nodeNum,
+            recipient.publicKey,
+            recipient.deviceType,
+            groupIdHigh = groupIdHigh,
+            groupIdLow = groupIdLow,
+        ),
         GCMParameterSpec(AES_GCM_TAG_BITS, nonce),
     )
     cipher.updateAAD(aad)
@@ -70,14 +80,27 @@ fun decryptConversationText(
     identity: UserIdentity,
     sender: HaLowUser,
     packet: NetworkPacket,
+    groupIdHigh: Long = 0,
+    groupIdLow: Long = 0,
 ): String {
-    return String(decryptConversationPayload(identity, sender, packet), Charsets.UTF_8)
+    return String(
+        decryptConversationPayload(
+            identity = identity,
+            sender = sender,
+            packet = packet,
+            groupIdHigh = groupIdHigh,
+            groupIdLow = groupIdLow,
+        ),
+        Charsets.UTF_8,
+    )
 }
 
 fun decryptConversationPayload(
     identity: UserIdentity,
     sender: HaLowUser,
     packet: NetworkPacket,
+    groupIdHigh: Long = 0,
+    groupIdLow: Long = 0,
 ): ByteArray {
     val message = packet.conversationMessage ?: error("Conversation payload is missing")
     require(sender.publicKey.size == 32) {
@@ -91,7 +114,15 @@ fun decryptConversationPayload(
     val cipher = Cipher.getInstance("AES/GCM/NoPadding")
     cipher.init(
         Cipher.DECRYPT_MODE,
-        conversationKey(identity, packet.to, sender.nodeNum, sender.publicKey, sender.deviceType),
+        conversationKey(
+            identity,
+            packet.to,
+            sender.nodeNum,
+            sender.publicKey,
+            sender.deviceType,
+            groupIdHigh = groupIdHigh,
+            groupIdLow = groupIdLow,
+        ),
         GCMParameterSpec(AES_GCM_TAG_BITS, message.nonce),
     )
     cipher.updateAAD(aad)
@@ -145,9 +176,15 @@ private fun conversationKey(
     peerUserId: Long,
     peerPublicKey: ByteArray,
     peerDeviceType: EdgeZDeviceType,
+    groupIdHigh: Long = 0,
+    groupIdLow: Long = 0,
 ): SecretKeySpec {
     if (peerDeviceType == EdgeZDeviceType.GROUP) {
-        return groupConversationKey(peerUserId, peerPublicKey)
+        return groupConversationKey(
+            groupIdHigh = if (groupIdHigh != 0L || groupIdLow != 0L) groupIdHigh else 0L,
+            groupIdLow = if (groupIdHigh != 0L || groupIdLow != 0L) groupIdLow else peerUserId,
+            psk = peerPublicKey,
+        )
     }
     val sharedSecret = X25519KeyGenerator.sharedSecret(identity.privateKey, peerPublicKey)
     val digest = MessageDigest.getInstance("SHA-256")
@@ -164,10 +201,19 @@ private fun conversationKey(
     return SecretKeySpec(digest.digest(), "AES")
 }
 
-private fun groupConversationKey(groupId: Long, psk: ByteArray): SecretKeySpec {
+private fun groupConversationKey(
+    groupIdHigh: Long,
+    groupIdLow: Long,
+    psk: ByteArray,
+): SecretKeySpec {
     val digest = MessageDigest.getInstance("SHA-256")
     digest.update("EdgeZ group conversation v1".toByteArray(Charsets.UTF_8))
-    digest.update(ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(groupId).array())
+    digest.update(
+        ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN)
+            .putLong(groupIdHigh)
+            .putLong(groupIdLow)
+            .array(),
+    )
     digest.update(psk)
     return SecretKeySpec(digest.digest(), "AES")
 }

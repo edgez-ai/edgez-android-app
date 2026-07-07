@@ -281,6 +281,8 @@ data class NetworkPacket(
     val sequence: Int = 0,
     val userHigh: Long = 0,
     val userLow: Long = 0,
+    val groupIdHigh: Long = 0,
+    val groupIdLow: Long = 0,
     val mime: PacketMime = PacketMime.UNSPECIFIED,
     val maxHop: Int = 0,
     val payload: ByteArray = ByteArray(0),
@@ -311,6 +313,8 @@ data class NetworkPacket(
             sequence == other.sequence &&
             userHigh == other.userHigh &&
             userLow == other.userLow &&
+            groupIdHigh == other.groupIdHigh &&
+            groupIdLow == other.groupIdLow &&
             mime == other.mime &&
             maxHop == other.maxHop &&
             payload.contentEquals(other.payload) &&
@@ -331,6 +335,8 @@ data class NetworkPacket(
         result = 31 * result + sequence
         result = 31 * result + userHigh.hashCode()
         result = 31 * result + userLow.hashCode()
+        result = 31 * result + groupIdHigh.hashCode()
+        result = 31 * result + groupIdLow.hashCode()
         result = 31 * result + mime.hashCode()
         result = 31 * result + maxHop
         result = 31 * result + payload.contentHashCode()
@@ -630,6 +636,8 @@ object EdgezUsbControlProto {
         messageIdLow: Long = 0,
         userIdHigh: Long,
         userIdLow: Long,
+        groupIdHigh: Long = 0,
+        groupIdLow: Long = 0,
     ): ByteArray {
         require(userIdHigh != 0L || userIdLow != 0L) {
             "NetworkPacket conversation message requires a user UUID"
@@ -649,6 +657,8 @@ object EdgezUsbControlProto {
             to = to,
             userIdHigh = userIdHigh,
             userIdLow = userIdLow,
+            groupIdHigh = groupIdHigh,
+            groupIdLow = groupIdLow,
             mime = mime,
             maxHop = maxHop,
             sequence = sequence,
@@ -678,6 +688,8 @@ object EdgezUsbControlProto {
             to = to,
             userIdHigh = userIdHigh,
             userIdLow = userIdLow,
+            groupIdHigh = 0,
+            groupIdLow = 0,
             mime = PacketMime.TEXT,
             maxHop = maxHop,
         ).build().toByteArray()
@@ -762,6 +774,8 @@ object EdgezUsbControlProto {
             sequence = packet.sequence,
             userHigh = packet.userHigh,
             userLow = packet.userLow,
+            groupIdHigh = packet.groupIdHigh,
+            groupIdLow = packet.groupIdLow,
             mime = PacketMime.fromWireValue(packet.mimeValue),
             maxHop = packet.maxHop,
             payload = packetPayload,
@@ -855,6 +869,8 @@ object EdgezUsbControlProto {
         to: Long = 0,
         userIdHigh: Long = 0,
         userIdLow: Long = 0,
+        groupIdHigh: Long = 0,
+        groupIdLow: Long = 0,
         mime: PacketMime = PacketMime.UNSPECIFIED,
         maxHop: Int = 0,
         sequence: Int = 0,
@@ -867,6 +883,8 @@ object EdgezUsbControlProto {
             .setInterface(UsbControl.Interface.HALOW)
             .setUserHigh(userIdHigh)
             .setUserLow(userIdLow)
+            .setGroupIdHigh(groupIdHigh)
+            .setGroupIdLow(groupIdLow)
         if (from != 0L) {
             builder.setFrom(from)
         }
@@ -1417,6 +1435,8 @@ class EdgezUsbClient(private val context: Context) {
         messageIdLow: Long = 0,
         userIdHigh: Long,
         userIdLow: Long,
+        groupIdHigh: Long = 0,
+        groupIdLow: Long = 0,
         timeoutMs: Int = 1500,
     ): Result<String> {
         val packet = runCatching {
@@ -1431,6 +1451,8 @@ class EdgezUsbClient(private val context: Context) {
                 messageIdLow = messageIdLow,
                 userIdHigh = userIdHigh,
                 userIdLow = userIdLow,
+                groupIdHigh = groupIdHigh,
+                groupIdLow = groupIdLow,
             )
         }.getOrElse { error ->
             return Result.failure(error)

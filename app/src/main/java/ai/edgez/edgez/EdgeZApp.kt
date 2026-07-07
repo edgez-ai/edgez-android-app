@@ -119,6 +119,24 @@ private fun newMessageUuid(): MessageUuid {
     )
 }
 
+private data class MessageUuidPair(
+    val high: Long,
+    val low: Long,
+)
+
+private fun parseMessageUuidParts(userUuid: String): MessageUuidPair? {
+    val parsed = runCatching { UUID.fromString(userUuid) }.getOrNull() ?: return null
+    return MessageUuidPair(
+        high = parsed.mostSignificantBits,
+        low = parsed.leastSignificantBits,
+    )
+}
+
+private fun conversationGroupId(user: HaLowUser): MessageUuidPair? {
+    if (user.deviceType != EdgeZDeviceType.GROUP) return null
+    return parseMessageUuidParts(user.userUuid)
+}
+
 private fun conversationKey(user: HaLowUser): String = user.userUuid.ifBlank { user.nodeNum.toString() }
 
 private fun isUserNode(user: HaLowUser): Boolean {
@@ -612,10 +630,21 @@ fun EdgeZApp() {
                             )
                         } else {
                             val senderNodeNum = if (senderUser.deviceType == EdgeZDeviceType.GROUP) message.from else senderUser.nodeNum
+                            val groupMessageId = if (message.groupIdHigh != 0L || message.groupIdLow != 0L) {
+                                MessageUuidPair(message.groupIdHigh, message.groupIdLow)
+                            } else {
+                                conversationGroupId(senderUser)
+                            }
                             val entry = runCatching {
                                 when (message.mime) {
                                     PacketMime.VOICE -> {
-                                        val payload = decryptConversationPayload(identity, senderUser, message)
+                                        val payload = decryptConversationPayload(
+                                            identity,
+                                            senderUser,
+                                            message,
+                                            groupIdHigh = groupMessageId?.high ?: 0L,
+                                            groupIdLow = groupMessageId?.low ?: 0L,
+                                        )
                                         val chunk = requireNotNull(decodeVoiceChunk(payload)) { "Voice chunk is malformed" }
                                         val key = "${senderNodeNum}:${chunk.groupId}"
                                         val pending = pendingVoiceMessages.getOrPut(key) {
@@ -648,7 +677,13 @@ fun EdgeZApp() {
                                         }
                                     }
                                     else -> ConversationEntry(
-                                        text = decryptConversationText(identity, senderUser, message),
+                                        text = decryptConversationText(
+                                            identity,
+                                            senderUser,
+                                            message,
+                                            groupIdHigh = groupMessageId?.high ?: 0L,
+                                            groupIdLow = groupMessageId?.low ?: 0L,
+                                        ),
                                         mine = false,
                                         timestampMs = System.currentTimeMillis(),
                                         messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow),
@@ -779,6 +814,7 @@ fun EdgeZApp() {
         codec: Int,
     ): Result<String> {
         val conversationUserKey = conversationKey(conversationUser)
+        val groupId = conversationGroupId(conversationUser)
         val identity = lastConnectionPreferences.getOrCreateUserIdentity()
         val fromNode = haLowStatus?.macAddress?.takeIf { it != 0L }
         val timestampMs = System.currentTimeMillis()
@@ -820,12 +856,12 @@ fun EdgeZApp() {
         val result = runCatching {
             val toNode = conversationUser.nodeNum
             val maxHop = lastConnectionPreferences.getMeshMaxHop()
-            val groupId = timestampMs
+            val voiceChunkGroupId = timestampMs
             val chunks = voiceBytes.asList().chunked(VOICE_CHUNK_AUDIO_BYTES)
             chunks.forEachIndexed { index, chunkBytes ->
                 val voicePayload = encodeVoiceChunk(
                     VoiceChunk(
-                        groupId = groupId,
+                        groupId = voiceChunkGroupId,
                         durationMs = durationMs,
                         totalChunks = chunks.size,
                         index = index,
@@ -833,10 +869,43 @@ fun EdgeZApp() {
                         audio = chunkBytes.toByteArray(),
                     ),
                 )
-                val encrypted = encryptConversationPayload(identity, conversationUser, voicePayload, fromNode)
+                val encrypted = encryptConversationPayload(
+                    identity,
+                    conversationUser,
+                    voicePayload,
+                    fromNode,
+                    groupIdHigh = groupId?.high ?: 0L,
+                    groupIdLow = groupId?.low ?: 0L,
+                )
                 val sendResult = when (activeConnection) {
-                    ActiveConnection.USB -> usbClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, index + 1, messageUuid.high, messageUuid.low, identity.userIdHigh, identity.userIdLow)
-                    ActiveConnection.BLE -> bleClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, index + 1, messageUuid.high, messageUuid.low, identity.userIdHigh, identity.userIdLow)
+                    ActiveConnection.USB -> usbClient.sendConversationMessage(
+                        encrypted,
+                        fromNode,
+                        toNode,
+                        PacketMime.VOICE,
+                        maxHop,
+                        index + 1,
+                        messageIdHigh = messageUuid.high,
+                        messageIdLow = messageUuid.low,
+                        userIdHigh = identity.userIdHigh,
+                        userIdLow = identity.userIdLow,
+                        groupIdHigh = groupId?.high ?: 0L,
+                        groupIdLow = groupId?.low ?: 0L,
+                    )
+                    ActiveConnection.BLE -> bleClient.sendConversationMessage(
+                        encrypted,
+                        fromNode,
+                        toNode,
+                        PacketMime.VOICE,
+                        maxHop,
+                        index + 1,
+                        messageIdHigh = messageUuid.high,
+                        messageIdLow = messageUuid.low,
+                        userIdHigh = identity.userIdHigh,
+                        userIdLow = identity.userIdLow,
+                        groupIdHigh = groupId?.high ?: 0L,
+                        groupIdLow = groupId?.low ?: 0L,
+                    )
                     ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
                 }
                 sendResult.getOrThrow()
@@ -951,15 +1020,47 @@ fun EdgeZApp() {
                                 Result.failure(IllegalStateException("Local HaLow node id unavailable"))
                             } else {
                                 val toNode = conversationUser.nodeNum
+                                val groupId = conversationGroupId(conversationUser)
                                 runCatching {
-                                    encryptConversationText(identity, conversationUser, text, fromNode)
+                                    encryptConversationText(
+                                        identity,
+                                        conversationUser,
+                                        text,
+                                        fromNode,
+                                        groupIdHigh = groupId?.high ?: 0L,
+                                        groupIdLow = groupId?.low ?: 0L,
+                                    )
                                 }.fold(
                                     onSuccess = { encryptedMessage ->
                                         val maxHop = lastConnectionPreferences.getMeshMaxHop()
                                         val messageUuid = newMessageUuid()
                                         val result = when (activeConnection) {
-                                            ActiveConnection.USB -> usbClient.sendConversationMessage(encryptedMessage, fromNode, toNode, PacketMime.TEXT, maxHop, messageIdHigh = messageUuid.high, messageIdLow = messageUuid.low, userIdHigh = identity.userIdHigh, userIdLow = identity.userIdLow)
-                                            ActiveConnection.BLE -> bleClient.sendConversationMessage(encryptedMessage, fromNode, toNode, PacketMime.TEXT, maxHop, messageIdHigh = messageUuid.high, messageIdLow = messageUuid.low, userIdHigh = identity.userIdHigh, userIdLow = identity.userIdLow)
+                                            ActiveConnection.USB -> usbClient.sendConversationMessage(
+                                                encryptedMessage,
+                                                fromNode,
+                                                toNode,
+                                                PacketMime.TEXT,
+                                                maxHop,
+                                                messageIdHigh = messageUuid.high,
+                                                messageIdLow = messageUuid.low,
+                                                userIdHigh = identity.userIdHigh,
+                                                userIdLow = identity.userIdLow,
+                                                groupIdHigh = groupId?.high ?: 0L,
+                                                groupIdLow = groupId?.low ?: 0L,
+                                            )
+                                            ActiveConnection.BLE -> bleClient.sendConversationMessage(
+                                                encryptedMessage,
+                                                fromNode,
+                                                toNode,
+                                                PacketMime.TEXT,
+                                                maxHop,
+                                                messageIdHigh = messageUuid.high,
+                                                messageIdLow = messageUuid.low,
+                                                userIdHigh = identity.userIdHigh,
+                                                userIdLow = identity.userIdLow,
+                                                groupIdHigh = groupId?.high ?: 0L,
+                                                groupIdLow = groupId?.low ?: 0L,
+                                            )
                                             ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
                                         }
                                         result.onSuccess {
@@ -1013,6 +1114,7 @@ fun EdgeZApp() {
                                 updateVoiceStatus("Resending voice...")
                                 val result = runCatching {
                                     val toNode = conversationUser.nodeNum
+                                    val groupId = conversationGroupId(conversationUser)
                                     val maxHop = lastConnectionPreferences.getMeshMaxHop()
                                     val voiceBytes = voiceFile.readBytes()
                                     val codec = voiceCodecFromPath(entry.audioPath)
@@ -1029,10 +1131,43 @@ fun EdgeZApp() {
                                                 audio = chunkBytes.toByteArray(),
                                             ),
                                         )
-                                        val encrypted = encryptConversationPayload(identity, conversationUser, voicePayload, fromNode)
+                                        val encrypted = encryptConversationPayload(
+                                            identity,
+                                            conversationUser,
+                                            voicePayload,
+                                            fromNode,
+                                            groupIdHigh = groupId?.high ?: 0L,
+                                            groupIdLow = groupId?.low ?: 0L,
+                                        )
                                         val sendResult = when (activeConnection) {
-                                            ActiveConnection.USB -> usbClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, index + 1, resendMessageUuid.high, resendMessageUuid.low, identity.userIdHigh, identity.userIdLow)
-                                            ActiveConnection.BLE -> bleClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, index + 1, resendMessageUuid.high, resendMessageUuid.low, identity.userIdHigh, identity.userIdLow)
+                                            ActiveConnection.USB -> usbClient.sendConversationMessage(
+                                                encrypted,
+                                                fromNode,
+                                                toNode,
+                                                PacketMime.VOICE,
+                                                maxHop,
+                                                index + 1,
+                                                messageIdHigh = resendMessageUuid.high,
+                                                messageIdLow = resendMessageUuid.low,
+                                                userIdHigh = identity.userIdHigh,
+                                                userIdLow = identity.userIdLow,
+                                                groupIdHigh = groupId?.high ?: 0L,
+                                                groupIdLow = groupId?.low ?: 0L,
+                                            )
+                                            ActiveConnection.BLE -> bleClient.sendConversationMessage(
+                                                encrypted,
+                                                fromNode,
+                                                toNode,
+                                                PacketMime.VOICE,
+                                                maxHop,
+                                                index + 1,
+                                                messageIdHigh = resendMessageUuid.high,
+                                                messageIdLow = resendMessageUuid.low,
+                                                userIdHigh = identity.userIdHigh,
+                                                userIdLow = identity.userIdLow,
+                                                groupIdHigh = groupId?.high ?: 0L,
+                                                groupIdLow = groupId?.low ?: 0L,
+                                            )
                                             ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
                                         }
                                         sendResult.getOrThrow()
