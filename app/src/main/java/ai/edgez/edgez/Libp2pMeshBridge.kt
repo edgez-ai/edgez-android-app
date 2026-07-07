@@ -6,6 +6,9 @@ import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.min
+import java.net.Inet4Address
+import java.net.NetworkInterface
+import java.util.Collections
 
 private const val TAG_LIBP2P = "EdgeZLibp2p"
 
@@ -66,11 +69,14 @@ class Libp2pMeshBridge(
 
     fun configFromPreferences(preferences: LastConnectionPreferences): Libp2pMeshConfig {
         val meshId = preferences.getMeshId().ifBlank { "edgez" }
+        val listen = localListenAddr()
+        Log.d(TAG_LIBP2P, "libp2p listen=$listen")
         return Libp2pMeshConfig(
             meshId = meshId,
             passphrase = preferences.getMeshPassphrase(),
             privateKey = Libp2pIdentity.getOrCreatePrivateKeySeed(appContext),
             topic = topicFor(meshId),
+            listen = listen,
         )
     }
 
@@ -95,6 +101,23 @@ class Libp2pMeshBridge(
             .put("bootstrap_peers", JSONArray(bootstrapPeers))
             .toString()
     }
+
+    private fun localListenAddr(): String {
+        val ipv4 = localIPv4Address() ?: return "/ip4/0.0.0.0/tcp/0"
+        return "/ip4/$ipv4/tcp/0"
+    }
+
+    private fun localIPv4Address(): String? = runCatching {
+        for (iface in Collections.list(NetworkInterface.getNetworkInterfaces())) {
+            if (!iface.isUp || iface.isLoopback) continue
+            for (addr in Collections.list(iface.inetAddresses)) {
+                if (addr is Inet4Address && !addr.isLoopbackAddress && !addr.isAnyLocalAddress && !addr.isLinkLocalAddress && !addr.isMulticastAddress) {
+                    return addr.hostAddress
+                }
+            }
+        }
+        return null
+    }.getOrNull()
 
     private fun topicFor(meshId: String): String {
         return "/edgez/mesh/${meshId.ifBlank { "edgez" }}/gossip/1.0.0"

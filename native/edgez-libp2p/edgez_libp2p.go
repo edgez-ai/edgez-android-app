@@ -618,34 +618,33 @@ func listenAddrs(h host.Host) []string {
 }
 
 func localIPv4Addrs() []string {
-	interfaces, err := net.Interfaces()
-	if err != nil {
-		logWarn("net", fmt.Sprintf("interface list failed: %v", err))
-		return nil
-	}
-
-	out := make([]string, 0)
-	seen := map[string]struct{}{}
-	for _, iface := range interfaces {
-		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-		addrs, err := iface.Addrs()
+	listFromInterfaceAddrs := func() []string {
+		interfaceAddrs, err := net.InterfaceAddrs()
 		if err != nil {
-			continue
+			logWarn("net", fmt.Sprintf("interface addrs fallback failed: %v", err))
+			return nil
 		}
-		for _, raw := range addrs {
-			ipStr := raw.String()
-			ip, _, err := net.ParseCIDR(ipStr)
-			if err != nil {
-				if parsed := net.ParseIP(ipStr); parsed != nil {
+
+		out := make([]string, 0)
+		seen := map[string]struct{}{}
+		logDebug("net", "discover local ipv4 addresses via InterfaceAddrs")
+		for _, addr := range interfaceAddrs {
+			var ip net.IP
+			switch typed := addr.(type) {
+			case *net.IPNet:
+				ip = typed.IP
+			case *net.IPAddr:
+				ip = typed.IP
+			default:
+				if parsed := net.ParseIP(addr.String()); parsed != nil {
 					ip = parsed
-				} else {
-					continue
 				}
 			}
+			if ip == nil {
+				continue
+			}
 			ipv4 := ip.To4()
-			if ipv4 == nil || ipv4.IsLoopback() || ipv4.IsUnspecified() {
+			if ipv4 == nil || ipv4.IsLoopback() || ipv4.IsUnspecified() || ipv4.IsMulticast() {
 				continue
 			}
 			ipText := ipv4.String()
@@ -655,8 +654,66 @@ func localIPv4Addrs() []string {
 			seen[ipText] = struct{}{}
 			out = append(out, ipText)
 		}
+		return out
 	}
-	return out
+
+	out := listFromInterfaceAddrs()
+	if len(out) > 0 {
+		logDebug("net", fmt.Sprintf("local ipv4 addresses found=%v", strings.Join(out, ",")))
+		return out
+	}
+
+	listFromInterfaces := func() []string {
+		interfaces, err := net.Interfaces()
+		if err != nil {
+			logWarn("net", fmt.Sprintf("interface list failed: %v", err))
+			return nil
+		}
+
+		out := make([]string, 0)
+		seen := map[string]struct{}{}
+		logDebug("net", "discover local ipv4 addresses")
+		for _, iface := range interfaces {
+			if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+				continue
+			}
+			addrs, err := iface.Addrs()
+			if err != nil {
+				continue
+			}
+			for _, raw := range addrs {
+				ipStr := raw.String()
+				ip, _, err := net.ParseCIDR(ipStr)
+				if err != nil {
+					if parsed := net.ParseIP(ipStr); parsed != nil {
+						ip = parsed
+					} else {
+						continue
+					}
+				}
+				ipv4 := ip.To4()
+				if ipv4 == nil || ipv4.IsLoopback() || ipv4.IsUnspecified() {
+					continue
+				}
+				ipText := ipv4.String()
+				if _, exists := seen[ipText]; exists {
+					continue
+				}
+				seen[ipText] = struct{}{}
+				out = append(out, ipText)
+			}
+		}
+		return out
+	}
+
+	out = listFromInterfaces()
+	if len(out) > 0 {
+		logDebug("net", fmt.Sprintf("local ipv4 addresses found=%v", strings.Join(out, ",")))
+		return out
+	}
+
+	logDebug("net", "local ipv4 addresses found=<none>")
+	return nil
 }
 
 func rewriteListenerAddrs() func([]multiaddr.Multiaddr) []multiaddr.Multiaddr {
@@ -685,8 +742,16 @@ func rewriteListenerAddrs() func([]multiaddr.Multiaddr) []multiaddr.Multiaddr {
 		for _, addr := range addrs {
 			raw := addr.String()
 			if strings.HasPrefix(raw, "/ip4/0.0.0.0/") {
+				trimmed := strings.TrimPrefix(raw, "/ip4/0.0.0.0")
 				for _, ip := range localIps {
-					appendAddr("/ip4/" + ip + strings.TrimPrefix(raw, "/ip4/0.0.0.0"))
+					appendAddr("/ip4/" + ip + trimmed)
+				}
+				continue
+			}
+			if strings.HasPrefix(raw, "/ip4/127.0.0.1/") {
+				trimmed := strings.TrimPrefix(raw, "/ip4/127.0.0.1")
+				for _, ip := range localIps {
+					appendAddr("/ip4/" + ip + trimmed)
 				}
 				continue
 			}
