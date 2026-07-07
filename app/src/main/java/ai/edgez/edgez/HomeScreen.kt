@@ -32,7 +32,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,14 +50,14 @@ import kotlin.math.roundToInt
 
 @Composable
 fun NodesScreen(
-    activeConnection: ActiveConnection,
     haLowStatus: HaLowInterfaceStatus?,
     users: List<HaLowUser>,
+    selectedFilter: NodeListFilter,
+    onSelectedFilterChange: (NodeListFilter) -> Unit,
     onRemoveNode: (HaLowUser) -> Unit,
     onOpenConversation: (HaLowUser) -> Unit,
 ) {
     Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
-        var selectedFilter by remember { mutableStateOf(NodeListFilter.USERS) }
         val filteredUsers = remember(selectedFilter, users) {
             users.filter { user -> selectedFilter.includes(user) }
         }
@@ -84,7 +83,7 @@ fun NodesScreen(
                     NodeListFilter.entries.forEach { filter ->
                         Tab(
                             selected = selectedFilter == filter,
-                            onClick = { selectedFilter = filter },
+                            onClick = { onSelectedFilterChange(filter) },
                             text = { Text(filter.label) },
                         )
                     }
@@ -108,7 +107,7 @@ fun NodesScreen(
     }
 }
 
-private enum class NodeListFilter(val label: String, val emptyLabel: String) {
+enum class NodeListFilter(val label: String, val emptyLabel: String) {
     USERS("Users", "users"),
     DEVICES("Devices", "devices");
 
@@ -295,9 +294,8 @@ private fun formatLastSeenAge(lastSeenMs: Long, nowMs: Long): String {
 private fun HomePreview() {
     EdgeZTheme {
         NodesScreen(
-            ActiveConnection.NONE,
-            null,
-            listOf(
+            haLowStatus = null,
+            users = listOf(
                 HaLowUser(
                     nodeNum = 0x1f7e6325,
                     shortName = "Sams",
@@ -306,6 +304,8 @@ private fun HomePreview() {
                     lastSeenMs = 0,
                 ),
             ),
+            selectedFilter = NodeListFilter.USERS,
+            onSelectedFilterChange = {},
             onRemoveNode = {},
             onOpenConversation = {},
         )

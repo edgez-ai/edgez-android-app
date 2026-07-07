@@ -149,6 +149,7 @@ fun EdgeZApp() {
     var haLowStatus by remember { mutableStateOf<HaLowInterfaceStatus?>(null) }
     var haLowUsers by remember { mutableStateOf(edgeZDatabase.getUsers()) }
     var selectedConversationUser by remember { mutableStateOf<HaLowUser?>(null) }
+    var selectedNodeListFilter by rememberSaveable { mutableStateOf(NodeListFilter.USERS) }
     var conversations by remember { mutableStateOf(edgeZDatabase.getMessages()) }
     var shareLocation by rememberSaveable { mutableStateOf(lastConnectionPreferences.getShareLocation()) }
 
@@ -839,9 +840,10 @@ fun EdgeZApp() {
                     }
                 } else {
                     NodesScreen(
-                        activeConnection = activeConnection,
                         haLowStatus = haLowStatus,
                         users = sortNodesByName(haLowUsers.values),
+                        selectedFilter = selectedNodeListFilter,
+                        onSelectedFilterChange = { selectedNodeListFilter = it },
                         onRemoveNode = { user ->
                             val userKey = conversationKey(user)
                             edgeZDatabase.deleteUser(userKey)
