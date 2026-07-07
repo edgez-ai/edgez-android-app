@@ -119,6 +119,7 @@ fun ProvisioningScreen(
     onShareLocationChange: (Boolean) -> Unit,
     onTransportConnectionChange: (ActiveConnection, Boolean) -> Unit,
     onTransportDisconnect: (ActiveConnection) -> Unit,
+    onProvisionCancel: () -> Unit,
     onProvisionComplete: () -> Unit,
 ) {
     ProvisioningContent(
@@ -130,6 +131,7 @@ fun ProvisioningScreen(
         onShareLocationChange = onShareLocationChange,
         onTransportConnectionChange = onTransportConnectionChange,
         onTransportDisconnect = onTransportDisconnect,
+        onProvisionCancel = onProvisionCancel,
         onProvisionComplete = onProvisionComplete,
     )
 }
@@ -145,6 +147,7 @@ private fun ProvisioningContent(
     onShareLocationChange: (Boolean) -> Unit,
     onTransportConnectionChange: (ActiveConnection, Boolean) -> Unit,
     onTransportDisconnect: (ActiveConnection) -> Unit,
+    onProvisionCancel: () -> Unit,
     onProvisionComplete: () -> Unit,
 ) {
     val provisionMode = true
@@ -686,7 +689,7 @@ private fun ProvisioningContent(
             disconnectProvisionTransport()
         }
         provisionStep = ProvisionStep.SELECT_BLE
-        onProvisionComplete()
+        onProvisionCancel()
     }
 
     fun goBackProvisionStep() {
@@ -846,7 +849,7 @@ private fun ProvisioningContent(
         topBar = {
             if (provisionMode) {
                 TopAppBar(
-                    title = { Text("Provision device") },
+                    title = { Text("Provisioning") },
                     navigationIcon = {
                         TextButton(onClick = { goBackProvisionStep() }) {
                             Text("Back")
@@ -1271,31 +1274,29 @@ private fun ProvisioningContent(
 
             if (!provisionMode || (showDeviceSettingsOnly && provisionStep == ProvisionStep.NETWORK)) item {
                 SettingsCard(title = if (showDeviceSettingsOnly) "Network" else "Mesh network") {
-                    if (!showDeviceSettingsOnly) {
-                        Box(modifier = Modifier.fillMaxWidth()) {
-                            OutlinedButton(
-                                modifier = Modifier.fillMaxWidth(),
-                                onClick = { countryDropdownExpanded = true },
-                            ) {
-                                Text("Country: $meshCountry")
-                            }
-                            DropdownMenu(
-                                expanded = countryDropdownExpanded,
-                                onDismissRequest = { countryDropdownExpanded = false },
-                            ) {
-                                countryOptions.forEach { country ->
-                                    DropdownMenuItem(
-                                        text = { Text(country) },
-                                        onClick = {
-                                            meshCountry = country
-                                            countryDropdownExpanded = false
-                                        },
-                                    )
-                                }
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { countryDropdownExpanded = true },
+                        ) {
+                            Text("Country: $meshCountry")
+                        }
+                        DropdownMenu(
+                            expanded = countryDropdownExpanded,
+                            onDismissRequest = { countryDropdownExpanded = false },
+                        ) {
+                            countryOptions.forEach { country ->
+                                DropdownMenuItem(
+                                    text = { Text(country) },
+                                    onClick = {
+                                        meshCountry = country
+                                        countryDropdownExpanded = false
+                                    },
+                                )
                             }
                         }
-                        Spacer(Modifier.height(8.dp))
                     }
+                    Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = if (showDeviceSettingsOnly) deviceMeshId else meshId,
                         onValueChange = { value ->
@@ -1726,6 +1727,7 @@ private fun ProvisioningPreview() {
             onShareLocationChange = {},
             onTransportConnectionChange = { _, _ -> },
             onTransportDisconnect = {},
+            onProvisionCancel = {},
             onProvisionComplete = {},
         )
     }

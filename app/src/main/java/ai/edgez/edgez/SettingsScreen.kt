@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Button
@@ -33,6 +34,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -64,6 +67,12 @@ import java.util.UUID
 private enum class SettingsProvisionStep {
     SELECT_BLE,
     DEVICE_SETTINGS,
+}
+
+private enum class SettingsTab(val label: String) {
+    USER("User"),
+    MESH_NETWORK("Mesh Network"),
+    OTHERS("Others"),
 }
 
 private fun parseDeviceMacAddress(input: String): Long {
@@ -140,6 +149,7 @@ private fun SettingsContent(
     var bleCandidates by remember { mutableStateOf(listOf<BleCandidate>()) }
     var selectedBle by remember { mutableStateOf<BleCandidate?>(null) }
     var bleReady by remember { mutableStateOf(false) }
+    var showBlePicker by rememberSaveable { mutableStateOf(false) }
     val countryOptions = remember { listOf("US", "JP", "EU") }
     val markerOptions = remember { NodeMapMarker.values().toList() }
     val uartI2cSensorOptions = remember(context) {
@@ -195,7 +205,11 @@ private fun SettingsContent(
     var uartI2cSensorDropdownExpanded by remember { mutableStateOf(false) }
     var rs485SensorDropdownExpanded by remember { mutableStateOf(false) }
     var autoReplayReceivedVoice by rememberSaveable { mutableStateOf(connectionPreferences.getAutoReplayReceivedVoice()) }
+    var selectedBleAddress by rememberSaveable { mutableStateOf(connectionPreferences.getSelectedBleAddress()) }
+    var selectedBleLabel by rememberSaveable { mutableStateOf(connectionPreferences.getSelectedBleLabel()) }
+    var bleAutoConnect by rememberSaveable { mutableStateOf(connectionPreferences.getBleAutoConnect()) }
     var showDebugPopup by rememberSaveable { mutableStateOf(false) }
+    var selectedSettingsTab by rememberSaveable { mutableStateOf(SettingsTab.USER) }
     var status by remember { mutableStateOf("Connect the ESP32-S3 USB port, then scan.") }
     var provisionStep by rememberSaveable { mutableStateOf(SettingsProvisionStep.SELECT_BLE) }
     var pendingProvisionNext by rememberSaveable { mutableStateOf(false) }
@@ -600,6 +614,49 @@ private fun SettingsContent(
         status = "Disconnected from ${connection.name}"
     }
 
+    fun connectSavedBle() {
+        if (activeConnection == ActiveConnection.BLE) {
+            disconnectActiveTransport()
+            return
+        }
+        if (selectedBleAddress.isBlank()) {
+            status = "Select a BLE device first"
+            showBlePicker = true
+            return
+        }
+        if (!bleClient.hasPermissions()) {
+            requestBlePermissions()
+            return
+        }
+        status = "Scanning for ${selectedBleLabel.ifBlank { selectedBleAddress }}..."
+        bleCandidates = emptyList()
+        val didStartConnect = java.util.concurrent.atomic.AtomicBoolean(false)
+        bleClient.startScan { candidate ->
+            activity?.runOnUiThread {
+                if (bleCandidates.none { it.device.address == candidate.device.address }) {
+                    bleCandidates = (bleCandidates + candidate).sortedBy { it.label }
+                }
+                if (candidate.device.address == selectedBleAddress && didStartConnect.compareAndSet(false, true)) {
+                    selectedBle = candidate
+                    bleClient.stopScan()
+                    val result = bleClient.connect(candidate)
+                    result.fold(
+                        onSuccess = {
+                            status = it
+                            connectionPreferences.setLastSuccessfulConnection(ActiveConnection.BLE)
+                            onTransportConnectionChange(ActiveConnection.USB, false)
+                        },
+                        onFailure = {
+                            status = it.message ?: "BLE connect failed"
+                        },
+                    )
+                }
+            }
+        }.onFailure {
+            status = it.message ?: "BLE scan failed"
+        }
+    }
+
     fun disconnectProvisionTransport() {
         val connection = activeConnection
         DeviceModeState.enabled = false
@@ -752,6 +809,48 @@ private fun SettingsContent(
         }
     }
 
+    if (showBlePicker) {
+        BleSelectionScreen(
+            candidates = bleCandidates,
+            selectedAddress = selectedBleAddress,
+            status = status,
+            onBack = {
+                bleClient.stopScan()
+                showBlePicker = false
+            },
+            onSelect = { candidate ->
+                selectedBle = candidate
+                selectedBleAddress = candidate.device.address
+                selectedBleLabel = candidate.label
+                connectionPreferences.setSelectedBleDevice(candidate.device.address, candidate.label)
+                bleClient.stopScan()
+                status = "Selected ${candidate.label}"
+                showBlePicker = false
+            },
+        )
+        LaunchedEffect(Unit) {
+            if (!bleClient.hasPermissions()) {
+                requestBlePermissions()
+                return@LaunchedEffect
+            }
+            bleCandidates = emptyList()
+            status = "Scanning for EdgeZ BLE devices..."
+            bleClient.startScan { candidate ->
+                activity?.runOnUiThread {
+                    if (bleCandidates.none { it.device.address == candidate.device.address }) {
+                        bleCandidates = (bleCandidates + candidate).sortedBy { it.label }
+                    }
+                }
+            }.onFailure {
+                status = it.message ?: "BLE scan failed"
+            }
+        }
+        DisposableEffect(Unit) {
+            onDispose { bleClient.stopScan() }
+        }
+        return
+    }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
@@ -831,13 +930,8 @@ private fun SettingsContent(
                 Text(status, style = MaterialTheme.typography.bodyMedium)
                 if (!provisionMode && !showDeviceSettingsOnly) {
                     Spacer(Modifier.height(10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { showDebugPopup = true }) {
-                            Text("Debug")
-                        }
-                        Button(onClick = { requestIgnoreBatteryOptimizations() }) {
-                            Text("Allow background connection")
-                        }
+                    Button(onClick = { requestIgnoreBatteryOptimizations() }) {
+                        Text("Allow background connection")
                     }
                 }
             }
@@ -856,86 +950,74 @@ private fun SettingsContent(
                 }
             }
 
-            if (!provisionMode && !showDeviceSettingsOnly) item {
-                SettingsCard(title = "USB connection") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = {
-                            candidates = client.scan()
-                            selected = candidates.firstOrNull()
-                            status = "Found ${candidates.size} USB device interface(s)"
-                        }) { Text("Scan") }
-                        Button(enabled = selected != null, onClick = {
-                            val candidate = selected ?: return@Button
-                            if (!client.hasPermission(candidate.device)) {
-                                client.requestPermission(candidate.device)
-                                status = "Requesting USB permission"
-                            } else {
-                                status = client.connect(candidate)
-                            }
-                        }) { Text("Connect") }
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    DeviceList(candidates, selected) { selected = it }
-                }
-            }
-
             if (!showDeviceSettingsOnly) item {
-                SettingsCard(title = if (provisionMode) "Select BLE device" else "BLE connection") {
-                    if (!provisionMode) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = {
-                                if (!bleClient.hasPermissions()) {
-                                    requestBlePermissions()
-                                } else {
-                                    bleCandidates = emptyList()
-                                    selectedBle = null
-                                    bleReady = false
-                                    val result = bleClient.startScan { candidate ->
-                                        activity?.runOnUiThread {
-                                            if (bleCandidates.none { it.device.address == candidate.device.address }) {
-                                                bleCandidates = (bleCandidates + candidate).sortedBy { it.label }
-                                            }
-                                            selectedBle = selectedBle ?: candidate
-                                        }
-                                    }
-                                    result.fold(
-                                        onSuccess = {
-                                            status = it
-                                        },
-                                        onFailure = {
-                                            status = it.message ?: "BLE scan failed"
-                                        },
-                                    )
-                                }
-                            }) { Text("Scan BLE") }
-                            Button(onClick = {
-                                bleClient.stopScan()
-                                status = "BLE scan stopped"
-                            }) { Text("Stop") }
-                            Button(enabled = selectedBle != null, onClick = {
-                                connectSelectedBleForProvision()
-                            }) { Text("Connect") }
+                SettingsCard(title = "BLE connection") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Selected device", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                selectedBleLabel.ifBlank { selectedBleAddress.ifBlank { "No BLE device selected" } },
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            if (selectedBleAddress.isNotBlank()) {
+                                Text(selectedBleAddress, style = MaterialTheme.typography.bodySmall)
+                            }
+                            Text(
+                                if (activeConnection == ActiveConnection.BLE) "BLE connected" else "BLE disconnected",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
                         }
-                        Spacer(Modifier.height(10.dp))
-                    }
-                    Text(if (bleReady) "BLE ready" else "BLE not connected", style = MaterialTheme.typography.bodyMedium)
-                    Spacer(Modifier.height(8.dp))
-                    if (bleCandidates.isEmpty()) {
-                        Text("No EdgeZ BLE devices found.")
-                    } else {
-                        bleCandidates.forEach { candidate ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { showBlePicker = true }) {
+                                Text("Select")
+                            }
                             Button(
-                                modifier = Modifier.fillMaxWidth(),
-                                onClick = { selectedBle = candidate },
+                                enabled = activeConnection == ActiveConnection.BLE || selectedBleAddress.isNotBlank(),
+                                onClick = { connectSavedBle() },
                             ) {
-                                Text(if (candidate == selectedBle) "Selected: ${candidate.label}" else candidate.label)
+                                Text(if (activeConnection == ActiveConnection.BLE) "Disconnect" else "Connect")
                             }
                         }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Auto connect", style = MaterialTheme.typography.titleSmall)
+                            Text("Connect the selected BLE device on app start and reconnect if it drops", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Switch(
+                            checked = bleAutoConnect,
+                            onCheckedChange = { enabled ->
+                                bleAutoConnect = enabled
+                                connectionPreferences.setBleAutoConnect(enabled)
+                                status = if (enabled) "BLE auto connect enabled" else "BLE auto connect disabled"
+                            },
+                        )
                     }
                 }
             }
 
-            if (!provisionMode || showDeviceSettingsOnly) item {
+            if (!provisionMode && !showDeviceSettingsOnly) item {
+                TabRow(selectedTabIndex = selectedSettingsTab.ordinal) {
+                    SettingsTab.entries.forEach { tab ->
+                        Tab(
+                            selected = selectedSettingsTab == tab,
+                            onClick = { selectedSettingsTab = tab },
+                            text = { Text(tab.label) },
+                        )
+                    }
+                }
+            }
+
+            if (showDeviceSettingsOnly || (!provisionMode && selectedSettingsTab == SettingsTab.USER)) item {
                 SettingsCard(title = if (showDeviceSettingsOnly) "Device user" else "User") {
                     Text("User ID", style = MaterialTheme.typography.titleSmall)
                     Text(
@@ -1143,7 +1225,7 @@ private fun SettingsContent(
                 }
             }
 
-            if (!provisionMode || showDeviceSettingsOnly) item {
+            if (showDeviceSettingsOnly || (!provisionMode && selectedSettingsTab == SettingsTab.MESH_NETWORK)) item {
                 SettingsCard(title = if (showDeviceSettingsOnly) "Device settings" else "Mesh network") {
                     if (!showDeviceSettingsOnly) {
                         Box(modifier = Modifier.fillMaxWidth()) {
@@ -1271,7 +1353,7 @@ private fun SettingsContent(
                 }
             }
 
-            if (!provisionMode && !showDeviceSettingsOnly) item {
+            if (!provisionMode && !showDeviceSettingsOnly && selectedSettingsTab == SettingsTab.OTHERS) item {
                 SettingsCard(title = "Chat") {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1290,6 +1372,56 @@ private fun SettingsContent(
                                 status = if (enabled) "Auto replay enabled" else "Auto replay disabled"
                             },
                         )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BleSelectionScreen(
+    candidates: List<BleCandidate>,
+    selectedAddress: String,
+    status: String,
+    onBack: () -> Unit,
+    onSelect: (BleCandidate) -> Unit,
+) {
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        topBar = {
+            TopAppBar(
+                title = { Text("Select BLE device") },
+                navigationIcon = {
+                    TextButton(onClick = onBack) {
+                        Text("Back")
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .padding(padding)
+                .padding(16.dp)
+                .fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item {
+                Text(status, style = MaterialTheme.typography.bodyMedium)
+            }
+            if (candidates.isEmpty()) {
+                item {
+                    Text("Scanning for EdgeZ BLE devices...", style = MaterialTheme.typography.bodyMedium)
+                }
+            } else {
+                items(candidates, key = { it.device.address }) { candidate ->
+                    Button(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { onSelect(candidate) },
+                    ) {
+                        Text(if (candidate.device.address == selectedAddress) "Selected: ${candidate.label}" else candidate.label)
                     }
                 }
             }

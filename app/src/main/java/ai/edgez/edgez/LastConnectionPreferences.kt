@@ -18,6 +18,9 @@ private const val KEY_USER_PRIVATE_KEY = "user_private_key"
 private const val KEY_USER_PUBLIC_KEY = "user_public_key"
 private const val KEY_SHARE_LOCATION = "share_location"
 private const val KEY_AUTO_REPLAY_RECEIVED_VOICE = "auto_replay_received_voice"
+private const val KEY_SELECTED_BLE_ADDRESS = "selected_ble_address"
+private const val KEY_SELECTED_BLE_LABEL = "selected_ble_label"
+private const val KEY_BLE_AUTO_CONNECT = "ble_auto_connect"
 private const val KEY_DEVICE_GEOFENCES = "device_geofences"
 private const val KEY_SELECTED_DEVICE_GEOFENCE = "selected_device_geofence"
 private const val DEFAULT_MESH_ID = "edgez"
@@ -113,6 +116,19 @@ class LastConnectionPreferences(context: Context) {
 
     fun getAutoReplayReceivedVoice(): Boolean = prefs.getBoolean(KEY_AUTO_REPLAY_RECEIVED_VOICE, false)
 
+    fun getSelectedBleAddress(): String = prefs.getString(KEY_SELECTED_BLE_ADDRESS, "") ?: ""
+
+    fun getSelectedBleLabel(): String = prefs.getString(KEY_SELECTED_BLE_LABEL, "") ?: ""
+
+    fun getBleAutoConnect(): Boolean = prefs.getBoolean(KEY_BLE_AUTO_CONNECT, false)
+
+    fun setSelectedBleDevice(address: String, label: String) {
+        prefs.edit()
+            .putString(KEY_SELECTED_BLE_ADDRESS, address)
+            .putString(KEY_SELECTED_BLE_LABEL, label)
+            .apply()
+    }
+
     fun getDeviceGeoFences(): List<DeviceGeoFence> {
         val stored = prefs.getString(KEY_DEVICE_GEOFENCES, "") ?: ""
         return stored.lineSequence()
@@ -151,6 +167,12 @@ class LastConnectionPreferences(context: Context) {
     fun setAutoReplayReceivedVoice(enabled: Boolean) {
         prefs.edit()
             .putBoolean(KEY_AUTO_REPLAY_RECEIVED_VOICE, enabled)
+            .apply()
+    }
+
+    fun setBleAutoConnect(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(KEY_BLE_AUTO_CONNECT, enabled)
             .apply()
     }
 

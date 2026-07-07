@@ -52,7 +52,7 @@ fun NodesScreen(
     users: List<HaLowUser>,
     selectedFilter: NodeListFilter,
     onSelectedFilterChange: (NodeListFilter) -> Unit,
-    onOpenDeviceProvision: () -> Unit,
+    onCreateGroup: () -> Unit,
     onRemoveNode: (HaLowUser) -> Unit,
     onOpenConversation: (HaLowUser) -> Unit,
 ) {
@@ -79,18 +79,13 @@ fun NodesScreen(
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.headlineMedium,
                     )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Button(onClick = onOpenDeviceProvision) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_bluetooth),
-                                contentDescription = null,
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text("Provisioning")
-                        }
+                    Button(onClick = onCreateGroup) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_account_box),
+                            contentDescription = null,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Create group")
                     }
                 }
                 Spacer(Modifier.height(6.dp))
@@ -124,6 +119,7 @@ fun NodesScreen(
 
 enum class NodeListFilter(val label: String, val emptyLabel: String) {
     USERS("Users", "users"),
+    GROUPS("Groups", "groups"),
     DEVICES("Devices", "devices");
 
     fun includes(user: HaLowUser): Boolean {
@@ -131,6 +127,7 @@ enum class NodeListFilter(val label: String, val emptyLabel: String) {
             user.deviceType == EdgeZDeviceType.UNSPECIFIED
         return when (this) {
             USERS -> isUser
+            GROUPS -> false
             DEVICES -> !isUser
         }
     }
@@ -296,7 +293,7 @@ private fun HomePreview() {
             ),
             selectedFilter = NodeListFilter.USERS,
             onSelectedFilterChange = {},
-            onOpenDeviceProvision = {},
+            onCreateGroup = {},
             onRemoveNode = {},
             onOpenConversation = {},
         )

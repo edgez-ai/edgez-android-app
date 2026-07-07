@@ -5,8 +5,15 @@ import android.os.Looper
 import android.content.SharedPreferences
 import android.content.Context
 import android.util.Log
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -21,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -141,7 +149,7 @@ fun EdgeZApp() {
     val reconnectRequested = remember { AtomicReference<ActiveConnection?>(null) }
     val reconnectAttemptRunning = remember { AtomicBoolean(false) }
     val shuttingDown = remember { AtomicBoolean(false) }
-    var currentDestination by rememberSaveable { mutableStateOf(AppDestination.HOME) }
+    var currentDestination by rememberSaveable { mutableStateOf(AppDestination.PROFILE) }
     var mapCameraLatitude by rememberSaveable { mutableStateOf<Double?>(null) }
     var mapCameraLongitude by rememberSaveable { mutableStateOf<Double?>(null) }
     var mapCameraZoom by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -161,6 +169,19 @@ fun EdgeZApp() {
     fun clearReconnect() {
         reconnectRequested.set(null)
         reconnectAttemptRunning.set(false)
+    }
+
+    fun connectSelectedBleFromPreferences(): Boolean {
+        if (!lastConnectionPreferences.getBleAutoConnect() || !bleClient.hasPermissions()) return false
+        val selectedAddress = lastConnectionPreferences.getSelectedBleAddress()
+        if (selectedAddress.isBlank()) return false
+        val didStartConnect = AtomicBoolean(false)
+        return bleClient.startScan { candidate ->
+            if (candidate.device.address == selectedAddress && didStartConnect.compareAndSet(false, true)) {
+                bleClient.stopScan()
+                bleClient.connect(candidate)
+            }
+        }.isSuccess
     }
 
     fun markTransportConnected(connection: ActiveConnection) {
@@ -189,6 +210,7 @@ fun EdgeZApp() {
 
     fun scheduleReconnect(connection: ActiveConnection) {
         if (connection == ActiveConnection.NONE || shuttingDown.get()) return
+        if (connection == ActiveConnection.BLE && !lastConnectionPreferences.getBleAutoConnect()) return
         reconnectRequested.set(connection)
         mainHandler.postDelayed({
             if (shuttingDown.get() || reconnectRequested.get() != connection || activeConnection != ActiveConnection.NONE) {
@@ -208,18 +230,7 @@ fun EdgeZApp() {
                             } ?: false
                     }
                     ActiveConnection.BLE -> {
-                        if (!bleClient.hasPermissions()) {
-                            false
-                        } else {
-                            val didStartConnect = AtomicBoolean(false)
-                            val scanStarted = bleClient.startScan { candidate ->
-                                if (didStartConnect.compareAndSet(false, true)) {
-                                    bleClient.stopScan()
-                                    bleClient.connect(candidate)
-                                }
-                            }.isSuccess
-                            scanStarted
-                        }
+                        connectSelectedBleFromPreferences()
                     }
                     ActiveConnection.NONE -> false
                 }
@@ -272,6 +283,13 @@ fun EdgeZApp() {
             EdgeZBeaconRunner.setActiveConnection(ActiveConnection.NONE)
             BleForegroundService.stop(context.applicationContext)
         }
+    }
+
+    fun openDeviceProvisioning() {
+        disconnectTransport(activeConnection)
+        provisionMode = true
+        DeviceModeState.enabled = true
+        currentDestination = AppDestination.NODES
     }
 
     val preferenceListener = remember {
@@ -576,28 +594,8 @@ fun EdgeZApp() {
     }
 
     LaunchedEffect(Unit) {
-        when (lastConnectionPreferences.getLastSuccessfulConnection()) {
-            ActiveConnection.USB -> {
-                usbClient.scan()
-                    .firstOrNull { usbClient.hasPermission(it.device) }
-                    ?.let { candidate ->
-                        if (usbClient.connect(candidate).startsWith("Connected")) {
-                            setTransportConnected(ActiveConnection.USB, true)
-                        }
-                    }
-            }
-            ActiveConnection.BLE -> {
-                if (bleClient.hasPermissions()) {
-                    val didStartConnect = AtomicBoolean(false)
-                    bleClient.startScan { candidate ->
-                        if (didStartConnect.compareAndSet(false, true)) {
-                            bleClient.stopScan()
-                            bleClient.connect(candidate)
-                        }
-                    }
-                }
-            }
-            ActiveConnection.NONE -> Unit
+        if (lastConnectionPreferences.getBleAutoConnect()) {
+            connectSelectedBleFromPreferences()
         }
     }
 
@@ -625,7 +623,7 @@ fun EdgeZApp() {
         },
     ) {
         when (currentDestination) {
-            AppDestination.HOME -> MapScreen(
+            AppDestination.MAP -> MapScreen(
                 users = haLowUsers.values.sortedByDescending { it.lastSeenMs },
                 gpsCursorMarker = mapCursorMarker,
                 savedCamera = if (mapCameraLatitude != null && mapCameraLongitude != null && mapCameraZoom != null) {
@@ -661,6 +659,11 @@ fun EdgeZApp() {
                         },
                         onTransportDisconnect = { connection ->
                             disconnectTransport(connection)
+                        },
+                        onProvisionCancel = {
+                            provisionMode = false
+                            DeviceModeState.enabled = false
+                            currentDestination = AppDestination.PROFILE
                         },
                         onProvisionComplete = {
                             provisionMode = false
@@ -872,10 +875,8 @@ fun EdgeZApp() {
                         users = sortNodesByName(haLowUsers.values),
                         selectedFilter = selectedNodeListFilter,
                         onSelectedFilterChange = { selectedNodeListFilter = it },
-                        onOpenDeviceProvision = {
-                            disconnectTransport(activeConnection)
-                            provisionMode = true
-                            DeviceModeState.enabled = true
+                        onCreateGroup = {
+                            selectedNodeListFilter = NodeListFilter.GROUPS
                         },
                         onRemoveNode = { user ->
                             val userKey = conversationKey(user)
@@ -892,7 +893,9 @@ fun EdgeZApp() {
                     )
                 }
             }
-            AppDestination.PROFILE -> PlaceholderScreen("Profile")
+            AppDestination.PROFILE -> DashboardScreen(
+                onOpenDeviceProvision = { openDeviceProvisioning() },
+            )
             AppDestination.SETTINGS -> SettingsScreen(
                 client = usbClient,
                 bleClient = bleClient,
@@ -918,21 +921,42 @@ private enum class AppDestination(
     val label: String,
     val icon: Int,
 ) {
-    HOME("Home", R.drawable.ic_map),
+    PROFILE("Dashboard", R.drawable.ic_account_box),
+    MAP("Map", R.drawable.ic_map),
     NODES("Nodes", R.drawable.ic_halow_mesh),
-    PROFILE("Profile", R.drawable.ic_account_box),
     SETTINGS("Settings", R.drawable.ic_usb),
 }
 
 @Composable
-private fun PlaceholderScreen(title: String) {
+private fun DashboardScreen(
+    onOpenDeviceProvision: () -> Unit,
+) {
     Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
-        Text(
-            text = title,
+        Column(
             modifier = Modifier
                 .padding(padding)
                 .padding(16.dp),
-            style = MaterialTheme.typography.headlineMedium,
-        )
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Dashboard",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.headlineMedium,
+                )
+                Button(onClick = onOpenDeviceProvision) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_bluetooth),
+                        contentDescription = null,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Provisioning")
+                }
+            }
+        }
     }
 }
