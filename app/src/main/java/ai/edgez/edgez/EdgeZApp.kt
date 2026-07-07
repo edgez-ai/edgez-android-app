@@ -47,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
@@ -1312,8 +1313,9 @@ private fun DashboardMapPreview(
     users: List<HaLowUser>,
     gpsCursorMarker: String,
 ) {
-    val locatedUsers = users.filter { it.hasValidMapLocation() }.take(4)
-    val gpsColor = markerTintColor(gpsCursorMarker) ?: MaterialTheme.colorScheme.primary
+    val locatedUsers = users.filter { it.hasLocation() }.take(4)
+    val gpsColor = NodeMapMarker.fromId(gpsCursorMarker).colorArgb?.let { Color(it.toInt()) }
+        ?: MaterialTheme.colorScheme.primary
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1347,7 +1349,7 @@ private fun DashboardMapPreview(
                             .width(10.dp)
                             .height(10.dp),
                         shape = RoundedCornerShape(5.dp),
-                        color = user.markerTintColor() ?: gpsColor,
+                        color = NodeMapMarker.fromId(user.marker).colorArgb?.let { Color(it.toInt()) } ?: gpsColor,
                         content = {},
                     )
                     Text(user.displayName, style = MaterialTheme.typography.bodySmall)
