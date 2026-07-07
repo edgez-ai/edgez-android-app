@@ -12,7 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -46,12 +46,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.PreviewScreenSizes
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import ai.edgez.edgez.ble.EdgezBleClient
 import ai.edgez.edgez.usb.EdgezUsbClient
@@ -1061,6 +1064,7 @@ private fun DashboardScreen(
     onMoveWidget: (String, Int) -> Unit,
     onOpenDeviceProvision: () -> Unit,
 ) {
+    var editLayoutMode by rememberSaveable { mutableStateOf(false) }
     Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
         LazyColumn(
             modifier = Modifier
@@ -1087,13 +1091,21 @@ private fun DashboardScreen(
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.headlineMedium,
                     )
-                    Button(onClick = onOpenDeviceProvision) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_bluetooth),
-                            contentDescription = null,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text("Provisioning")
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Button(onClick = onOpenDeviceProvision) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_bluetooth),
+                                contentDescription = null,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("Prov")
+                        }
+                        Button(onClick = { editLayoutMode = !editLayoutMode }) {
+                            Text(if (editLayoutMode) "Done" else "Edit")
+                        }
                     }
                 }
             }
@@ -1126,7 +1138,7 @@ private fun DashboardScreen(
                 val dashboardItem = orderedItems[index]
                 if (dashboardItem.isCompactWidget) {
                     val nextItem = orderedItems.getOrNull(index + 1)?.takeIf { it.isCompactWidget }
-                    item {
+                    item(key = listOfNotNull(dashboardItem, nextItem).joinToString("|") { it.display.deviceKey }) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -1134,6 +1146,7 @@ private fun DashboardScreen(
                             DashboardWidgetCard(
                                 item = dashboardItem,
                                 activeConnection = activeConnection,
+                                editLayoutMode = editLayoutMode,
                                 modifier = Modifier.weight(1f),
                                 onOpenConversation = onOpenConversation,
                                 onOpenSensorDetail = onOpenSensorDetail,
@@ -1144,6 +1157,7 @@ private fun DashboardScreen(
                                 DashboardWidgetCard(
                                     item = nextItem,
                                     activeConnection = activeConnection,
+                                    editLayoutMode = editLayoutMode,
                                     modifier = Modifier.weight(1f),
                                     onOpenConversation = onOpenConversation,
                                     onOpenSensorDetail = onOpenSensorDetail,
@@ -1157,10 +1171,11 @@ private fun DashboardScreen(
                     }
                     index += if (nextItem != null) 2 else 1
                 } else {
-                    item {
+                    item(key = dashboardItem.display.deviceKey) {
                         DashboardWidgetCard(
                             item = dashboardItem,
                             activeConnection = activeConnection,
+                            editLayoutMode = editLayoutMode,
                             onOpenConversation = onOpenConversation,
                             onOpenSensorDetail = onOpenSensorDetail,
                             onSendVoiceMessage = onSendUserVoiceMessage,
@@ -1187,6 +1202,7 @@ private data class DashboardDeviceItem(
 private fun DashboardWidgetCard(
     item: DashboardDeviceItem,
     activeConnection: ActiveConnection,
+    editLayoutMode: Boolean,
     modifier: Modifier = Modifier.fillMaxWidth(),
     onOpenConversation: (HaLowUser) -> Unit,
     onOpenSensorDetail: (HaLowUser) -> Unit,
@@ -1197,6 +1213,7 @@ private fun DashboardWidgetCard(
         DashboardUserCard(
             item = item,
             activeConnection = activeConnection,
+            editLayoutMode = editLayoutMode,
             modifier = modifier,
             onOpenConversation = onOpenConversation,
             onSendVoiceMessage = onSendVoiceMessage,
@@ -1205,6 +1222,7 @@ private fun DashboardWidgetCard(
     } else {
         DashboardSensorCard(
             item = item,
+            editLayoutMode = editLayoutMode,
             modifier = modifier,
             onOpenSensorDetail = onOpenSensorDetail,
             onMoveWidget = onMoveWidget,
@@ -1212,36 +1230,56 @@ private fun DashboardWidgetCard(
     }
 }
 
-@Composable
-private fun DashboardDragHandle(
+private fun Modifier.dashboardWidgetReorderInput(
     widgetKey: String,
+    editLayoutMode: Boolean,
+    onDragStateChange: (Boolean) -> Unit,
+    onDragOffsetChange: (Offset) -> Unit,
     onMoveWidget: (String, Int) -> Unit,
-) {
-    var dragOffset by remember(widgetKey) { mutableStateOf(0f) }
-    Text(
-        text = "Drag",
-        modifier = Modifier.pointerInput(widgetKey) {
-            detectVerticalDragGestures(
-                onDragEnd = { dragOffset = 0f },
-                onDragCancel = { dragOffset = 0f },
-                onVerticalDrag = { _, dragAmount ->
-                    dragOffset += dragAmount
-                    if (abs(dragOffset) >= 48f) {
-                        onMoveWidget(widgetKey, if (dragOffset > 0f) 1 else -1)
-                        dragOffset = 0f
-                    }
-                },
-            )
-        },
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+): Modifier {
+    if (!editLayoutMode) return this
+    return pointerInput(widgetKey, editLayoutMode) {
+        var reorderOffset = Offset.Zero
+        fun dropWidget() {
+            val dominantOffset = if (abs(reorderOffset.y) >= abs(reorderOffset.x)) {
+                reorderOffset.y
+            } else {
+                reorderOffset.x
+            }
+            if (abs(dominantOffset) >= 72f) {
+                val steps = (abs(dominantOffset) / 96f).toInt().coerceAtLeast(1)
+                onMoveWidget(widgetKey, if (dominantOffset > 0f) steps else -steps)
+            }
+            reorderOffset = Offset.Zero
+            onDragOffsetChange(Offset.Zero)
+            onDragStateChange(false)
+        }
+        detectDragGesturesAfterLongPress(
+            onDragStart = {
+                reorderOffset = Offset.Zero
+                onDragOffsetChange(Offset.Zero)
+                onDragStateChange(true)
+            },
+            onDragCancel = {
+                reorderOffset = Offset.Zero
+                onDragOffsetChange(Offset.Zero)
+                onDragStateChange(false)
+            },
+            onDragEnd = { dropWidget() },
+            onDrag = { change, dragAmount ->
+                change.consume()
+                reorderOffset += dragAmount
+                onDragOffsetChange(reorderOffset)
+            }
+        )
+    }
 }
 
 @Composable
 private fun DashboardUserCard(
     item: DashboardDeviceItem,
     activeConnection: ActiveConnection,
+    editLayoutMode: Boolean,
     modifier: Modifier = Modifier.fillMaxWidth(),
     onOpenConversation: (HaLowUser) -> Unit,
     onSendVoiceMessage: (HaLowUser, ByteArray, Long, String, Int) -> Result<String>,
@@ -1261,51 +1299,75 @@ private fun DashboardUserCard(
     val markerBackground = item.user.markerTintColor()?.let { markerColor ->
         lerp(MaterialTheme.colorScheme.surfaceVariant, markerColor, 0.40f)
     } ?: MaterialTheme.colorScheme.surfaceVariant
+    var dragOffset by remember(userKey) { mutableStateOf(Offset.Zero) }
+    var dragging by remember(userKey) { mutableStateOf(false) }
 
     Card(
-        modifier = modifier.pointerInput(userKey, canSendVoice) {
-            awaitEachGesture {
-                awaitFirstDown()
-                val releasedBeforeHold = withTimeoutOrNull(280L) {
-                    waitForUpOrCancellation()
-                }
-                if (releasedBeforeHold != null) {
-                    onOpenConversation(item.user)
-                    return@awaitEachGesture
-                }
-                if (!canSendVoice) {
-                    status = "Connect to send voice"
-                    waitForUpOrCancellation()
-                    return@awaitEachGesture
-                }
-                val hasPermission = ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.RECORD_AUDIO,
-                ) == PackageManager.PERMISSION_GRANTED
-                if (!hasPermission) {
-                    audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                    waitForUpOrCancellation()
-                    return@awaitEachGesture
-                }
-                val started = recorder.start()
-                if (started.isFailure) {
-                    status = started.exceptionOrNull()?.message ?: "Voice record failed"
-                    waitForUpOrCancellation()
-                    return@awaitEachGesture
-                }
-                recording = true
-                status = "Recording"
-                val released = waitForUpOrCancellation() != null
-                recording = false
-                val voice = recorder.stop(delete = !released)
-                if (released && voice != null) {
-                    val result = onSendVoiceMessage(item.user, voice.bytes, voice.durationMs, voice.path, voice.codec)
-                    status = result.exceptionOrNull()?.message ?: result.getOrNull().orEmpty()
-                } else {
-                    status = "Voice canceled"
-                }
+        modifier = modifier
+            .zIndex(if (dragging) 1f else 0f)
+            .graphicsLayer {
+                translationX = dragOffset.x
+                translationY = dragOffset.y
+                shadowElevation = if (dragging) 12.dp.toPx() else 0f
+                scaleX = if (dragging) 1.03f else 1f
+                scaleY = if (dragging) 1.03f else 1f
             }
-        },
+            .dashboardWidgetReorderInput(
+                widgetKey = item.display.deviceKey,
+                editLayoutMode = editLayoutMode,
+                onDragStateChange = { dragging = it },
+                onDragOffsetChange = { dragOffset = it },
+                onMoveWidget = onMoveWidget,
+            )
+            .then(
+                if (editLayoutMode) {
+                    Modifier
+                } else {
+                    Modifier.pointerInput(userKey, canSendVoice) {
+                        awaitEachGesture {
+                            awaitFirstDown()
+                            val releasedBeforeHold = withTimeoutOrNull(280L) {
+                                waitForUpOrCancellation()
+                            }
+                            if (releasedBeforeHold != null) {
+                                onOpenConversation(item.user)
+                                return@awaitEachGesture
+                            }
+                            if (!canSendVoice) {
+                                status = "Connect to send voice"
+                                waitForUpOrCancellation()
+                                return@awaitEachGesture
+                            }
+                            val hasPermission = ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.RECORD_AUDIO,
+                            ) == PackageManager.PERMISSION_GRANTED
+                            if (!hasPermission) {
+                                audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                waitForUpOrCancellation()
+                                return@awaitEachGesture
+                            }
+                            val started = recorder.start()
+                            if (started.isFailure) {
+                                status = started.exceptionOrNull()?.message ?: "Voice record failed"
+                                waitForUpOrCancellation()
+                                return@awaitEachGesture
+                            }
+                            recording = true
+                            status = "Recording"
+                            val released = waitForUpOrCancellation() != null
+                            recording = false
+                            val voice = recorder.stop(delete = !released)
+                            if (released && voice != null) {
+                                val result = onSendVoiceMessage(item.user, voice.bytes, voice.durationMs, voice.path, voice.codec)
+                                status = result.exceptionOrNull()?.message ?: result.getOrNull().orEmpty()
+                            } else {
+                                status = "Voice canceled"
+                            }
+                        }
+                    }
+                },
+            ),
         colors = CardDefaults.cardColors(containerColor = markerBackground),
     ) {
         Column(
@@ -1320,10 +1382,11 @@ private fun DashboardUserCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(item.user.displayName, style = MaterialTheme.typography.titleSmall)
-                DashboardDragHandle(item.display.deviceKey, onMoveWidget)
             }
             Text(
                 when {
+                    dragging -> "Drop to place"
+                    editLayoutMode -> "Long press and drag"
                     recording -> "Recording"
                     status.isNotBlank() -> status
                     canSendVoice -> "Hold to talk"
@@ -1338,6 +1401,7 @@ private fun DashboardUserCard(
 @Composable
 private fun DashboardSensorCard(
     item: DashboardDeviceItem,
+    editLayoutMode: Boolean,
     modifier: Modifier = Modifier.fillMaxWidth(),
     onOpenSensorDetail: (HaLowUser) -> Unit,
     onMoveWidget: (String, Int) -> Unit,
@@ -1348,8 +1412,32 @@ private fun DashboardSensorCard(
         lerp(MaterialTheme.colorScheme.surfaceVariant, markerColor, if (compact) 0.58f else 0.46f)
     }
         ?: MaterialTheme.colorScheme.surfaceVariant
+    var dragOffset by remember(item.display.deviceKey) { mutableStateOf(Offset.Zero) }
+    var dragging by remember(item.display.deviceKey) { mutableStateOf(false) }
     Card(
-        modifier = modifier.clickable { onOpenSensorDetail(item.user) },
+        modifier = modifier
+            .zIndex(if (dragging) 1f else 0f)
+            .graphicsLayer {
+                translationX = dragOffset.x
+                translationY = dragOffset.y
+                shadowElevation = if (dragging) 12.dp.toPx() else 0f
+                scaleX = if (dragging) 1.03f else 1f
+                scaleY = if (dragging) 1.03f else 1f
+            }
+            .dashboardWidgetReorderInput(
+                widgetKey = item.display.deviceKey,
+                editLayoutMode = editLayoutMode,
+                onDragStateChange = { dragging = it },
+                onDragOffsetChange = { dragOffset = it },
+                onMoveWidget = onMoveWidget,
+            )
+            .then(
+                if (editLayoutMode) {
+                    Modifier
+                } else {
+                    Modifier.clickable { onOpenSensorDetail(item.user) }
+                },
+            ),
         colors = CardDefaults.cardColors(containerColor = markerBackground),
     ) {
         Column(
@@ -1368,7 +1456,6 @@ private fun DashboardSensorCard(
                         item.user.displayName,
                         style = MaterialTheme.typography.titleSmall,
                     )
-                    DashboardDragHandle(item.display.deviceKey, onMoveWidget)
                 }
             } else {
                 Row(
@@ -1390,9 +1477,11 @@ private fun DashboardSensorCard(
                         if (!compact) {
                             Text("Node ${item.user.nodeId}", style = MaterialTheme.typography.bodySmall)
                         }
-                        DashboardDragHandle(item.display.deviceKey, onMoveWidget)
                     }
                 }
+            }
+            if (editLayoutMode) {
+                Text(if (dragging) "Drop to place" else "Long press and drag", style = MaterialTheme.typography.bodySmall)
             }
             if (sample == null || !sample.data.hasAnyValue) {
                 Text("No sensor data", style = MaterialTheme.typography.bodySmall)
