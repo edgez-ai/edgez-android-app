@@ -80,9 +80,11 @@ fun SettingsScreen(
     activeConnection: ActiveConnection,
     edgeZDatabase: EdgeZDatabase,
     shareLocation: Boolean,
+    provisionMode: Boolean,
     onShareLocationChange: (Boolean) -> Unit,
     onTransportConnectionChange: (ActiveConnection, Boolean) -> Unit,
     onTransportDisconnect: (ActiveConnection) -> Unit,
+    onProvisionComplete: () -> Unit,
 ) {
     val context = LocalContext.current
     val connectionPreferences = remember { LastConnectionPreferences(context.applicationContext) }
@@ -158,13 +160,14 @@ fun SettingsScreen(
     var lastSavedDeviceRs485SensorType by rememberSaveable { mutableStateOf("") }
     var uartI2cSensorDropdownExpanded by remember { mutableStateOf(false) }
     var rs485SensorDropdownExpanded by remember { mutableStateOf(false) }
-    var deviceMode by rememberSaveable { mutableStateOf(DeviceModeState.enabled) }
     var autoReplayReceivedVoice by rememberSaveable { mutableStateOf(connectionPreferences.getAutoReplayReceivedVoice()) }
     var showDebugPopup by rememberSaveable { mutableStateOf(false) }
     var status by remember { mutableStateOf("Connect the ESP32-S3 USB port, then scan.") }
     val activity = context as? ComponentActivity
     val currentOnTransportConnectionChange by rememberUpdatedState(onTransportConnectionChange)
-    val showDeviceSettingsOnly = activeConnection != ActiveConnection.NONE && deviceMode
+    val provisionBleReady = provisionMode && (activeConnection == ActiveConnection.BLE || bleReady)
+    val deviceMode = provisionBleReady
+    val showDeviceSettingsOnly = provisionBleReady
 
     if (showGeoFencePage) {
         GeoFenceMaintenanceScreen(
@@ -212,8 +215,6 @@ fun SettingsScreen(
         userIdentity = connectionPreferences.getOrCreateUserIdentity()
         userName = userIdentity.name
         userMarker = connectionPreferences.getUserMarker()
-        deviceMode = false
-        DeviceModeState.enabled = false
         autoReplayReceivedVoice = connectionPreferences.getAutoReplayReceivedVoice()
         deviceGeoFences = loadDeviceGeoFences()
         selectedDeviceGeoFenceKey = connectionPreferences.getSelectedDeviceGeoFenceKey() ?: ""
@@ -321,8 +322,6 @@ fun SettingsScreen(
     }
 
     fun applyDeviceSettings(settings: DeviceSettings) {
-        deviceMode = settings.deviceModeEnabled
-        DeviceModeState.enabled = settings.deviceModeEnabled
         if (settings.meshId.isNotBlank()) {
             deviceMeshId = settings.meshId
         }
@@ -431,16 +430,8 @@ fun SettingsScreen(
             }
             activity?.runOnUiThread {
                 status = result.fold(
-                    onSuccess = {
-                        deviceMode = false
-                        DeviceModeState.enabled = false
-                        "Device settings request sent; using app mode unless device settings respond"
-                    },
-                    onFailure = {
-                        deviceMode = false
-                        DeviceModeState.enabled = false
-                        "Device settings unavailable; using app mode"
-                    },
+                    onSuccess = { "Device settings request sent" },
+                    onFailure = { it.message ?: "Device settings unavailable" },
                 )
             }
         }
@@ -450,6 +441,7 @@ fun SettingsScreen(
         settings: DeviceSettings = currentDeviceSettings(),
         connection: ActiveConnection = activeConnection,
         label: String = "Device settings",
+        onSuccessAction: (() -> Unit)? = null,
     ) {
         if (connection == ActiveConnection.NONE) {
             status = "$label saved locally; connect USB or BLE to sync"
@@ -493,11 +485,13 @@ fun SettingsScreen(
                     onSuccess = {
                         lastSavedDeviceUartI2cSensorType = uartI2cSensorType
                         lastSavedDeviceRs485SensorType = rs485SensorType
-                        if (scriptConfigs.isEmpty()) {
+                        val message = if (scriptConfigs.isEmpty()) {
                             "$label sent"
                         } else {
                             "$label and ${scriptConfigs.size} sensor config(s) sent"
                         }
+                        onSuccessAction?.invoke()
+                        message
                     },
                     onFailure = { it.message ?: "$label save failed" },
                 )
@@ -533,7 +527,14 @@ fun SettingsScreen(
         beaconInterval: Int = beaconIntervalSeconds.toIntOrNull() ?: DEFAULT_BEACON_INTERVAL_SECONDS,
     ) {
         if (deviceMode) {
-            sendDeviceSettingsToDevice()
+            sendDeviceSettingsToDevice(
+                onSuccessAction = {
+                    if (provisionMode) {
+                        disconnectActiveTransport()
+                        onProvisionComplete()
+                    }
+                },
+            )
             return
         }
         connectionPreferences.setMeshCredentials(country, id, password, hopLimit, beaconInterval)
@@ -599,9 +600,15 @@ fun SettingsScreen(
         }
     }
 
-    LaunchedEffect(activeConnection) {
-        if (activeConnection != ActiveConnection.NONE) {
+    LaunchedEffect(activeConnection, provisionMode) {
+        if (provisionMode && activeConnection == ActiveConnection.BLE) {
             requestDeviceSettings(activeConnection)
+        }
+    }
+
+    LaunchedEffect(provisionMode) {
+        if (provisionMode && activeConnection != ActiveConnection.BLE && !bleReady) {
+            status = "Scan and select an EdgeZ BLE device"
         }
     }
 
@@ -614,16 +621,19 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                Text("Settings", style = MaterialTheme.typography.headlineMedium)
+                Text(if (provisionMode) "Provision device" else "Settings", style = MaterialTheme.typography.headlineMedium)
                 Spacer(Modifier.height(6.dp))
                 Text("Interface: ${activeConnection.name}", style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(6.dp))
-                Text("Settings source: ${if (deviceMode) "Device" else "App"}", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "Settings source: ${if (showDeviceSettingsOnly) "Device" else "App"}",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
                 Spacer(Modifier.height(6.dp))
                 Text(status, style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (!showDeviceSettingsOnly) {
+                    if (!provisionMode && !showDeviceSettingsOnly) {
                         Button(onClick = { showDebugPopup = true }) {
                             Text("Debug")
                         }
@@ -634,48 +644,21 @@ fun SettingsScreen(
                 }
             }
 
-            item {
-                SettingsCard(title = "Device mode") {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
+            if (showDeviceSettingsOnly && !provisionMode) item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        enabled = activeConnection != ActiveConnection.NONE,
+                        onClick = { requestDeviceSettings() },
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Use device settings", style = MaterialTheme.typography.titleSmall)
-                            Text("Read and write mesh, beacon, location, name, and marker on the connected device", style = MaterialTheme.typography.bodySmall)
-                        }
-                        Switch(
-                            checked = deviceMode,
-                            onCheckedChange = { enabled ->
-                                deviceMode = enabled
-                                DeviceModeState.enabled = enabled
-                                sendDeviceSettingsToDevice(
-                                    currentDeviceSettings(enabled = enabled),
-                                    label = if (enabled) "Device mode settings" else "App mode settings",
-                                )
-                                if (!enabled) status = "App settings mode enabled"
-                            },
-                        )
+                        Text("Load")
                     }
-                    Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            enabled = activeConnection != ActiveConnection.NONE,
-                            onClick = { requestDeviceSettings() },
-                        ) {
-                            Text("Load")
-                        }
-                        if (showDeviceSettingsOnly) {
-                            Button(onClick = { disconnectActiveTransport() }) {
-                                Text("Disconnect")
-                            }
-                        }
+                    Button(onClick = { disconnectActiveTransport() }) {
+                        Text("Disconnect")
                     }
                 }
             }
 
-            if (!showDeviceSettingsOnly) item {
+            if (!provisionMode && !showDeviceSettingsOnly) item {
                 SettingsCard(title = "USB connection") {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = {
@@ -699,7 +682,7 @@ fun SettingsScreen(
             }
 
             if (!showDeviceSettingsOnly) item {
-                SettingsCard(title = "BLE connection") {
+                SettingsCard(title = if (provisionMode) "Select BLE device" else "BLE connection") {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = {
                             if (!bleClient.hasPermissions()) {
@@ -763,7 +746,7 @@ fun SettingsScreen(
                 }
             }
 
-            item {
+            if (!provisionMode || showDeviceSettingsOnly) item {
                 SettingsCard(title = if (showDeviceSettingsOnly) "Device user" else "User") {
                     Text("User ID", style = MaterialTheme.typography.titleSmall)
                     Text(
@@ -971,7 +954,7 @@ fun SettingsScreen(
                 }
             }
 
-            item {
+            if (!provisionMode || showDeviceSettingsOnly) item {
                 SettingsCard(title = if (showDeviceSettingsOnly) "Device settings" else "Mesh network") {
                     if (!showDeviceSettingsOnly) {
                         Box(modifier = Modifier.fillMaxWidth()) {
@@ -1097,7 +1080,7 @@ fun SettingsScreen(
                 }
             }
 
-            if (!showDeviceSettingsOnly) item {
+            if (!provisionMode && !showDeviceSettingsOnly) item {
                 SettingsCard(title = "Chat") {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1356,9 +1339,11 @@ private fun SettingsPreview() {
             activeConnection = ActiveConnection.NONE,
             edgeZDatabase = EdgeZDatabase(context),
             shareLocation = false,
+            provisionMode = false,
             onShareLocationChange = {},
             onTransportConnectionChange = { _, _ -> },
             onTransportDisconnect = {},
+            onProvisionComplete = {},
         )
     }
 }

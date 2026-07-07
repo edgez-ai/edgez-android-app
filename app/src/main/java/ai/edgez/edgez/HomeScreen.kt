@@ -44,16 +44,15 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import ai.edgez.edgez.ui.theme.EdgeZTheme
-import ai.edgez.edgez.usb.HaLowInterfaceStatus
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 @Composable
 fun NodesScreen(
-    haLowStatus: HaLowInterfaceStatus?,
     users: List<HaLowUser>,
     selectedFilter: NodeListFilter,
     onSelectedFilterChange: (NodeListFilter) -> Unit,
+    onOpenDeviceProvision: () -> Unit,
     onRemoveNode: (HaLowUser) -> Unit,
     onOpenConversation: (HaLowUser) -> Unit,
 ) {
@@ -75,8 +74,24 @@ fun NodesScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Nodes", style = MaterialTheme.typography.headlineMedium)
-                    HaLowMeshStatusIcon(haLowStatus)
+                    Text(
+                        text = "Nodes",
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.headlineMedium,
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Button(onClick = onOpenDeviceProvision) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_bluetooth),
+                                contentDescription = null,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("Provision")
+                        }
+                    }
                 }
                 Spacer(Modifier.height(6.dp))
                 TabRow(selectedTabIndex = selectedFilter.ordinal) {
@@ -119,30 +134,6 @@ enum class NodeListFilter(val label: String, val emptyLabel: String) {
             DEVICES -> !isUser
         }
     }
-}
-
-@Composable
-private fun HaLowMeshStatusIcon(status: HaLowInterfaceStatus?) {
-    val color = when {
-        status == null -> MaterialTheme.colorScheme.outline
-        !status.supported -> MaterialTheme.colorScheme.error
-        status.isUsable -> MaterialTheme.colorScheme.primary
-        else -> MaterialTheme.colorScheme.tertiary
-    }
-    val description = when {
-        status == null -> "HaLow mesh status unknown"
-        !status.supported -> "HaLow mesh unsupported"
-        status.isUsable -> "HaLow mesh ready"
-        status.linkUp -> "HaLow mesh link up"
-        status.stackInitialized -> "HaLow mesh initializing"
-        else -> "HaLow mesh not ready"
-    }
-
-    Icon(
-        painter = painterResource(R.drawable.ic_halow_mesh),
-        contentDescription = description,
-        tint = color,
-    )
 }
 
 @Composable
@@ -294,7 +285,6 @@ private fun formatLastSeenAge(lastSeenMs: Long, nowMs: Long): String {
 private fun HomePreview() {
     EdgeZTheme {
         NodesScreen(
-            haLowStatus = null,
             users = listOf(
                 HaLowUser(
                     nodeNum = 0x1f7e6325,
@@ -306,6 +296,7 @@ private fun HomePreview() {
             ),
             selectedFilter = NodeListFilter.USERS,
             onSelectedFilterChange = {},
+            onOpenDeviceProvision = {},
             onRemoveNode = {},
             onOpenConversation = {},
         )

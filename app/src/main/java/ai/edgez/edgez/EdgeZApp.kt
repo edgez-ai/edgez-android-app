@@ -150,6 +150,7 @@ fun EdgeZApp() {
     var haLowUsers by remember { mutableStateOf(edgeZDatabase.getUsers()) }
     var selectedConversationUser by remember { mutableStateOf<HaLowUser?>(null) }
     var selectedNodeListFilter by rememberSaveable { mutableStateOf(NodeListFilter.USERS) }
+    var provisionMode by rememberSaveable { mutableStateOf(false) }
     var conversations by remember { mutableStateOf(edgeZDatabase.getMessages()) }
     var shareLocation by rememberSaveable { mutableStateOf(lastConnectionPreferences.getShareLocation()) }
 
@@ -612,7 +613,13 @@ fun EdgeZApp() {
                     },
                     label = { Text(destination.label) },
                     selected = destination == currentDestination,
-                    onClick = { currentDestination = destination },
+                    onClick = {
+                        if (destination != AppDestination.SETTINGS && provisionMode) {
+                            provisionMode = false
+                            DeviceModeState.enabled = false
+                        }
+                        currentDestination = destination
+                    },
                 )
             }
         },
@@ -840,10 +847,14 @@ fun EdgeZApp() {
                     }
                 } else {
                     NodesScreen(
-                        haLowStatus = haLowStatus,
                         users = sortNodesByName(haLowUsers.values),
                         selectedFilter = selectedNodeListFilter,
                         onSelectedFilterChange = { selectedNodeListFilter = it },
+                        onOpenDeviceProvision = {
+                            provisionMode = true
+                            DeviceModeState.enabled = true
+                            currentDestination = AppDestination.SETTINGS
+                        },
                         onRemoveNode = { user ->
                             val userKey = conversationKey(user)
                             edgeZDatabase.deleteUser(userKey)
@@ -866,6 +877,7 @@ fun EdgeZApp() {
                 activeConnection = activeConnection,
                 edgeZDatabase = edgeZDatabase,
                 shareLocation = shareLocation,
+                provisionMode = provisionMode,
                 onShareLocationChange = { enabled ->
                     shareLocation = enabled
                     lastConnectionPreferences.setShareLocation(enabled)
@@ -875,6 +887,10 @@ fun EdgeZApp() {
                 },
                 onTransportDisconnect = { connection ->
                     disconnectTransport(connection)
+                },
+                onProvisionComplete = {
+                    provisionMode = false
+                    currentDestination = AppDestination.NODES
                 },
             )
         }
