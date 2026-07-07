@@ -38,6 +38,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.PreviewScreenSizes
@@ -924,6 +925,10 @@ fun EdgeZApp() {
                 onOpenMap = {
                     currentDestination = AppDestination.MAP
                 },
+                onOpenSensorDetail = { user ->
+                    selectedConversationUser = user
+                    currentDestination = AppDestination.NODES
+                },
                 onOpenDeviceProvision = { openDeviceProvisioning() },
             )
             AppDestination.SETTINGS -> SettingsScreen(
@@ -966,6 +971,7 @@ private fun DashboardScreen(
     savedCamera: EdgeZMapCamera?,
     onCameraChanged: (EdgeZMapCamera) -> Unit,
     onOpenMap: () -> Unit,
+    onOpenSensorDetail: (HaLowUser) -> Unit,
     onOpenDeviceProvision: () -> Unit,
 ) {
     Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
@@ -1037,6 +1043,7 @@ private fun DashboardScreen(
                             DashboardSensorCard(
                                 item = dashboardItem,
                                 modifier = Modifier.weight(1f),
+                                onOpenSensorDetail = onOpenSensorDetail,
                             )
                         }
                         if (rowItems.size == 1) {
@@ -1047,7 +1054,10 @@ private fun DashboardScreen(
             }
             fullWidthItems.forEach { dashboardItem ->
                 item {
-                    DashboardSensorCard(dashboardItem)
+                    DashboardSensorCard(
+                        item = dashboardItem,
+                        onOpenSensorDetail = onOpenSensorDetail,
+                    )
                 }
             }
         }
@@ -1064,13 +1074,17 @@ private data class DashboardDeviceItem(
 private fun DashboardSensorCard(
     item: DashboardDeviceItem,
     modifier: Modifier = Modifier.fillMaxWidth(),
+    onOpenSensorDetail: (HaLowUser) -> Unit,
 ) {
     val sample = dashboardSampleForRange(item.samples, item.display.range)
-    val titleColor = item.user.markerTintColor() ?: MaterialTheme.colorScheme.onSurface
     val compact = item.display.widget != DashboardDeviceWidget.TIME_SERIES
+    val markerBackground = item.user.dashboardMarkerTintColor()?.let { markerColor ->
+        lerp(MaterialTheme.colorScheme.surfaceVariant, markerColor, if (compact) 0.58f else 0.46f)
+    }
+        ?: MaterialTheme.colorScheme.surfaceVariant
     Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        modifier = modifier.clickable { onOpenSensorDetail(item.user) },
+        colors = CardDefaults.cardColors(containerColor = markerBackground),
     ) {
         Column(
             modifier = Modifier
@@ -1081,7 +1095,6 @@ private fun DashboardSensorCard(
             if (item.display.widget == DashboardDeviceWidget.TEMP_HUMIDITY) {
                 Text(
                     item.user.displayName,
-                    color = titleColor,
                     style = MaterialTheme.typography.titleSmall,
                 )
             } else {
@@ -1092,7 +1105,6 @@ private fun DashboardSensorCard(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             "${item.user.deviceType.label} · ${item.user.displayName}",
-                            color = titleColor,
                             style = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
                         )
                         Text(item.display.range.label, style = MaterialTheme.typography.bodySmall)
