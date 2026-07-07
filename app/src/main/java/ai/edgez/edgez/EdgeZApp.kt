@@ -71,6 +71,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
+import kotlin.math.min
 
 private const val RECONNECT_DELAY_MS = 2_000L
 private const val TAG_USERS = "EdgeZUsers"
@@ -109,6 +110,13 @@ private fun parseMessageUuid(uuid: String): MessageUuid? {
         low = parsed.leastSignificantBits,
         text = parsed.toString(),
     )
+}
+
+private fun summarizeLibp2pPayload(payload: ByteArray): String {
+    if (payload.isEmpty()) return "bytes=0"
+    val previewLength = min(payload.size, 24)
+    val preview = payload.take(previewLength).joinToString("") { "%02x".format((it.toInt() and 0xFF)) }
+    return "bytes=${payload.size} preview=$preview"
 }
 
 private fun newMessageUuid(): MessageUuid {
@@ -453,9 +461,12 @@ fun EdgeZApp() {
     fun publishLibp2pFrame(frame: ByteArray) {
         if (frame.isEmpty() || !lastConnectionPreferences.getLibp2pMeshEnabled()) return
         val bridge = libp2pBridgeHolder ?: return
+        Log.d(TAG_USERS, "libp2p publish start: ${summarizeLibp2pPayload(frame)}")
         libp2pExecutor.execute {
-            bridge.publish(frame).onFailure {
-                Log.w(TAG_USERS, "libp2p publish failed", it)
+            bridge.publish(frame).onSuccess {
+                Log.d(TAG_USERS, "libp2p publish success: ${summarizeLibp2pPayload(frame)}")
+            }.onFailure {
+                Log.w(TAG_USERS, "libp2p publish failed: ${summarizeLibp2pPayload(frame)}", it)
             }
         }
     }
@@ -748,18 +759,18 @@ fun EdgeZApp() {
                                     messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow),
                                 )
                             }
-                            if (entry != null) {
-                                val senderKey = conversationKey(senderUser)
-                                edgeZDatabase.insertMessage(senderKey, entry)
-                                conversations = conversations + (
-                                    senderKey to ((conversations[senderKey] ?: emptyList()) + entry)
-                                    )
-                                if (route != "LIBP2P") {
-                                    sendConversationAck(currentActiveConnection, message)
-                                }
-                            }
+                    if (entry != null) {
+                        val senderKey = conversationKey(senderUser)
+                        edgeZDatabase.insertMessage(senderKey, entry)
+                        conversations = conversations + (
+                            senderKey to ((conversations[senderKey] ?: emptyList()) + entry)
+                            )
+                        if (route != "LIBP2P" || currentActiveConnection != ActiveConnection.NONE) {
+                            sendConversationAck(currentActiveConnection, message)
                         }
                     }
+                }
+            }
                 }
             }
         }
@@ -776,6 +787,7 @@ fun EdgeZApp() {
             handleTransportFrame(ActiveConnection.BLE, frame)
         }
         val libp2pBridge = Libp2pMeshBridge(context.applicationContext) { frame ->
+            Log.d(TAG_USERS, "libp2p callback receive: ${summarizeLibp2pPayload(frame)}")
             handleMeshFrame("LIBP2P", frame)
         }
         libp2pBridgeHolder = libp2pBridge

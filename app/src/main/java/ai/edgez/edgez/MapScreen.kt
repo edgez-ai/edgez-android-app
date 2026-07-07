@@ -46,6 +46,7 @@ import app.organicmaps.sdk.downloader.MapManager
 import app.organicmaps.sdk.util.ConnectionState
 import java.util.Locale
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
 private const val TAG_MAP = "EdgeZMap"
 private const val DEFAULT_MAP_ZOOM = 9
@@ -256,6 +257,12 @@ fun MapScreen(
 
     LaunchedEffect(initialized, renderingReady, controller, markerSignature) {
         if (initialized && renderingReady && controller != null) {
+            while (isActive) {
+                if (isMapScaleReady()) {
+                    break
+                }
+                delay(MAP_SCALE_READY_RETRY_DELAY_MS)
+            }
             delay(MAP_REFRESH_DELAY_MS)
             syncUserMapMarkers(markerUsers, controller)
         }
@@ -589,6 +596,10 @@ private fun forceMapRefresh(controller: MapController?) {
 }
 
 private fun syncUserMapMarkers(users: List<HaLowUser>, controller: MapController?) {
+    if (!isMapScaleReady()) {
+        Log.w(TAG_MAP, "Skipping marker sync while map scale is not ready")
+        return
+    }
     runCatching {
         if (users.isEmpty()) {
             Framework.nativeClearApiPoints()
@@ -609,6 +620,10 @@ private fun syncUserMapMarkers(users: List<HaLowUser>, controller: MapController
 }
 
 private fun syncGeoFenceLines(users: List<HaLowUser>, controller: MapController?) {
+    if (!isMapScaleReady()) {
+        Log.w(TAG_MAP, "Skipping geo-fence line sync while map scale is not ready")
+        return
+    }
     val lines = buildGeoFenceLines(users)
     if (lines.isEmpty()) {
         Framework.nativeSetEdgeZGeoFenceLines(DoubleArray(0), IntArray(0), IntArray(0), emptyArray<String>())

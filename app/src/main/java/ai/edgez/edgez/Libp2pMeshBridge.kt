@@ -5,6 +5,7 @@ import android.util.Base64
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.min
 
 private const val TAG_LIBP2P = "EdgeZLibp2p"
 
@@ -55,7 +56,11 @@ class Libp2pMeshBridge(
     fun publish(payload: ByteArray): Result<String> {
         return runCatching {
             check(running) { "libp2p mesh is not running" }
+            Log.d(TAG_LIBP2P, "libp2p publish start: ${formatPayload(payload)}")
             Libp2pNative.publish(payload)
+                .also { result ->
+                    Log.d(TAG_LIBP2P, "libp2p publish result: $result")
+                }
         }
     }
 
@@ -70,7 +75,14 @@ class Libp2pMeshBridge(
     }
 
     override fun onMessage(payload: ByteArray) {
+        Log.d(TAG_LIBP2P, "libp2p receive: ${formatPayload(payload)}")
         onGossipPayload(payload)
+    }
+
+    private fun formatPayload(payload: ByteArray): String {
+        if (payload.isEmpty()) return "bytes=0"
+        val preview = Base64.encodeToString(payload.copyOfRange(0, min(payload.size, 24)), Base64.NO_WRAP)
+        return "bytes=${payload.size} preview=$preview"
     }
 
     private fun Libp2pMeshConfig.toJson(): String {
