@@ -402,7 +402,13 @@ fun EdgeZApp() {
         SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key == "user_marker") {
                 mapCursorMarker = lastConnectionPreferences.getUserMarker()
-            } else if (key == "libp2p_mesh_enabled" || key == "mesh_id" || key == "mesh_passphrase") {
+            } else if (
+                key == "libp2p_mesh_enabled" ||
+                key == "mesh_id" ||
+                key == "mesh_passphrase" ||
+                key == "user_private_key" ||
+                key == "user_public_key"
+            ) {
                 libp2pBridgeHolder?.let { bridge ->
                     if (lastConnectionPreferences.getLibp2pMeshEnabled()) {
                         bridge.start(bridge.configFromPreferences(lastConnectionPreferences)).onFailure {
@@ -519,11 +525,6 @@ fun EdgeZApp() {
             }
         }
 
-        fun handleTransportFrame(source: ActiveConnection, frame: ByteArray) {
-            if (source != currentActiveConnection) return
-            handleMeshFrame(source.name, frame)
-        }
-
         fun handleMeshFrame(route: String, frame: ByteArray) {
             val meshPassphrase = lastConnectionPreferences.getMeshPassphrase()
             val message = decodeHaLowSyncFrame(frame, meshPassphrase)
@@ -556,7 +557,7 @@ fun EdgeZApp() {
                         val updatedUserKey = conversationKey(updatedUser)
                         Log.d(
                             TAG_USERS,
-                            "update user source=$source node=${updatedUser.nodeId} " +
+                            "update user route=$route node=${updatedUser.nodeId} " +
                                 "previousLastSeen=${previousUser?.lastSeenMs} newLastSeen=${updatedUser.lastSeenMs} " +
                                 "previousLat=${previousUser?.latitude} previousLon=${previousUser?.longitude} " +
                                 "newLat=${updatedUser.latitude} newLon=${updatedUser.longitude} locTs=${updatedUser.locationTimestampMs} " +
@@ -678,6 +679,11 @@ fun EdgeZApp() {
                     }
                 }
             }
+        }
+
+        fun handleTransportFrame(source: ActiveConnection, frame: ByteArray) {
+            if (source != currentActiveConnection) return
+            handleMeshFrame(source.name, frame)
         }
 
         val removeUsbFrameListener = usbClient.addFrameListener { frame ->

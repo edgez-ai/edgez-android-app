@@ -1,6 +1,7 @@
 package ai.edgez.edgez
 
 import java.math.BigInteger
+import java.security.MessageDigest
 import java.security.SecureRandom
 
 private val CURVE25519_P = BigInteger.ONE.shiftLeft(255).subtract(BigInteger.valueOf(19))
@@ -13,6 +14,18 @@ object X25519KeyGenerator {
     fun generateKeyPair(): Pair<ByteArray, ByteArray> {
         val privateKey = ByteArray(32)
         secureRandom.nextBytes(privateKey)
+        clamp(privateKey)
+        return privateKey to publicKey(privateKey)
+    }
+
+    fun deriveKeyPair(seed: ByteArray, info: String): Pair<ByteArray, ByteArray> {
+        val digest = MessageDigest.getInstance("SHA-256")
+        digest.update("EdgeZ X25519 from libp2p".toByteArray(Charsets.UTF_8))
+        digest.update(0.toByte())
+        digest.update(info.toByteArray(Charsets.UTF_8))
+        digest.update(0.toByte())
+        digest.update(seed)
+        val privateKey = digest.digest()
         clamp(privateKey)
         return privateKey to publicKey(privateKey)
     }

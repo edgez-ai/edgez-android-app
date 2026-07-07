@@ -12,13 +12,6 @@ val buildEdgezLibp2pAndroid by tasks.registering(Exec::class) {
     })
     inputs.file(rootProject.file("tools/build-edgez-libp2p-android.sh"))
     outputs.dir(rootProject.file("app/src/main/jniLibs"))
-
-    doFirst {
-        val ndkDir = android.ndkDirectory
-        if (ndkDir.exists()) {
-            environment("ANDROID_NDK_HOME", ndkDir.absolutePath)
-        }
-    }
 }
 
 android {

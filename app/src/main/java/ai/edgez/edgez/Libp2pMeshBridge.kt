@@ -5,10 +5,8 @@ import android.util.Base64
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
-import java.security.SecureRandom
 
 private const val TAG_LIBP2P = "EdgeZLibp2p"
-private const val LIBP2P_PRIVATE_KEY_BYTES = 32
 
 data class Libp2pMeshConfig(
     val meshId: String,
@@ -24,7 +22,6 @@ class Libp2pMeshBridge(
     private val onGossipPayload: (ByteArray) -> Unit,
 ) : Libp2pNative.Callback {
     private val appContext = context.applicationContext
-    private val prefs = appContext.getSharedPreferences("edgez_libp2p_mesh", Context.MODE_PRIVATE)
     private var running = false
 
     fun start(config: Libp2pMeshConfig): Result<String> {
@@ -59,27 +56,13 @@ class Libp2pMeshBridge(
         return Libp2pMeshConfig(
             meshId = meshId,
             passphrase = preferences.getMeshPassphrase(),
-            privateKey = getOrCreatePrivateKey(),
+            privateKey = Libp2pIdentity.getOrCreatePrivateKeySeed(appContext),
             topic = topicFor(meshId),
         )
     }
 
     override fun onMessage(payload: ByteArray) {
         onGossipPayload(payload)
-    }
-
-    private fun getOrCreatePrivateKey(): ByteArray {
-        val stored = prefs.getString("private_key", null)
-        val decoded = stored?.let {
-            runCatching { Base64.decode(it, Base64.NO_WRAP) }.getOrNull()
-        }
-        if (decoded?.size == LIBP2P_PRIVATE_KEY_BYTES) return decoded
-        val next = ByteArray(LIBP2P_PRIVATE_KEY_BYTES)
-        SecureRandom().nextBytes(next)
-        prefs.edit()
-            .putString("private_key", Base64.encodeToString(next, Base64.NO_WRAP))
-            .apply()
-        return next
     }
 
     private fun Libp2pMeshConfig.toJson(): String {

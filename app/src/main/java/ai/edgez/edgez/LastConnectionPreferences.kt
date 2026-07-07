@@ -32,7 +32,8 @@ private const val DEFAULT_USER_NAME = "EdgeZ User"
 private val SUPPORTED_MESH_COUNTRIES = setOf("US", "JP", "EU")
 
 class LastConnectionPreferences(context: Context) {
-    private val prefs = context.getSharedPreferences(LAST_CONNECTION_PREFS, Context.MODE_PRIVATE)
+    private val appContext = context.applicationContext
+    private val prefs = appContext.getSharedPreferences(LAST_CONNECTION_PREFS, Context.MODE_PRIVATE)
 
     fun getLastSuccessfulConnection(): ActiveConnection {
         return runCatching {
@@ -93,19 +94,8 @@ class LastConnectionPreferences(context: Context) {
         val existingPrivateKey = decodeBytes(prefs.getString(KEY_USER_PRIVATE_KEY, null), 32)
         val existingPublicKey = decodeBytes(prefs.getString(KEY_USER_PUBLIC_KEY, null), 32)
         val name = getUserName()
-        if (existingUserUuid != null && existingPrivateKey != null && existingPublicKey != null) {
-            return UserIdentity(
-                userUuid = existingUserUuid.toString(),
-                userIdHigh = existingUserUuid.mostSignificantBits,
-                userIdLow = existingUserUuid.leastSignificantBits,
-                name = name,
-                privateKey = existingPrivateKey,
-                publicKey = existingPublicKey,
-            )
-        }
-
         val userUuid = existingUserUuid ?: newUserUuid()
-        val keyPair = X25519KeyGenerator.generateKeyPair()
+        val keyPair = Libp2pIdentity.deriveX25519KeyPair(appContext, userUuid.toString())
         val identity = UserIdentity(
             userUuid = userUuid.toString(),
             userIdHigh = userUuid.mostSignificantBits,
@@ -114,6 +104,15 @@ class LastConnectionPreferences(context: Context) {
             privateKey = keyPair.first,
             publicKey = keyPair.second,
         )
+        if (
+            existingUserUuid != null &&
+            existingPrivateKey != null &&
+            existingPublicKey != null &&
+            existingPrivateKey.contentEquals(identity.privateKey) &&
+            existingPublicKey.contentEquals(identity.publicKey)
+        ) {
+            return identity
+        }
         saveUserIdentity(identity)
         return identity
     }
@@ -215,7 +214,10 @@ class LastConnectionPreferences(context: Context) {
 
     fun regenerateUserKeyPair(): UserIdentity {
         val currentIdentity = getOrCreateUserIdentity()
-        val keyPair = X25519KeyGenerator.generateKeyPair()
+        val keyPair = Libp2pIdentity.deriveX25519KeyPair(
+            Libp2pIdentity.rotatePrivateKeySeed(appContext),
+            currentIdentity.userUuid,
+        )
         val identity = currentIdentity.copy(
             privateKey = keyPair.first,
             publicKey = keyPair.second,
