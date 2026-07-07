@@ -646,7 +646,7 @@ fun EdgeZApp() {
             AppDestination.NODES -> {
                 val conversationUser = selectedConversationUser
                 if (provisionMode) {
-                    DeviceProvisionScreen(
+                    ProvisioningScreen(
                         client = usbClient,
                         bleClient = bleClient,
                         activeConnection = activeConnection,

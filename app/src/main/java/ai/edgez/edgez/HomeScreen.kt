@@ -89,7 +89,7 @@ fun NodesScreen(
                                 contentDescription = null,
                             )
                             Spacer(Modifier.width(8.dp))
-                            Text("Provision")
+                            Text("Provisioning")
                         }
                     }
                 }

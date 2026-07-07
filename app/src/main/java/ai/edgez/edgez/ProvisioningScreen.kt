@@ -61,7 +61,7 @@ import ai.edgez.edgez.usb.UsbCandidate
 import java.util.concurrent.Executors
 import java.util.UUID
 
-private enum class SettingsProvisionStep {
+private enum class ProvisionStep {
     SELECT_BLE,
     DEVICE_SETTINGS,
 }
@@ -82,44 +82,44 @@ private fun formatDeviceMacAddress(value: Long): String {
 }
 
 @Composable
-fun SettingsScreen(
+fun ProvisioningScreen(
     client: EdgezUsbClient,
     bleClient: EdgezBleClient,
     activeConnection: ActiveConnection,
     edgeZDatabase: EdgeZDatabase,
     shareLocation: Boolean,
-    onShareLocationChange: (Boolean) -> Unit,
-    onTransportConnectionChange: (ActiveConnection, Boolean) -> Unit,
-    onTransportDisconnect: (ActiveConnection) -> Unit,
-) {
-    SettingsContent(
-        client = client,
-        bleClient = bleClient,
-        activeConnection = activeConnection,
-        edgeZDatabase = edgeZDatabase,
-        shareLocation = shareLocation,
-        provisionMode = false,
-        onShareLocationChange = onShareLocationChange,
-        onTransportConnectionChange = onTransportConnectionChange,
-        onTransportDisconnect = onTransportDisconnect,
-        onProvisionComplete = {},
-    )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SettingsContent(
-    client: EdgezUsbClient,
-    bleClient: EdgezBleClient,
-    activeConnection: ActiveConnection,
-    edgeZDatabase: EdgeZDatabase,
-    shareLocation: Boolean,
-    provisionMode: Boolean,
     onShareLocationChange: (Boolean) -> Unit,
     onTransportConnectionChange: (ActiveConnection, Boolean) -> Unit,
     onTransportDisconnect: (ActiveConnection) -> Unit,
     onProvisionComplete: () -> Unit,
 ) {
+    ProvisioningContent(
+        client = client,
+        bleClient = bleClient,
+        activeConnection = activeConnection,
+        edgeZDatabase = edgeZDatabase,
+        shareLocation = shareLocation,
+        onShareLocationChange = onShareLocationChange,
+        onTransportConnectionChange = onTransportConnectionChange,
+        onTransportDisconnect = onTransportDisconnect,
+        onProvisionComplete = onProvisionComplete,
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProvisioningContent(
+    client: EdgezUsbClient,
+    bleClient: EdgezBleClient,
+    activeConnection: ActiveConnection,
+    edgeZDatabase: EdgeZDatabase,
+    shareLocation: Boolean,
+    onShareLocationChange: (Boolean) -> Unit,
+    onTransportConnectionChange: (ActiveConnection, Boolean) -> Unit,
+    onTransportDisconnect: (ActiveConnection) -> Unit,
+    onProvisionComplete: () -> Unit,
+) {
+    val provisionMode = true
     val context = LocalContext.current
     val connectionPreferences = remember { LastConnectionPreferences(context.applicationContext) }
     fun newDeviceIdentity(name: String = "EdgeZ Device"): UserIdentity {
@@ -197,12 +197,12 @@ private fun SettingsContent(
     var autoReplayReceivedVoice by rememberSaveable { mutableStateOf(connectionPreferences.getAutoReplayReceivedVoice()) }
     var showDebugPopup by rememberSaveable { mutableStateOf(false) }
     var status by remember { mutableStateOf("Connect the ESP32-S3 USB port, then scan.") }
-    var provisionStep by rememberSaveable { mutableStateOf(SettingsProvisionStep.SELECT_BLE) }
+    var provisionStep by rememberSaveable { mutableStateOf(ProvisionStep.SELECT_BLE) }
     var pendingProvisionNext by rememberSaveable { mutableStateOf(false) }
     val activity = context as? ComponentActivity
     val currentOnTransportConnectionChange by rememberUpdatedState(onTransportConnectionChange)
     val provisionBleReady = provisionMode && activeConnection == ActiveConnection.BLE && bleReady
-    val showProvisionDeviceSettings = provisionMode && provisionStep == SettingsProvisionStep.DEVICE_SETTINGS && provisionBleReady
+    val showProvisionDeviceSettings = provisionMode && provisionStep == ProvisionStep.DEVICE_SETTINGS && provisionBleReady
     val deviceMode = provisionBleReady
     val showDeviceSettingsOnly = showProvisionDeviceSettings
 
@@ -622,21 +622,21 @@ private fun SettingsContent(
         if (activeConnection == ActiveConnection.BLE || bleReady) {
             disconnectProvisionTransport()
         }
-        provisionStep = SettingsProvisionStep.SELECT_BLE
+        provisionStep = ProvisionStep.SELECT_BLE
         onProvisionComplete()
     }
 
-    fun goBackSettingsProvisionStep() {
-        if (provisionStep == SettingsProvisionStep.DEVICE_SETTINGS) {
-            provisionStep = SettingsProvisionStep.SELECT_BLE
+    fun goBackProvisionStep() {
+        if (provisionStep == ProvisionStep.DEVICE_SETTINGS) {
+            provisionStep = ProvisionStep.SELECT_BLE
             status = "Select an EdgeZ BLE device"
         } else {
             cancelProvision()
         }
     }
 
-    fun goNextSettingsProvisionStep() {
-        if (provisionStep == SettingsProvisionStep.SELECT_BLE) {
+    fun goNextProvisionStep() {
+        if (provisionStep == ProvisionStep.SELECT_BLE) {
             if (!provisionBleReady) {
                 if (connectSelectedBleForProvision()) {
                     pendingProvisionNext = true
@@ -644,7 +644,7 @@ private fun SettingsContent(
                 return
             }
             pendingProvisionNext = false
-            provisionStep = SettingsProvisionStep.DEVICE_SETTINGS
+            provisionStep = ProvisionStep.DEVICE_SETTINGS
             requestDeviceSettings(ActiveConnection.BLE)
         }
     }
@@ -702,10 +702,10 @@ private fun SettingsContent(
             activity?.runOnUiThread {
                 if (line == "SERVICE ready") {
                     bleReady = true
-                    if (provisionMode && provisionStep == SettingsProvisionStep.SELECT_BLE) {
+                    if (provisionMode && provisionStep == ProvisionStep.SELECT_BLE) {
                         if (pendingProvisionNext) {
                             pendingProvisionNext = false
-                            provisionStep = SettingsProvisionStep.DEVICE_SETTINGS
+                            provisionStep = ProvisionStep.DEVICE_SETTINGS
                             requestDeviceSettings(ActiveConnection.BLE)
                         } else {
                             status = "BLE ready; tap Next"
@@ -740,8 +740,8 @@ private fun SettingsContent(
     }
 
     LaunchedEffect(activeConnection, bleReady, provisionMode) {
-        if (provisionMode && !provisionBleReady && provisionStep == SettingsProvisionStep.DEVICE_SETTINGS) {
-            provisionStep = SettingsProvisionStep.SELECT_BLE
+        if (provisionMode && !provisionBleReady && provisionStep == ProvisionStep.DEVICE_SETTINGS) {
+            provisionStep = ProvisionStep.SELECT_BLE
         }
     }
 
@@ -759,7 +759,7 @@ private fun SettingsContent(
                 TopAppBar(
                     title = { Text("Provision device") },
                     navigationIcon = {
-                        TextButton(onClick = { goBackSettingsProvisionStep() }) {
+                        TextButton(onClick = { goBackProvisionStep() }) {
                             Text("Back")
                         }
                     },
@@ -782,16 +782,16 @@ private fun SettingsContent(
                     }
                     Button(
                         modifier = Modifier.weight(1f),
-                        enabled = if (provisionStep == SettingsProvisionStep.SELECT_BLE) selectedBle != null else showDeviceSettingsOnly,
+                        enabled = if (provisionStep == ProvisionStep.SELECT_BLE) selectedBle != null else showDeviceSettingsOnly,
                         onClick = {
-                            if (provisionStep == SettingsProvisionStep.SELECT_BLE) {
-                                goNextSettingsProvisionStep()
+                            if (provisionStep == ProvisionStep.SELECT_BLE) {
+                                goNextProvisionStep()
                             } else {
                                 saveMeshPreferences()
                             }
                         },
                     ) {
-                        Text(if (provisionStep == SettingsProvisionStep.SELECT_BLE) "Next" else "Save")
+                        Text(if (provisionStep == ProvisionStep.SELECT_BLE) "Next" else "Save")
                     }
                 }
             }
@@ -807,7 +807,7 @@ private fun SettingsContent(
             item {
                 if (provisionMode) {
                     Text(
-                        if (provisionStep == SettingsProvisionStep.SELECT_BLE) {
+                        if (provisionStep == ProvisionStep.SELECT_BLE) {
                             "Step 1 of 2: Select BLE device"
                         } else {
                             "Step 2 of 2: Configure device"
@@ -1521,10 +1521,10 @@ private fun formatLocation(latitude: Double?, longitude: Double?): String {
 
 @Preview(showBackground = true)
 @Composable
-private fun SettingsPreview() {
+private fun ProvisioningPreview() {
     EdgeZTheme {
         val context = LocalContext.current.applicationContext
-        SettingsScreen(
+        ProvisioningScreen(
             client = EdgezUsbClient(context),
             bleClient = EdgezBleClient(context),
             activeConnection = ActiveConnection.NONE,
@@ -1533,6 +1533,7 @@ private fun SettingsPreview() {
             onShareLocationChange = {},
             onTransportConnectionChange = { _, _ -> },
             onTransportDisconnect = {},
+            onProvisionComplete = {},
         )
     }
 }
