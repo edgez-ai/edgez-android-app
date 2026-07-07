@@ -70,8 +70,7 @@ fun DeviceDetailScreen(
                         Text("Back")
                     }
                     Column {
-                        Text("Conversation · ${user.deviceType.label}", style = MaterialTheme.typography.titleLarge)
-                        Text(user.displayName, style = MaterialTheme.typography.bodyMedium)
+                        Text("${user.deviceType.label} · ${user.displayName}", style = MaterialTheme.typography.titleLarge)
                         Text("Node ${user.nodeId}", style = MaterialTheme.typography.bodySmall)
                     }
                 }
