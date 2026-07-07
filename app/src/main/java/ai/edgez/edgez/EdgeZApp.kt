@@ -5,18 +5,23 @@ import android.os.Looper
 import android.content.SharedPreferences
 import android.content.Context
 import android.util.Log
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.runtime.Composable
@@ -599,6 +604,21 @@ fun EdgeZApp() {
         }
     }
 
+    val savedMapCamera = if (mapCameraLatitude != null && mapCameraLongitude != null && mapCameraZoom != null) {
+        EdgeZMapCamera(
+            latitude = mapCameraLatitude ?: 0.0,
+            longitude = mapCameraLongitude ?: 0.0,
+            zoom = mapCameraZoom ?: 0,
+        )
+    } else {
+        null
+    }
+    val updateMapCamera: (EdgeZMapCamera) -> Unit = { camera ->
+        mapCameraLatitude = camera.latitude
+        mapCameraLongitude = camera.longitude
+        mapCameraZoom = camera.zoom
+    }
+
     NavigationSuiteScaffold(
         navigationSuiteItems = {
             AppDestination.entries.forEach { destination ->
@@ -626,20 +646,8 @@ fun EdgeZApp() {
             AppDestination.MAP -> MapScreen(
                 users = haLowUsers.values.sortedByDescending { it.lastSeenMs },
                 gpsCursorMarker = mapCursorMarker,
-                savedCamera = if (mapCameraLatitude != null && mapCameraLongitude != null && mapCameraZoom != null) {
-                    EdgeZMapCamera(
-                        latitude = mapCameraLatitude ?: 0.0,
-                        longitude = mapCameraLongitude ?: 0.0,
-                        zoom = mapCameraZoom ?: 0,
-                    )
-                } else {
-                    null
-                },
-                onCameraChanged = { camera ->
-                    mapCameraLatitude = camera.latitude
-                    mapCameraLongitude = camera.longitude
-                    mapCameraZoom = camera.zoom
-                },
+                savedCamera = savedMapCamera,
+                onCameraChanged = updateMapCamera,
             )
             AppDestination.NODES -> {
                 val conversationUser = selectedConversationUser
@@ -894,6 +902,13 @@ fun EdgeZApp() {
                 }
             }
             AppDestination.PROFILE -> DashboardScreen(
+                users = haLowUsers.values.sortedByDescending { it.lastSeenMs },
+                gpsCursorMarker = mapCursorMarker,
+                savedCamera = savedMapCamera,
+                onCameraChanged = updateMapCamera,
+                onOpenMap = {
+                    currentDestination = AppDestination.MAP
+                },
                 onOpenDeviceProvision = { openDeviceProvisioning() },
             )
             AppDestination.SETTINGS -> SettingsScreen(
@@ -929,6 +944,11 @@ private enum class AppDestination(
 
 @Composable
 private fun DashboardScreen(
+    users: List<HaLowUser>,
+    gpsCursorMarker: String,
+    savedCamera: EdgeZMapCamera?,
+    onCameraChanged: (EdgeZMapCamera) -> Unit,
+    onOpenMap: () -> Unit,
     onOpenDeviceProvision: () -> Unit,
 ) {
     Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
@@ -955,6 +975,28 @@ private fun DashboardScreen(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text("Provisioning")
+                }
+            }
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp),
+                shape = RoundedCornerShape(8.dp),
+                tonalElevation = 1.dp,
+            ) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    MapScreen(
+                        users = users,
+                        gpsCursorMarker = gpsCursorMarker,
+                        savedCamera = savedCamera,
+                        onCameraChanged = onCameraChanged,
+                        previewMode = true,
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable(onClick = onOpenMap),
+                    )
                 }
             }
         }

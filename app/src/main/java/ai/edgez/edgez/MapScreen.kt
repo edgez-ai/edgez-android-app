@@ -92,6 +92,8 @@ fun MapScreen(
     gpsCursorMarker: String = NodeMapMarker.DEFAULT.id,
     savedCamera: EdgeZMapCamera? = null,
     onCameraChanged: (EdgeZMapCamera) -> Unit = {},
+    modifier: Modifier = Modifier.fillMaxSize(),
+    previewMode: Boolean = false,
 ) {
     val context = LocalContext.current
     val application = context.applicationContext as EdgeZApplication
@@ -169,8 +171,8 @@ fun MapScreen(
         }
     }
 
-    LaunchedEffect(initialized, locationPermissionGranted) {
-        if (initialized && !locationPermissionGranted) {
+    LaunchedEffect(initialized, locationPermissionGranted, previewMode) {
+        if (initialized && !locationPermissionGranted && !previewMode) {
             permissionLauncher.launch(
                 arrayOf(
                     Manifest.permission.ACCESS_FINE_LOCATION,
@@ -217,8 +219,8 @@ fun MapScreen(
         }
     }
 
-    LaunchedEffect(initialized, renderingReady, controller) {
-        if (!initialized || !renderingReady || controller == null) {
+    LaunchedEffect(initialized, renderingReady, controller, previewMode) {
+        if (!initialized || !renderingReady || controller == null || previewMode) {
             return@LaunchedEffect
         }
 
@@ -259,8 +261,8 @@ fun MapScreen(
         }
     }
 
-    DisposableEffect(initialized) {
-        val slot = if (initialized) {
+    DisposableEffect(initialized, previewMode) {
+        val slot = if (initialized && !previewMode) {
             MapManager.nativeSubscribe(object : MapManager.StorageCallback {
                 override fun onStatusChanged(data: List<MapManager.StorageCallbackData>) {
                     val event = data.lastOrNull() ?: return
@@ -330,11 +332,11 @@ fun MapScreen(
         }
     }
 
-    Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
+    @Composable
+    fun MapContent(contentModifier: Modifier = Modifier) {
         Box(
-            modifier = Modifier
+            modifier = contentModifier
                 .fillMaxSize()
-                .padding(padding),
         ) {
             if (initialized) {
                 AndroidView(
@@ -397,7 +399,7 @@ fun MapScreen(
                 )
             }
 
-            if (pendingRegionId != null) {
+            if (!previewMode && pendingRegionId != null) {
                 MapDownloadPrompt(
                     regionId = pendingRegionId.orEmpty(),
                     modifier = Modifier
@@ -415,7 +417,7 @@ fun MapScreen(
                 )
             }
 
-            downloadProgress?.let { progress ->
+            if (!previewMode) downloadProgress?.let { progress ->
                 MapDownloadProgressPanel(
                     progress = progress,
                     modifier = Modifier
@@ -423,6 +425,14 @@ fun MapScreen(
                         .padding(16.dp),
                 )
             }
+        }
+    }
+
+    if (previewMode) {
+        MapContent(modifier)
+    } else {
+        Scaffold(modifier = modifier.fillMaxSize()) { padding ->
+            MapContent(Modifier.padding(padding))
         }
     }
 }
