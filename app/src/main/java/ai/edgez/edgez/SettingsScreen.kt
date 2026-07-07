@@ -30,6 +30,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -51,7 +53,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import ai.edgez.edgez.ble.BleCandidate
@@ -174,6 +179,7 @@ private fun SettingsContent(
     var meshCountry by rememberSaveable { mutableStateOf(connectionPreferences.getMeshCountry()) }
     var meshId by rememberSaveable { mutableStateOf(connectionPreferences.getMeshId()) }
     var passphrase by rememberSaveable { mutableStateOf(connectionPreferences.getMeshPassphrase()) }
+    var passphraseVisible by rememberSaveable { mutableStateOf(false) }
     var maxHop by rememberSaveable { mutableStateOf(connectionPreferences.getMeshMaxHop().toString()) }
     var libp2pMeshEnabled by rememberSaveable { mutableStateOf(connectionPreferences.getLibp2pMeshEnabled()) }
     var beaconIntervalSeconds by rememberSaveable {
@@ -191,6 +197,7 @@ private fun SettingsContent(
     var deviceBeaconIntervalSeconds by rememberSaveable { mutableStateOf(DEFAULT_BEACON_INTERVAL_SECONDS.toString()) }
     var deviceUpstreamWifiSsid by rememberSaveable { mutableStateOf("") }
     var deviceUpstreamWifiPassphrase by rememberSaveable { mutableStateOf("") }
+    var deviceUpstreamWifiPassphraseVisible by rememberSaveable { mutableStateOf(false) }
     var deviceBeaconUnicast by rememberSaveable { mutableStateOf("") }
     var deviceShareLocation by rememberSaveable { mutableStateOf(false) }
     var deviceLatitude by rememberSaveable { mutableStateOf<Double?>(null) }
@@ -1272,6 +1279,21 @@ private fun SettingsContent(
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Passphrase") },
                         singleLine = true,
+                        visualTransformation = if (passphraseVisible) {
+                            VisualTransformation.None
+                        } else {
+                            PasswordVisualTransformation(mask = '*')
+                        },
+                        trailingIcon = {
+                            IconButton(onClick = { passphraseVisible = !passphraseVisible }) {
+                                Icon(
+                                    painter = painterResource(
+                                        if (passphraseVisible) R.drawable.ic_visibility_off else R.drawable.ic_visibility,
+                                    ),
+                                    contentDescription = if (passphraseVisible) "Hide passphrase" else "Show passphrase",
+                                )
+                            }
+                        },
                     )
                     if (!showDeviceSettingsOnly) {
                         Spacer(Modifier.height(8.dp))
@@ -1345,6 +1367,25 @@ private fun SettingsContent(
                             modifier = Modifier.fillMaxWidth(),
                             label = { Text("Upstream Wi-Fi passphrase") },
                             singleLine = true,
+                            visualTransformation = if (deviceUpstreamWifiPassphraseVisible) {
+                                VisualTransformation.None
+                            } else {
+                                PasswordVisualTransformation(mask = '*')
+                            },
+                            trailingIcon = {
+                                IconButton(onClick = { deviceUpstreamWifiPassphraseVisible = !deviceUpstreamWifiPassphraseVisible }) {
+                                    Icon(
+                                        painter = painterResource(
+                                            if (deviceUpstreamWifiPassphraseVisible) R.drawable.ic_visibility_off else R.drawable.ic_visibility,
+                                        ),
+                                        contentDescription = if (deviceUpstreamWifiPassphraseVisible) {
+                                            "Hide upstream Wi-Fi passphrase"
+                                        } else {
+                                            "Show upstream Wi-Fi passphrase"
+                                        },
+                                    )
+                                }
+                            },
                         )
                         Spacer(Modifier.height(8.dp))
                         OutlinedTextField(
