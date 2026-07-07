@@ -58,6 +58,7 @@ private const val DOWNLOAD_PROMPT_GESTURE_DELAY_MS = 500L
 private const val MAP_SCALE_READY_RETRY_COUNT = 20
 private const val MAP_SCALE_READY_RETRY_DELAY_MS = 100L
 private const val DEFAULT_GEO_FENCE_LINE_ARGB = 0xFF43A047.toInt()
+private const val MIN_MAP_SCALE_FOR_MARK_SYNC = 1.0
 
 private data class MapTarget(
     val latitude: Double,
@@ -536,7 +537,7 @@ private suspend fun waitForValidMapScale(): Boolean {
 
 private fun isMapScaleReady(): Boolean {
     return runCatching {
-        Framework.nativeGetDrawScale() > 0
+        Framework.nativeGetDrawScale() >= MIN_MAP_SCALE_FOR_MARK_SYNC
     }.getOrDefault(false)
 }
 
@@ -560,7 +561,7 @@ private fun refreshCurrentViewport() {
     val center = Framework.nativeGetScreenRectCenter()
     val latitude = center.getOrNull(0) ?: return
     val longitude = center.getOrNull(1) ?: return
-    val zoom = Framework.nativeGetDrawScale().takeIf { it > 0 } ?: DEFAULT_MAP_ZOOM
+    val zoom = Framework.nativeGetDrawScale().takeIf { it >= MIN_MAP_SCALE_FOR_MARK_SYNC } ?: DEFAULT_MAP_ZOOM
     Framework.nativeZoomToPoint(latitude, longitude, zoom, false)
 }
 
@@ -569,7 +570,7 @@ private fun readCurrentMapCamera(): EdgeZMapCamera? {
         val center = Framework.nativeGetScreenRectCenter()
         val latitude = center.getOrNull(0) ?: return@runCatching null
         val longitude = center.getOrNull(1) ?: return@runCatching null
-        val zoom = Framework.nativeGetDrawScale().takeIf { it > 0 } ?: return@runCatching null
+        val zoom = Framework.nativeGetDrawScale().takeIf { it >= MIN_MAP_SCALE_FOR_MARK_SYNC } ?: return@runCatching null
         EdgeZMapCamera(latitude, longitude, zoom)
     }.onFailure { error ->
         Log.w(TAG_MAP, "Unable to read map camera", error)
@@ -577,7 +578,7 @@ private fun readCurrentMapCamera(): EdgeZMapCamera? {
 }
 
 private fun restoreMapCamera(camera: EdgeZMapCamera, controller: MapController?) {
-    if (camera.zoom <= 0) {
+    if (camera.zoom < MIN_MAP_SCALE_FOR_MARK_SYNC) {
         Log.w(TAG_MAP, "Skipping map camera restore with invalid zoom=${camera.zoom}")
         return
     }
@@ -637,6 +638,7 @@ private fun syncGeoFenceLines(users: List<HaLowUser>, controller: MapController?
     val latLonPairs = DoubleArray(lines.sumOf { it.points.size } * 2)
     var pairIndex = 0
     lines.forEachIndexed { lineIndex, line ->
+        if (line.points.size < 2) return@forEachIndexed
         pointCounts[lineIndex] = line.points.size
         colors[lineIndex] = line.colorArgb
         line.points.forEach { point ->
@@ -684,19 +686,24 @@ private fun buildGeoFenceLines(users: List<HaLowUser>): List<GeoFenceLine> {
 }
 
 private fun buildUserMarkerApiUrl(users: List<HaLowUser>): String {
-    return users.joinToString(
-        separator = "&",
-        prefix = "om://map?",
-    ) { user ->
-        val latitude = user.latitude ?: 0.0
-        val longitude = user.longitude ?: 0.0
+    return users.mapNotNull { user ->
+        val latitude = user.latitude
+        val longitude = user.longitude
+        if (latitude == null || longitude == null) {
+            Log.w(TAG_MAP, "Skip marker sync for missing location: ${user.nodeNum}")
+            return@mapNotNull null
+        }
+
         val point = String.format(Locale.US, "%.7f,%.7f", latitude, longitude)
         val markerId = Uri.encode("edgez-${user.nodeNum}")
         val name = Uri.encode(user.displayName)
         val markerStyle = NodeMapMarker.fromId(user.marker).organicMapsStyle
         val style = markerStyle?.let { "&s=${Uri.encode(it)}" }.orEmpty()
         "ll=$point&n=$name&id=$markerId$style"
-    }
+    }.joinToString(
+        separator = "&",
+        prefix = "om://map?",
+    )
 }
 
 private fun HaLowUser.hasValidMapLocation(): Boolean {

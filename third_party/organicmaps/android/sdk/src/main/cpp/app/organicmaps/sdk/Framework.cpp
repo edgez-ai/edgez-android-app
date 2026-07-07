@@ -68,6 +68,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <cmath>
 
 #include <android/api-level.h>
 
@@ -891,7 +892,20 @@ JNIEXPORT void Java_app_organicmaps_sdk_Framework_nativeSetEdgeZGeoFenceLines(JN
     {
       auto const latitude = latLonPairs[pairIndex++];
       auto const longitude = latLonPairs[pairIndex++];
+      if (!std::isfinite(latitude) || !std::isfinite(longitude))
+      {
+        continue;
+      }
+
+      if (latitude < -90.0 || latitude > 90.0 || longitude < -180.0 || longitude > 180.0)
+      {
+        continue;
+      }
       points.push_back(mercator::FromLatLon(latitude, longitude));
+    }
+    if (points.size() < 2)
+    {
+      continue;
     }
 
     std::string lineId = "edgez-geofence-" + std::to_string(groupIndex);

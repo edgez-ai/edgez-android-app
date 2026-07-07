@@ -34,8 +34,7 @@ class Libp2pMeshBridge(
         return runCatching {
             Libp2pNative.setCallback(this)
             val result = Libp2pNative.start(config.toJson())
-            val json = JSONObject(result)
-            check(json.optBoolean("ok", false)) { json.optString("error", "libp2p mesh start failed") }
+            ensureOk(result, "start")
             running = true
             Log.i(TAG_LIBP2P, "libp2p mesh start result=$result")
             result
@@ -61,9 +60,17 @@ class Libp2pMeshBridge(
             check(running) { "libp2p mesh is not running" }
             Log.d(TAG_LIBP2P, "libp2p publish start: ${formatPayload(payload)}")
             Libp2pNative.publish(payload)
+                .also(::ensureOk)
                 .also { result ->
                     Log.d(TAG_LIBP2P, "libp2p publish result: $result")
                 }
+        }
+    }
+
+    private fun ensureOk(result: String, operation: String = "publish") {
+        val json = JSONObject(result)
+        check(json.optBoolean("ok", false)) {
+            "${operation.ifBlank { "libp2p mesh operation" }} failed: ${json.optString("error", "unknown error")}"
         }
     }
 

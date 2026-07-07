@@ -294,8 +294,6 @@ func startMesh(configJSON string) string {
 		libp2p.ListenAddrStrings(listen),
 		libp2p.EnableRelay(),
 		libp2p.EnableHolePunching(),
-		libp2p.EnableAutoNATv2(),
-		libp2p.NATPortMap(),
 	)
 	if err != nil {
 		cancel()

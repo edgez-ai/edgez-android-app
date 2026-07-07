@@ -475,8 +475,12 @@ void CacheUserMarks(ref_ptr<dp::GraphicsContext> context, TileKey const & tileKe
 void CacheUserLines(ref_ptr<dp::GraphicsContext> context, TileKey const & tileKey, ref_ptr<dp::TextureManager> textures,
                     TracksSource const & source, UserLinesRenderCollection const & renderParams, dp::Batcher & batcher)
 {
-  CHECK_GREATER(tileKey.m_zoomLevel, 0, ());
-  CHECK_LESS(tileKey.m_zoomLevel - 1, static_cast<int>(kLineWidthZoomFactor.size()), ());
+  // Avoid crashing map rendering in early bootstrap states when zoom can be 0.
+  if (tileKey.m_zoomLevel <= 0 || tileKey.m_zoomLevel > scales::UPPER_STYLE_SCALE)
+    return;
+
+  if (tileKey.m_zoomLevel > static_cast<int>(kLineWidthZoomFactor.size()))
+    return;
 
   double const vs = df::VisualParams::Instance().GetVisualScale();
   bool const simplify = tileKey.m_zoomLevel <= 15;
