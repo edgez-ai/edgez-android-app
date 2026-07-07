@@ -47,7 +47,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
@@ -1111,6 +1110,8 @@ fun EdgeZApp() {
                 dashboardDeviceDisplays = dashboardDeviceDisplays,
                 dashboardWidgetOrder = dashboardWidgetOrder,
                 gpsCursorMarker = mapCursorMarker,
+                savedCamera = savedMapCamera,
+                onCameraChanged = updateMapCamera,
                 onOpenMap = {
                     currentDestination = AppDestination.MAP
                 },
@@ -1179,6 +1180,8 @@ private fun DashboardScreen(
     dashboardDeviceDisplays: Map<String, DashboardDeviceDisplay>,
     dashboardWidgetOrder: List<String>,
     gpsCursorMarker: String,
+    savedCamera: EdgeZMapCamera?,
+    onCameraChanged: (EdgeZMapCamera) -> Unit,
     onOpenMap: () -> Unit,
     onOpenConversation: (HaLowUser) -> Unit,
     onOpenSensorDetail: (HaLowUser) -> Unit,
@@ -1235,12 +1238,24 @@ private fun DashboardScreen(
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(220.dp)
-                        .clickable(onClick = onOpenMap),
+                        .height(220.dp),
                     shape = RoundedCornerShape(8.dp),
                     tonalElevation = 1.dp,
                 ) {
-                    DashboardMapPreview(users = users, gpsCursorMarker = gpsCursorMarker)
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        MapScreen(
+                            users = users,
+                            gpsCursorMarker = gpsCursorMarker,
+                            savedCamera = savedCamera,
+                            onCameraChanged = onCameraChanged,
+                            previewMode = true,
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clickable(onClick = onOpenMap),
+                        )
+                    }
                 }
             }
             var index = 0
@@ -1306,63 +1321,6 @@ private data class DashboardDeviceItem(
 ) {
     val isCompactWidget: Boolean
         get() = isUserNode(user) || display.widget != DashboardDeviceWidget.TIME_SERIES
-}
-
-@Composable
-private fun DashboardMapPreview(
-    users: List<HaLowUser>,
-    gpsCursorMarker: String,
-) {
-    val locatedUsers = users.filter { it.hasLocation() }.take(4)
-    val gpsColor = NodeMapMarker.fromId(gpsCursorMarker).colorArgb?.let { Color(it.toInt()) }
-        ?: MaterialTheme.colorScheme.primary
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-    ) {
-        Column(
-            modifier = Modifier.align(Alignment.TopStart),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text("Map", style = MaterialTheme.typography.titleMedium)
-            Text(
-                if (locatedUsers.isEmpty()) {
-                    "No shared locations yet"
-                } else {
-                    "${locatedUsers.size} visible location${if (locatedUsers.size == 1) "" else "s"}"
-                },
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        Column(
-            modifier = Modifier.align(Alignment.BottomStart),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            locatedUsers.forEach { user ->
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Surface(
-                        modifier = Modifier
-                            .width(10.dp)
-                            .height(10.dp),
-                        shape = RoundedCornerShape(5.dp),
-                        color = NodeMapMarker.fromId(user.marker).colorArgb?.let { Color(it.toInt()) } ?: gpsColor,
-                        content = {},
-                    )
-                    Text(user.displayName, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        }
-        Text(
-            "Open",
-            modifier = Modifier.align(Alignment.BottomEnd),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-        )
-    }
 }
 
 @Composable

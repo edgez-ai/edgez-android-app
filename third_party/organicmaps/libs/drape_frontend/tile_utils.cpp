@@ -4,15 +4,15 @@
 
 #include "geometry/mercator.hpp"
 
-#include "base/assert.hpp"
+#include <algorithm>
 
 namespace df
 {
 CoverageResult CalcTilesCoverage(m2::RectD const & rect, int targetZoom,
                                  std::function<void(int, int)> const & processTile)
 {
-  ASSERT_GREATER(targetZoom, 0, ());
-  double const rectSize = mercator::Bounds::kRangeX / (1 << (targetZoom - 1));
+  int const safeTargetZoom = std::max(targetZoom, 1);
+  double const rectSize = mercator::Bounds::kRangeX / (1 << (safeTargetZoom - 1));
 
   CoverageResult result;
   result.m_minTileX = static_cast<int>(floor(rect.minX() / rectSize));
@@ -39,8 +39,8 @@ int ClipTileZoomByMaxDataZoom(int zoom)
 
 TileKey GetTileKeyByPoint(m2::PointD const & pt, int zoom)
 {
-  ASSERT_GREATER(zoom, 0, ());
-  double const rectSize = mercator::Bounds::kRangeX / (1 << (zoom - 1));
-  return TileKey(static_cast<int>(floor(pt.x / rectSize)), static_cast<int>(floor(pt.y / rectSize)), zoom);
+  int const safeZoom = std::max(zoom, 1);
+  double const rectSize = mercator::Bounds::kRangeX / (1 << (safeZoom - 1));
+  return TileKey(static_cast<int>(floor(pt.x / rectSize)), static_cast<int>(floor(pt.y / rectSize)), safeZoom);
 }
 }  // namespace df

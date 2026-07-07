@@ -14,6 +14,11 @@ namespace df
 {
 namespace
 {
+int NormalizeTileZoom(int zoomLevel)
+{
+  return zoomLevel < 1 ? 1 : zoomLevel;
+}
+
 uint32_t constexpr GetMask(uint8_t bitsCount)
 {
   ASSERT(bitsCount > 0 && bitsCount < 32, (bitsCount));
@@ -24,8 +29,8 @@ uint32_t constexpr GetMask(uint8_t bitsCount)
 /// Canonical range: [floor(-numTiles/2), floor(-numTiles/2) + numTiles).
 int WrapTileX(int x, uint8_t zoomLevel)
 {
-  ASSERT(zoomLevel > 0, ());
-  int const numTiles = 1 << (zoomLevel - 1);
+  int const safeZoomLevel = NormalizeTileZoom(zoomLevel);
+  int const numTiles = 1 << (safeZoomLevel - 1);
   int const minX = -((numTiles + 1) / 2);  // floor(-numTiles / 2.0)
   return ((x - minX) % numTiles + numTiles) % numTiles + minX;
 }
@@ -89,8 +94,8 @@ bool TileKey::EqualStrict(TileKey const & other) const
 m2::RectD TileKey::GetGlobalRect(bool clipByDataMaxZoom /* = true */) const
 {
   int const zoomLevel = clipByDataMaxZoom ? ClipTileZoomByMaxDataZoom(m_zoomLevel) : m_zoomLevel;
-  ASSERT(zoomLevel > 0, ());
-  double const worldSizeDivisor = 1 << (zoomLevel - 1);
+  int const safeZoomLevel = NormalizeTileZoom(zoomLevel);
+  double const worldSizeDivisor = 1 << (safeZoomLevel - 1);
   // Mercator SizeX and SizeY are equal.
   double const rectSize = mercator::Bounds::kRangeX / worldSizeDivisor;
 
@@ -159,8 +164,9 @@ uint64_t TileKey::GetHashValue(BatcherBucket bucket) const
   auto const x = static_cast<uint64_t>(canonicalX + kCoordsOffset) & kCoordsMask;
   auto const y = static_cast<uint64_t>(m_y + kCoordsOffset) & kCoordsMask;
 
-  ASSERT(m_zoomLevel > 0 && m_zoomLevel <= kZoomMask, (m_zoomLevel));
-  uint64_t const zoom = static_cast<uint64_t>(m_zoomLevel) & kZoomMask;
+  int const safeZoomLevel = NormalizeTileZoom(m_zoomLevel);
+  ASSERT(safeZoomLevel <= kZoomMask, (safeZoomLevel));
+  uint64_t const zoom = static_cast<uint64_t>(safeZoomLevel) & kZoomMask;
 
   auto const umg = static_cast<uint64_t>(m_userMarksGeneration % kGenerationMod);
   auto const g = static_cast<uint64_t>(m_generation % kGenerationMod);
