@@ -71,24 +71,27 @@ private enum class ProvisionStep {
     UPSTREAM,
 }
 
-private data class BeaconUnicastOption(
-    val label: String,
-    val value: String,
-)
-
-private fun parseDeviceMacAddress(input: String): Long {
-    val hex = input.filter { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }
-    if (hex.isBlank()) return 0L
-    if (hex.length != 12) return 0L
-    return hex.toLongOrNull(16)?.let { it and 0xffffffffffffL } ?: 0L
+private fun parseIpv4Address(input: String): Long {
+    val parts = input.trim().split(".")
+    if (parts.size != 4) return 0L
+    var value = 0L
+    for (part in parts) {
+        val byte = part.toIntOrNull() ?: return 0L
+        if (byte !in 0..255) return 0L
+        value = (value shl 8) or byte.toLong()
+    }
+    return value
 }
 
-private fun formatDeviceMacAddress(value: Long): String {
-    val masked = value and 0xffffffffffffL
+private fun formatIpv4Address(value: Long): String {
+    val masked = value and 0xffffffffL
     if (masked == 0L) return ""
-    return (5 downTo 0).joinToString(":") { byteIndex ->
-        "%02X".format((masked shr (byteIndex * 8)) and 0xffL)
-    }
+    return listOf(
+        (masked ushr 24) and 0xff,
+        (masked ushr 16) and 0xff,
+        (masked ushr 8) and 0xff,
+        masked and 0xff,
+    ).joinToString(".")
 }
 
 @Composable
@@ -171,7 +174,6 @@ private fun ProvisioningContent(
 
     var countryDropdownExpanded by remember { mutableStateOf(false) }
     var markerDropdownExpanded by remember { mutableStateOf(false) }
-    var beaconUnicastDropdownExpanded by remember { mutableStateOf(false) }
     var meshCountry by rememberSaveable { mutableStateOf(connectionPreferences.getMeshCountry()) }
     var meshId by rememberSaveable { mutableStateOf(connectionPreferences.getMeshId()) }
     var passphrase by rememberSaveable { mutableStateOf(connectionPreferences.getMeshPassphrase()) }
@@ -234,27 +236,6 @@ private fun ProvisioningContent(
         ProvisionStep.NETWORK -> "Network"
         ProvisionStep.UPSTREAM -> "Upstream Wi-Fi"
     }
-    val beaconUnicastOptions = remember(deviceBeaconUnicast) {
-        val knownNodeOptions = edgeZDatabase.getUsers()
-            .values
-            .sortedWith(compareBy<HaLowUser> { it.displayName.lowercase() }.thenBy { it.nodeId })
-            .map { user ->
-                BeaconUnicastOption(
-                    label = "${user.displayName} (${user.nodeId})",
-                    value = user.nodeId.uppercase(),
-                )
-            }
-        val current = deviceBeaconUnicast.takeIf { it.isNotBlank() }
-        val hasCurrent = current == null || knownNodeOptions.any { it.value.equals(current, ignoreCase = true) }
-        listOf(BeaconUnicastOption("Broadcast", "")) +
-            knownNodeOptions +
-            if (!hasCurrent && current != null) listOf(BeaconUnicastOption("Current ($current)", current)) else emptyList()
-    }
-    val selectedBeaconUnicastLabel = beaconUnicastOptions
-        .firstOrNull { it.value.equals(deviceBeaconUnicast, ignoreCase = true) }
-        ?.label
-        ?: "Broadcast"
-
     if (showGeoFencePage) {
         GeoFenceMaintenanceScreen(
             geoFences = deviceGeoFences,
@@ -458,7 +439,7 @@ private fun ProvisioningContent(
         devicePassphrase = settings.passphrase
         deviceUpstreamWifiSsid = settings.upstreamWifiSsid
         deviceUpstreamWifiPassphrase = settings.upstreamWifiPassphrase
-        deviceBeaconUnicast = formatDeviceMacAddress(settings.beaconUnicast)
+        deviceBeaconUnicast = formatIpv4Address(settings.beaconUnicast)
         deviceShareLocation = settings.shareLocation
         deviceUserName = settings.userName.ifBlank { deviceUserName }
         deviceUserMarker = NodeMapMarker.normalize(settings.marker)
@@ -527,7 +508,7 @@ private fun ProvisioningContent(
             geoIndex = deviceGeoIndex.coerceAtLeast(0),
             upstreamWifiSsid = deviceUpstreamWifiSsid.take(32),
             upstreamWifiPassphrase = deviceUpstreamWifiPassphrase.take(64),
-            beaconUnicast = parseDeviceMacAddress(deviceBeaconUnicast),
+            beaconUnicast = parseIpv4Address(deviceBeaconUnicast),
         )
     }
 
@@ -1293,32 +1274,6 @@ private fun ProvisioningContent(
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     )
-                    if (showDeviceSettingsOnly) {
-                        Spacer(Modifier.height(8.dp))
-                        Box(modifier = Modifier.fillMaxWidth()) {
-                            OutlinedButton(
-                                modifier = Modifier.fillMaxWidth(),
-                                onClick = { beaconUnicastDropdownExpanded = true },
-                            ) {
-                                Text("Beacon unicast: $selectedBeaconUnicastLabel")
-                            }
-                            DropdownMenu(
-                                expanded = beaconUnicastDropdownExpanded,
-                                onDismissRequest = { beaconUnicastDropdownExpanded = false },
-                            ) {
-                                beaconUnicastOptions.forEach { option ->
-                                    DropdownMenuItem(
-                                        text = { Text(option.label) },
-                                        onClick = {
-                                            deviceBeaconUnicast = option.value
-                                            beaconUnicastDropdownExpanded = false
-                                            status = "Beacon unicast set to ${option.label}"
-                                        },
-                                    )
-                                }
-                            }
-                        }
-                    }
                     if (!provisionMode) {
                         Spacer(Modifier.height(10.dp))
                         Button(onClick = { saveMeshPreferences() }) {
@@ -1347,6 +1302,18 @@ private fun ProvisioningContent(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Passphrase") },
+                        singleLine = true,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = deviceBeaconUnicast,
+                        onValueChange = { value ->
+                            deviceBeaconUnicast = value
+                                .filter { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' || it == ':' || it == '-' || it == '.' }
+                                .take(45)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Beacon UDP unicast address") },
                         singleLine = true,
                     )
                 }
