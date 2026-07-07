@@ -3,6 +3,24 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+val buildEdgezLibp2pAndroid by tasks.registering(Exec::class) {
+    workingDir = rootProject.projectDir
+    commandLine(rootProject.file("tools/build-edgez-libp2p-android.sh").absolutePath)
+    environment("GOCACHE", rootProject.layout.projectDirectory.dir(".gocache").asFile.absolutePath)
+    inputs.files(fileTree(rootProject.file("native/edgez-libp2p")) {
+        include("**/*.go", "go.mod", "go.sum")
+    })
+    inputs.file(rootProject.file("tools/build-edgez-libp2p-android.sh"))
+    outputs.dir(rootProject.file("app/src/main/jniLibs"))
+
+    doFirst {
+        val ndkDir = android.ndkDirectory
+        if (ndkDir.exists()) {
+            environment("ANDROID_NDK_HOME", ndkDir.absolutePath)
+        }
+    }
+}
+
 android {
     namespace = "ai.edgez.edgez"
     compileSdk {
@@ -39,6 +57,10 @@ android {
         buildConfig = true
         compose = true
     }
+}
+
+tasks.named("preBuild") {
+    dependsOn(buildEdgezLibp2pAndroid)
 }
 
 dependencies {

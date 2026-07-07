@@ -17,3 +17,4 @@ organicmaps-*/build/
 organicmaps-*/nativeOutputs/
 local.properties
 .idea/
+/.gocache

@@ -175,6 +175,7 @@ private fun SettingsContent(
     var meshId by rememberSaveable { mutableStateOf(connectionPreferences.getMeshId()) }
     var passphrase by rememberSaveable { mutableStateOf(connectionPreferences.getMeshPassphrase()) }
     var maxHop by rememberSaveable { mutableStateOf(connectionPreferences.getMeshMaxHop().toString()) }
+    var libp2pMeshEnabled by rememberSaveable { mutableStateOf(connectionPreferences.getLibp2pMeshEnabled()) }
     var beaconIntervalSeconds by rememberSaveable {
         mutableStateOf(connectionPreferences.getBeaconIntervalSeconds().toString())
     }
@@ -262,6 +263,7 @@ private fun SettingsContent(
         meshId = connectionPreferences.getMeshId()
         passphrase = connectionPreferences.getMeshPassphrase()
         maxHop = connectionPreferences.getMeshMaxHop().toString()
+        libp2pMeshEnabled = connectionPreferences.getLibp2pMeshEnabled()
         beaconIntervalSeconds = connectionPreferences.getBeaconIntervalSeconds().toString()
         userIdentity = connectionPreferences.getOrCreateUserIdentity()
         userName = userIdentity.name
@@ -730,6 +732,7 @@ private fun SettingsContent(
         connectionPreferences.setUserName(userName)
         connectionPreferences.setUserMarker(userMarker)
         connectionPreferences.setShareLocation(shareLocation)
+        connectionPreferences.setLibp2pMeshEnabled(libp2pMeshEnabled)
         userIdentity = connectionPreferences.getOrCreateUserIdentity()
         status = "Settings saved"
     }
@@ -1270,6 +1273,27 @@ private fun SettingsContent(
                         label = { Text("Passphrase") },
                         singleLine = true,
                     )
+                    if (!showDeviceSettingsOnly) {
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Libp2p mesh", style = MaterialTheme.typography.titleSmall)
+                                Text("Join the DHT gossip topic for this mesh", style = MaterialTheme.typography.bodySmall)
+                            }
+                            Switch(
+                                checked = libp2pMeshEnabled,
+                                onCheckedChange = { enabled ->
+                                    libp2pMeshEnabled = enabled
+                                    connectionPreferences.setLibp2pMeshEnabled(enabled)
+                                    status = if (enabled) "Libp2p mesh enabled" else "Libp2p mesh disabled"
+                                },
+                            )
+                        }
+                    }
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = if (showDeviceSettingsOnly) deviceMaxHop else maxHop,

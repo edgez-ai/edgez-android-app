@@ -10,6 +10,7 @@ private const val KEY_MESH_COUNTRY = "mesh_country"
 private const val KEY_MESH_ID = "mesh_id"
 private const val KEY_MESH_PASSPHRASE = "mesh_passphrase"
 private const val KEY_MESH_MAX_HOP = "mesh_max_hop"
+private const val KEY_LIBP2P_MESH_ENABLED = "libp2p_mesh_enabled"
 private const val KEY_BEACON_INTERVAL_SECONDS = "beacon_interval_seconds"
 private const val KEY_USER_UUID = "user_uuid"
 private const val KEY_USER_NAME = "user_name"
@@ -56,6 +57,14 @@ class LastConnectionPreferences(context: Context) {
     fun getMeshCountry(): String = normalizeMeshCountry(prefs.getString(KEY_MESH_COUNTRY, "US"))
 
     fun getMeshMaxHop(): Int = normalizeMeshMaxHop(prefs.getInt(KEY_MESH_MAX_HOP, DEFAULT_MESH_MAX_HOP))
+
+    fun getLibp2pMeshEnabled(): Boolean = prefs.getBoolean(KEY_LIBP2P_MESH_ENABLED, false)
+
+    fun setLibp2pMeshEnabled(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(KEY_LIBP2P_MESH_ENABLED, enabled)
+            .apply()
+    }
 
     fun getBeaconIntervalSeconds(): Int {
         return normalizeBeaconIntervalSeconds(
