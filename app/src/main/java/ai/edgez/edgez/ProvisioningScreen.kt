@@ -64,11 +64,12 @@ import java.util.UUID
 private enum class ProvisionStep {
     SELECT_BLE,
     IDENTITY,
+    NETWORK,
+    UPSTREAM,
     LOCATION,
     GEO_FENCE,
     SENSOR,
-    NETWORK,
-    UPSTREAM,
+    SLEEP_MODE,
 }
 
 private fun parseIpv4Address(input: String): Long {
@@ -93,6 +94,20 @@ private fun formatIpv4Address(value: Long): String {
         masked and 0xff,
     ).joinToString(".")
 }
+
+private data class BeaconMulticastOption(
+    val address: String,
+    val label: String,
+)
+
+private val beaconMulticastOptions = listOf(
+    BeaconMulticastOption("", "Not set"),
+    BeaconMulticastOption("224.0.0.1", "224.0.0.1 - all hosts"),
+    BeaconMulticastOption("224.0.0.251", "224.0.0.251 - mDNS"),
+    BeaconMulticastOption("239.255.255.250", "239.255.255.250 - SSDP"),
+    BeaconMulticastOption("239.255.0.1", "239.255.0.1 - site-local"),
+    BeaconMulticastOption("239.192.0.1", "239.192.0.1 - organization-local"),
+)
 
 @Composable
 fun ProvisioningScreen(
@@ -193,16 +208,21 @@ private fun ProvisioningContent(
     var deviceBeaconIntervalSeconds by rememberSaveable { mutableStateOf(DEFAULT_BEACON_INTERVAL_SECONDS.toString()) }
     var deviceUpstreamWifiSsid by rememberSaveable { mutableStateOf("") }
     var deviceUpstreamWifiPassphrase by rememberSaveable { mutableStateOf("") }
-    var deviceBeaconUnicast by rememberSaveable { mutableStateOf("") }
+    var deviceBeaconMulticast by rememberSaveable { mutableStateOf("") }
+    var deviceUpstreamEnabled by rememberSaveable { mutableStateOf(false) }
+    var beaconMulticastDropdownExpanded by remember { mutableStateOf(false) }
+    var deviceSleepModeEnabled by rememberSaveable { mutableStateOf(false) }
     var deviceShareLocation by rememberSaveable { mutableStateOf(false) }
     var deviceLatitude by rememberSaveable { mutableStateOf<Double?>(null) }
     var deviceLongitude by rememberSaveable { mutableStateOf<Double?>(null) }
     var deviceGeoFences by remember { mutableStateOf(loadDeviceGeoFences()) }
     var selectedDeviceGeoFenceKey by rememberSaveable { mutableStateOf(connectionPreferences.getSelectedDeviceGeoFenceKey() ?: "") }
+    var deviceGeoFenceEnabled by rememberSaveable { mutableStateOf(false) }
     var showGeoFencePage by rememberSaveable { mutableStateOf(false) }
     var deviceGeoIndex by rememberSaveable { mutableStateOf(0) }
     var deviceUartI2cSensorType by rememberSaveable { mutableStateOf("") }
     var deviceRs485SensorType by rememberSaveable { mutableStateOf("") }
+    var deviceSensorsEnabled by rememberSaveable { mutableStateOf(false) }
     var lastSavedDeviceUartI2cSensorType by rememberSaveable { mutableStateOf("") }
     var lastSavedDeviceRs485SensorType by rememberSaveable { mutableStateOf("") }
     var uartI2cSensorDropdownExpanded by remember { mutableStateOf(false) }
@@ -221,11 +241,12 @@ private fun ProvisioningContent(
     val provisionStepNumber = when (provisionStep) {
         ProvisionStep.SELECT_BLE -> 1
         ProvisionStep.IDENTITY -> 2
-        ProvisionStep.LOCATION -> 3
-        ProvisionStep.GEO_FENCE -> 4
-        ProvisionStep.SENSOR -> 5
-        ProvisionStep.NETWORK -> 6
-        ProvisionStep.UPSTREAM -> 7
+        ProvisionStep.NETWORK -> 3
+        ProvisionStep.UPSTREAM -> 4
+        ProvisionStep.LOCATION -> 5
+        ProvisionStep.GEO_FENCE -> 6
+        ProvisionStep.SENSOR -> 7
+        ProvisionStep.SLEEP_MODE -> 8
     }
     val provisionStepTitle = when (provisionStep) {
         ProvisionStep.SELECT_BLE -> "Select BLE device"
@@ -235,6 +256,7 @@ private fun ProvisioningContent(
         ProvisionStep.SENSOR -> "Sensor"
         ProvisionStep.NETWORK -> "Network"
         ProvisionStep.UPSTREAM -> "Upstream Wi-Fi"
+        ProvisionStep.SLEEP_MODE -> "Sleep mode"
     }
     if (showGeoFencePage) {
         GeoFenceMaintenanceScreen(
@@ -439,7 +461,11 @@ private fun ProvisioningContent(
         devicePassphrase = settings.passphrase
         deviceUpstreamWifiSsid = settings.upstreamWifiSsid
         deviceUpstreamWifiPassphrase = settings.upstreamWifiPassphrase
-        deviceBeaconUnicast = formatIpv4Address(settings.beaconUnicast)
+        deviceBeaconMulticast = formatIpv4Address(settings.beaconUnicast)
+        deviceUpstreamEnabled = settings.upstreamWifiSsid.isNotBlank() ||
+            settings.upstreamWifiPassphrase.isNotBlank() ||
+            settings.beaconUnicast != 0L
+        deviceSleepModeEnabled = settings.sleepModeEnabled
         deviceShareLocation = settings.shareLocation
         deviceUserName = settings.userName.ifBlank { deviceUserName }
         deviceUserMarker = NodeMapMarker.normalize(settings.marker)
@@ -452,16 +478,20 @@ private fun ProvisioningContent(
             deviceLongitude = settings.longitude
         }
         settings.geoFence?.let { geoFence ->
+            deviceGeoFenceEnabled = true
             edgeZDatabase.upsertGeoFence(geoFence)
             deviceGeoFences = edgeZDatabase.getGeoFences()
             selectedDeviceGeoFenceKey = geoFence.key
             connectionPreferences.setSelectedDeviceGeoFenceKey(geoFence.key)
+        } ?: run {
+            deviceGeoFenceEnabled = false
         }
         deviceGeoIndex = settings.geoIndex.coerceAtLeast(0)
         val loadedUartI2cSensorType = settings.uartI2cSensorType.take(32)
         val loadedRs485SensorType = settings.rs485SensorType.take(32)
         deviceUartI2cSensorType = loadedUartI2cSensorType
         deviceRs485SensorType = loadedRs485SensorType
+        deviceSensorsEnabled = loadedUartI2cSensorType.isNotBlank() || loadedRs485SensorType.isNotBlank()
         lastSavedDeviceUartI2cSensorType = loadedUartI2cSensorType
         lastSavedDeviceRs485SensorType = loadedRs485SensorType
         if (deviceIdentity == null && (settings.userIdHigh != 0L || settings.userIdLow != 0L) && settings.userPrivateKey.size == 32) {
@@ -486,7 +516,9 @@ private fun ProvisioningContent(
 
     fun currentDeviceSettings(enabled: Boolean = deviceMode): DeviceSettings {
         val identity = ensureDeviceIdentity()
-        val selectedGeoFence = deviceGeoFences.firstOrNull { DeviceGeoFence.matchesKey(it, selectedDeviceGeoFenceKey) }
+        val selectedGeoFence = deviceGeoFences
+            .firstOrNull { DeviceGeoFence.matchesKey(it, selectedDeviceGeoFenceKey) }
+            .takeIf { deviceGeoFenceEnabled }
         return DeviceSettings(
             deviceModeEnabled = enabled,
             meshId = deviceMeshId.ifBlank { "edgez" },
@@ -503,12 +535,13 @@ private fun ProvisioningContent(
             longitude = deviceLongitude.takeIf { deviceShareLocation },
             maxHop = deviceMaxHop.toIntOrNull() ?: connectionPreferences.getMeshMaxHop(),
             geoFence = selectedGeoFence,
-            uartI2cSensorType = deviceUartI2cSensorType.take(32),
-            rs485SensorType = deviceRs485SensorType.take(32),
+            uartI2cSensorType = if (deviceSensorsEnabled) deviceUartI2cSensorType.take(32) else "",
+            rs485SensorType = if (deviceSensorsEnabled) deviceRs485SensorType.take(32) else "",
             geoIndex = deviceGeoIndex.coerceAtLeast(0),
-            upstreamWifiSsid = deviceUpstreamWifiSsid.take(32),
-            upstreamWifiPassphrase = deviceUpstreamWifiPassphrase.take(64),
-            beaconUnicast = parseIpv4Address(deviceBeaconUnicast),
+            upstreamWifiSsid = if (deviceUpstreamEnabled) deviceUpstreamWifiSsid.take(32) else "",
+            upstreamWifiPassphrase = if (deviceUpstreamEnabled) deviceUpstreamWifiPassphrase.take(64) else "",
+            beaconUnicast = if (deviceUpstreamEnabled) parseIpv4Address(deviceBeaconMulticast) else 0L,
+            sleepModeEnabled = deviceSleepModeEnabled,
         )
     }
 
@@ -663,11 +696,12 @@ private fun ProvisioningContent(
                 return
             }
             ProvisionStep.IDENTITY -> ProvisionStep.SELECT_BLE
-            ProvisionStep.LOCATION -> ProvisionStep.IDENTITY
+            ProvisionStep.NETWORK -> ProvisionStep.IDENTITY
+            ProvisionStep.UPSTREAM -> ProvisionStep.NETWORK
+            ProvisionStep.LOCATION -> ProvisionStep.UPSTREAM
             ProvisionStep.GEO_FENCE -> ProvisionStep.LOCATION
             ProvisionStep.SENSOR -> ProvisionStep.GEO_FENCE
-            ProvisionStep.NETWORK -> ProvisionStep.SENSOR
-            ProvisionStep.UPSTREAM -> ProvisionStep.NETWORK
+            ProvisionStep.SLEEP_MODE -> ProvisionStep.SENSOR
         }
         status = if (provisionStep == ProvisionStep.SELECT_BLE) {
             "Select an EdgeZ BLE device"
@@ -689,12 +723,13 @@ private fun ProvisioningContent(
                 provisionStep = ProvisionStep.IDENTITY
                 requestDeviceSettings(ActiveConnection.BLE)
             }
-            ProvisionStep.IDENTITY -> provisionStep = ProvisionStep.LOCATION
+            ProvisionStep.IDENTITY -> provisionStep = ProvisionStep.NETWORK
+            ProvisionStep.NETWORK -> provisionStep = ProvisionStep.UPSTREAM
+            ProvisionStep.UPSTREAM -> provisionStep = ProvisionStep.LOCATION
             ProvisionStep.LOCATION -> provisionStep = ProvisionStep.GEO_FENCE
             ProvisionStep.GEO_FENCE -> provisionStep = ProvisionStep.SENSOR
-            ProvisionStep.SENSOR -> provisionStep = ProvisionStep.NETWORK
-            ProvisionStep.NETWORK -> provisionStep = ProvisionStep.UPSTREAM
-            ProvisionStep.UPSTREAM -> sendDeviceSettingsToDevice(
+            ProvisionStep.SENSOR -> provisionStep = ProvisionStep.SLEEP_MODE
+            ProvisionStep.SLEEP_MODE -> sendDeviceSettingsToDevice(
                 onSuccessAction = {
                     disconnectProvisionTransport()
                     onProvisionComplete()
@@ -841,7 +876,7 @@ private fun ProvisioningContent(
                             goNextProvisionStep()
                         },
                     ) {
-                        Text(if (provisionStep == ProvisionStep.UPSTREAM) "Save" else "Next")
+                        Text(if (provisionStep == ProvisionStep.SLEEP_MODE) "Save" else "Next")
                     }
                 }
             }
@@ -857,7 +892,7 @@ private fun ProvisioningContent(
             item {
                 if (provisionMode) {
                     Text(
-                        "Step $provisionStepNumber of 7: $provisionStepTitle",
+                        "Step $provisionStepNumber of 8: $provisionStepTitle",
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Spacer(Modifier.height(6.dp))
@@ -1104,7 +1139,10 @@ private fun ProvisioningContent(
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Spacer(Modifier.height(8.dp))
-                        Button(onClick = { refreshDeviceLocation() }) {
+                        Button(
+                            enabled = deviceShareLocation,
+                            onClick = { refreshDeviceLocation() },
+                        ) {
                             Text("Refresh location")
                         }
                     }
@@ -1113,6 +1151,24 @@ private fun ProvisioningContent(
 
             if (showDeviceSettingsOnly && provisionStep == ProvisionStep.GEO_FENCE) item {
                 SettingsCard(title = "Device geofence") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Enable geofence", style = MaterialTheme.typography.titleSmall)
+                            Text("Include a geofence in device beacons", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Switch(
+                            checked = deviceGeoFenceEnabled,
+                            onCheckedChange = { enabled ->
+                                deviceGeoFenceEnabled = enabled
+                                status = if (enabled) "Device geofence enabled" else "Device geofence disabled"
+                            },
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
                     val selectedGeoFence = deviceGeoFences.firstOrNull { DeviceGeoFence.matchesKey(it, selectedDeviceGeoFenceKey) }
                     Text(
                         selectedGeoFence?.let { "Selected: ${it.name}" } ?: "No geofence selected",
@@ -1126,7 +1182,7 @@ private fun ProvisioningContent(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         OutlinedButton(
-                            enabled = deviceGeoIndex > 0,
+                            enabled = deviceGeoFenceEnabled && deviceGeoIndex > 0,
                             onClick = { deviceGeoIndex = (deviceGeoIndex - 1).coerceAtLeast(0) },
                         ) {
                             Text("-")
@@ -1137,6 +1193,7 @@ private fun ProvisioningContent(
                             style = MaterialTheme.typography.titleMedium,
                         )
                         OutlinedButton(
+                            enabled = deviceGeoFenceEnabled,
                             onClick = { deviceGeoIndex += 1 },
                         ) {
                             Text("+")
@@ -1144,11 +1201,14 @@ private fun ProvisioningContent(
                     }
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { showGeoFencePage = true }) {
+                        Button(
+                            enabled = deviceGeoFenceEnabled,
+                            onClick = { showGeoFencePage = true },
+                        ) {
                             Text("Manage")
                         }
                         OutlinedButton(
-                            enabled = selectedDeviceGeoFenceKey.isNotBlank(),
+                            enabled = deviceGeoFenceEnabled && selectedDeviceGeoFenceKey.isNotBlank(),
                             onClick = {
                                 selectedDeviceGeoFenceKey = ""
                                 connectionPreferences.setSelectedDeviceGeoFenceKey(null)
@@ -1163,11 +1223,30 @@ private fun ProvisioningContent(
 
             if (showDeviceSettingsOnly && provisionStep == ProvisionStep.SENSOR) item {
                 SettingsCard(title = "Device sensors") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Enable sensors", style = MaterialTheme.typography.titleSmall)
+                            Text("Configure device sensor connectors", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Switch(
+                            checked = deviceSensorsEnabled,
+                            onCheckedChange = { enabled ->
+                                deviceSensorsEnabled = enabled
+                                status = if (enabled) "Device sensors enabled" else "Device sensors disabled"
+                            },
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
                     SensorTypeDropdown(
                         label = "UART/I2C connector",
                         selectedKey = deviceUartI2cSensorType,
                         options = uartI2cSensorOptions,
                         expanded = uartI2cSensorDropdownExpanded,
+                        enabled = deviceSensorsEnabled,
                         onExpandedChange = { uartI2cSensorDropdownExpanded = it },
                         onSelected = { selectedSensor ->
                             deviceUartI2cSensorType = selectedSensor.key
@@ -1180,6 +1259,7 @@ private fun ProvisioningContent(
                         selectedKey = deviceRs485SensorType,
                         options = rs485SensorOptions,
                         expanded = rs485SensorDropdownExpanded,
+                        enabled = deviceSensorsEnabled,
                         onExpandedChange = { rs485SensorDropdownExpanded = it },
                         onSelected = { selectedSensor ->
                             deviceRs485SensorType = selectedSensor.key
@@ -1285,6 +1365,24 @@ private fun ProvisioningContent(
 
             if (showDeviceSettingsOnly && provisionStep == ProvisionStep.UPSTREAM) item {
                 SettingsCard(title = "Upstream Wi-Fi") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Enable upstream", style = MaterialTheme.typography.titleSmall)
+                            Text("Configure Wi-Fi and UDP unicast upload", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Switch(
+                            checked = deviceUpstreamEnabled,
+                            onCheckedChange = { enabled ->
+                                deviceUpstreamEnabled = enabled
+                                status = if (enabled) "Upstream enabled" else "Upstream disabled"
+                            },
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = deviceUpstreamWifiSsid,
                         onValueChange = { value ->
@@ -1292,6 +1390,7 @@ private fun ProvisioningContent(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("SSID") },
+                        enabled = deviceUpstreamEnabled,
                         singleLine = true,
                     )
                     Spacer(Modifier.height(8.dp))
@@ -1302,20 +1401,64 @@ private fun ProvisioningContent(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Passphrase") },
+                        enabled = deviceUpstreamEnabled,
                         singleLine = true,
                     )
                     Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = deviceBeaconUnicast,
-                        onValueChange = { value ->
-                            deviceBeaconUnicast = value
-                                .filter { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' || it == ':' || it == '-' || it == '.' }
-                                .take(45)
-                        },
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        val selectedMulticast = beaconMulticastOptions.firstOrNull { it.address == deviceBeaconMulticast }
+                        OutlinedButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = deviceUpstreamEnabled,
+                            onClick = { beaconMulticastDropdownExpanded = true },
+                        ) {
+                            Text(
+                                selectedMulticast?.let { "Beacon UDP multicast: ${it.label}" }
+                                    ?: "Beacon UDP multicast: $deviceBeaconMulticast",
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = beaconMulticastDropdownExpanded,
+                            onDismissRequest = { beaconMulticastDropdownExpanded = false },
+                        ) {
+                            beaconMulticastOptions.forEach { option ->
+                                DropdownMenuItem(
+                                    text = { Text(option.label) },
+                                    onClick = {
+                                        deviceBeaconMulticast = option.address
+                                        beaconMulticastDropdownExpanded = false
+                                        status = if (option.address.isBlank()) {
+                                            "Beacon UDP multicast cleared"
+                                        } else {
+                                            "Beacon UDP multicast set to ${option.address}"
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (showDeviceSettingsOnly && provisionStep == ProvisionStep.SLEEP_MODE) item {
+                SettingsCard(title = "Sleep mode") {
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Beacon UDP unicast address") },
-                        singleLine = true,
-                    )
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Enable sleep mode", style = MaterialTheme.typography.titleSmall)
+                            Text("Allow the device to enter low-power sleep", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Switch(
+                            checked = deviceSleepModeEnabled,
+                            onCheckedChange = { enabled ->
+                                deviceSleepModeEnabled = enabled
+                                status = if (enabled) "Sleep mode enabled" else "Sleep mode disabled"
+                            },
+                        )
+                    }
                 }
             }
 
@@ -1351,6 +1494,7 @@ private fun SensorTypeDropdown(
     selectedKey: String,
     options: List<DeviceSensorDefinition>,
     expanded: Boolean,
+    enabled: Boolean = true,
     onExpandedChange: (Boolean) -> Unit,
     onSelected: (DeviceSensorDefinition) -> Unit,
 ) {
@@ -1358,6 +1502,7 @@ private fun SensorTypeDropdown(
     Box(modifier = Modifier.fillMaxWidth()) {
         OutlinedButton(
             modifier = Modifier.fillMaxWidth(),
+            enabled = enabled,
             onClick = { onExpandedChange(true) },
         ) {
             Text("$label: ${selected?.label ?: selectedKey.ifBlank { "None" }}")

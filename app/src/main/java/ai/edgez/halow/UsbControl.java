@@ -7574,6 +7574,12 @@ public final class UsbControl {
      * @return The beaconUnicast.
      */
     long getBeaconUnicast();
+
+    /**
+     * <code>bool sleep_mode_enabled = 23;</code>
+     * @return The sleepModeEnabled.
+     */
+    boolean getSleepModeEnabled();
   }
   /**
    * Protobuf type {@code ai.edgez.halow.DeviceSettings}
@@ -7879,6 +7885,32 @@ public final class UsbControl {
     private void clearBeaconUnicast() {
 
       beaconUnicast_ = 0L;
+    }
+
+    public static final int SLEEP_MODE_ENABLED_FIELD_NUMBER = 23;
+    private boolean sleepModeEnabled_;
+    /**
+     * <code>bool sleep_mode_enabled = 23;</code>
+     * @return The sleepModeEnabled.
+     */
+    @java.lang.Override
+    public boolean getSleepModeEnabled() {
+      return sleepModeEnabled_;
+    }
+    /**
+     * <code>bool sleep_mode_enabled = 23;</code>
+     * @param value The sleepModeEnabled to set.
+     */
+    private void setSleepModeEnabled(boolean value) {
+
+      sleepModeEnabled_ = value;
+    }
+    /**
+     * <code>bool sleep_mode_enabled = 23;</code>
+     */
+    private void clearSleepModeEnabled() {
+
+      sleepModeEnabled_ = false;
     }
 
     public static final int SHARE_LOCATION_FIELD_NUMBER = 4;
@@ -9291,6 +9323,34 @@ public final class UsbControl {
         return this;
       }
 
+      /**
+       * <code>bool sleep_mode_enabled = 23;</code>
+       * @return The sleepModeEnabled.
+       */
+      @java.lang.Override
+      public boolean getSleepModeEnabled() {
+        return instance.getSleepModeEnabled();
+      }
+      /**
+       * <code>bool sleep_mode_enabled = 23;</code>
+       * @param value The sleepModeEnabled to set.
+       * @return This builder for chaining.
+       */
+      public Builder setSleepModeEnabled(boolean value) {
+        copyOnWrite();
+        instance.setSleepModeEnabled(value);
+        return this;
+      }
+      /**
+       * <code>bool sleep_mode_enabled = 23;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearSleepModeEnabled() {
+        copyOnWrite();
+        instance.clearSleepModeEnabled();
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:ai.edgez.halow.DeviceSettings)
     }
     @java.lang.Override
@@ -9330,12 +9390,13 @@ public final class UsbControl {
               "upstreamWifiSsid_",
               "upstreamWifiPassphrase_",
               "beaconUnicast_",
+              "sleepModeEnabled_",
             };
             java.lang.String info =
-                "\u0000\u0016\u0000\u0001\u0001\u0016\u0016\u0000\u0000\u0000\u0001\f\u0002\u0007" +
+                "\u0000\u0017\u0000\u0001\u0001\u0017\u0017\u0000\u0000\u0000\u0001\f\u0002\u0007" +
                 "\u0003\u0208\u0004\u0007\u0005\u0208\u0006\f\u0007\u000b\b\u0003\t\u0003\n\n\u000b" +
                 "\n\f\u0001\r\u0001\u000e\u000b\u000f\u1009\u0000\u0010\u0208\u0011\u0208\u0012\u000b" +
-                "\u0013\u0208\u0014\u0208\u0015\u0208\u0016\u0003";
+                "\u0013\u0208\u0014\u0208\u0015\u0208\u0016\u0003\u0017\u0007";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         // fall through

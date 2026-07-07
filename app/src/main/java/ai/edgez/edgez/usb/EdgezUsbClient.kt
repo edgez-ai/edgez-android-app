@@ -211,6 +211,7 @@ data class DeviceSettings(
     val upstreamWifiSsid: String = "",
     val upstreamWifiPassphrase: String = "",
     val beaconUnicast: Long = 0,
+    val sleepModeEnabled: Boolean = false,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -238,7 +239,8 @@ data class DeviceSettings(
             geoIndex == other.geoIndex &&
             upstreamWifiSsid == other.upstreamWifiSsid &&
             upstreamWifiPassphrase == other.upstreamWifiPassphrase &&
-            beaconUnicast == other.beaconUnicast
+            beaconUnicast == other.beaconUnicast &&
+            sleepModeEnabled == other.sleepModeEnabled
     }
 
     override fun hashCode(): Int {
@@ -264,6 +266,7 @@ data class DeviceSettings(
         result = 31 * result + upstreamWifiSsid.hashCode()
         result = 31 * result + upstreamWifiPassphrase.hashCode()
         result = 31 * result + beaconUnicast.hashCode()
+        result = 31 * result + sleepModeEnabled.hashCode()
         return result
     }
 }
@@ -561,6 +564,7 @@ object EdgezUsbControlProto {
             .setUpstreamWifiSsid(settings.upstreamWifiSsid.take(32))
             .setUpstreamWifiPassphrase(settings.upstreamWifiPassphrase.take(64))
             .setBeaconUnicast(settings.beaconUnicast and 0xffffffffffffL)
+            .setSleepModeEnabled(settings.sleepModeEnabled)
         settings.geoFence?.let { protoSettings.setGeoFence(it.toProtoGeoFence()) }
         if (settings.latitude != null && settings.longitude != null) {
             protoSettings.setLatitude(settings.latitude.toFloat())
@@ -1030,6 +1034,7 @@ object EdgezUsbControlProto {
             upstreamWifiSsid = upstreamWifiSsid,
             upstreamWifiPassphrase = upstreamWifiPassphrase,
             beaconUnicast = beaconUnicast,
+            sleepModeEnabled = sleepModeEnabled,
         )
     }
 

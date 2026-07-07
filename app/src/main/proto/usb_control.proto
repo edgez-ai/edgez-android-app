@@ -192,6 +192,7 @@ message DeviceSettings {
   string upstream_wifi_ssid = 20;
   string upstream_wifi_passphrase = 21;
   uint64 beacon_unicast = 22;
+  bool sleep_mode_enabled = 23;
 }
 
 message ScriptConfig {
