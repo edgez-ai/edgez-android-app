@@ -1078,7 +1078,7 @@ private fun DashboardSensorCard(
 ) {
     val sample = dashboardSampleForRange(item.samples, item.display.range)
     val compact = item.display.widget != DashboardDeviceWidget.TIME_SERIES
-    val markerBackground = item.user.dashboardMarkerTintColor()?.let { markerColor ->
+    val markerBackground = item.user.markerTintColor()?.let { markerColor ->
         lerp(MaterialTheme.colorScheme.surfaceVariant, markerColor, if (compact) 0.58f else 0.46f)
     }
         ?: MaterialTheme.colorScheme.surfaceVariant
