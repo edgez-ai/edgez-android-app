@@ -2,6 +2,7 @@ package ai.edgez.edgez
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,10 +14,17 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,10 +53,34 @@ private data class SensorChartScale(
 
 private const val SENSOR_CHART_WINDOW_MS = 60L * 60L * 1000L
 
+enum class DashboardDeviceRange(
+    val label: String,
+    val windowMs: Long?,
+) {
+    LATEST("Latest value", null),
+    LAST_30_MIN("Last 30 min", 30L * 60L * 1000L),
+    LAST_1_HOUR("Last 1 hour", 60L * 60L * 1000L),
+    LAST_6_HOURS("Last 6 hours", 6L * 60L * 60L * 1000L);
+
+    companion object {
+        fun fromName(name: String?): DashboardDeviceRange {
+            return entries.firstOrNull { it.name == name } ?: LATEST
+        }
+    }
+}
+
+data class DashboardDeviceDisplay(
+    val deviceKey: String,
+    val showOnDashboard: Boolean = false,
+    val range: DashboardDeviceRange = DashboardDeviceRange.LATEST,
+)
+
 @Composable
 fun DeviceDetailScreen(
     user: HaLowUser,
     samples: List<SensorSample>,
+    dashboardDisplay: DashboardDeviceDisplay,
+    onDashboardDisplayChange: (DashboardDeviceDisplay) -> Unit,
     onBack: () -> Unit,
 ) {
     val latest = samples.lastOrNull()?.data
@@ -81,6 +113,13 @@ fun DeviceDetailScreen(
             }
 
             item {
+                DashboardDisplayCard(
+                    display = dashboardDisplay,
+                    onDisplayChange = onDashboardDisplayChange,
+                )
+            }
+
+            item {
                 GeoFenceCard(user.geoFence, user.geoIndex)
             }
 
@@ -90,6 +129,59 @@ fun DeviceDetailScreen(
 
             item {
                 SensorChartCard(samples)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DashboardDisplayCard(
+    display: DashboardDeviceDisplay,
+    onDisplayChange: (DashboardDeviceDisplay) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Show on dashboard", style = MaterialTheme.typography.titleMedium)
+                Switch(
+                    checked = display.showOnDashboard,
+                    onCheckedChange = { enabled ->
+                        onDisplayChange(display.copy(showOnDashboard = enabled))
+                    },
+                )
+            }
+            Box {
+                TextButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = display.showOnDashboard,
+                    onClick = { expanded = true },
+                ) {
+                    Text(display.range.label)
+                }
+                DropdownMenu(
+                    expanded = expanded && display.showOnDashboard,
+                    onDismissRequest = { expanded = false },
+                ) {
+                    DashboardDeviceRange.entries.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option.label) },
+                            onClick = {
+                                onDisplayChange(display.copy(range = option))
+                                expanded = false
+                            },
+                        )
+                    }
+                }
             }
         }
     }

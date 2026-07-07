@@ -9,7 +9,7 @@ import ai.edgez.edgez.usb.PacketMime
 import java.util.UUID
 
 private const val DATABASE_NAME = "edgez_local.db"
-private const val DATABASE_VERSION = 7
+private const val DATABASE_VERSION = 8
 private const val TABLE_USERS = "halow_users"
 private const val TABLE_MESSAGES = "conversation_messages"
 private const val TABLE_SENSOR_DATA = "sensor_data"
@@ -50,7 +50,9 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 geo_fence_name TEXT NOT NULL DEFAULT '',
                 geo_fence_marker TEXT NOT NULL DEFAULT 'default',
                 geo_fence_alert_condition INTEGER NOT NULL DEFAULT 0,
-                sleeping INTEGER NOT NULL DEFAULT 0
+                sleeping INTEGER NOT NULL DEFAULT 0,
+                dashboard_show_on INTEGER NOT NULL DEFAULT 0,
+                dashboard_range TEXT NOT NULL DEFAULT 'LATEST'
             )
             """.trimIndent(),
         )
@@ -107,6 +109,10 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
         }
         if (oldVersion < 7) {
             addColumnIfMissing(db, TABLE_SENSOR_DATA, "vibration_average", "REAL")
+        }
+        if (oldVersion < 8) {
+            addColumnIfMissing(db, TABLE_USERS, "dashboard_show_on", "INTEGER NOT NULL DEFAULT 0")
+            addColumnIfMissing(db, TABLE_USERS, "dashboard_range", "TEXT NOT NULL DEFAULT 'LATEST'")
         }
     }
 
@@ -260,8 +266,69 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
         return messages
     }
 
+    fun getDashboardDeviceDisplays(): Map<String, DashboardDeviceDisplay> {
+        val displays = linkedMapOf<String, DashboardDeviceDisplay>()
+        readableDatabase.query(
+            TABLE_USERS,
+            arrayOf("user_uuid", "dashboard_show_on", "dashboard_range"),
+            null,
+            null,
+            null,
+            null,
+            null,
+        ).use { cursor ->
+            val userUuidIndex = cursor.getColumnIndexOrThrow("user_uuid")
+            val showIndex = cursor.getColumnIndexOrThrow("dashboard_show_on")
+            val rangeIndex = cursor.getColumnIndexOrThrow("dashboard_range")
+            while (cursor.moveToNext()) {
+                val deviceKey = cursor.getString(userUuidIndex)
+                displays[deviceKey] = DashboardDeviceDisplay(
+                    deviceKey = deviceKey,
+                    showOnDashboard = cursor.getInt(showIndex) != 0,
+                    range = DashboardDeviceRange.fromName(cursor.getString(rangeIndex)),
+                )
+            }
+        }
+        return displays
+    }
+
+    fun setDashboardDeviceDisplay(display: DashboardDeviceDisplay) {
+        writableDatabase.update(
+            TABLE_USERS,
+            ContentValues().apply {
+                put("dashboard_show_on", if (display.showOnDashboard) 1 else 0)
+                put("dashboard_range", display.range.name)
+            },
+            "user_uuid = ?",
+            arrayOf(display.deviceKey),
+        )
+    }
+
+    fun getDashboardDeviceDisplay(deviceKey: String): DashboardDeviceDisplay {
+        readableDatabase.query(
+            TABLE_USERS,
+            arrayOf("dashboard_show_on", "dashboard_range"),
+            "user_uuid = ?",
+            arrayOf(deviceKey),
+            null,
+            null,
+            null,
+            "1",
+        ).use { cursor ->
+            if (cursor.moveToFirst()) {
+                return DashboardDeviceDisplay(
+                    deviceKey = deviceKey,
+                    showOnDashboard = cursor.getInt(cursor.getColumnIndexOrThrow("dashboard_show_on")) != 0,
+                    range = DashboardDeviceRange.fromName(cursor.getString(cursor.getColumnIndexOrThrow("dashboard_range"))),
+                )
+            }
+        }
+        return DashboardDeviceDisplay(deviceKey)
+    }
+
     fun upsertUser(user: HaLowUser) {
         user.geoFence?.let(::insertGeoFenceIfMissing)
+        val dashboardDisplay = getDashboardDeviceDisplay(user.userUuid)
         val rowId = writableDatabase.insertWithOnConflict(
             TABLE_USERS,
             null,
@@ -286,6 +353,8 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 put("geo_fence_marker", NodeMapMarker.DEFAULT.id)
                 put("geo_fence_alert_condition", 0)
                 put("sleeping", if (user.sleeping) 1 else 0)
+                put("dashboard_show_on", if (dashboardDisplay.showOnDashboard) 1 else 0)
+                put("dashboard_range", dashboardDisplay.range.name)
             },
             SQLiteDatabase.CONFLICT_REPLACE,
         )

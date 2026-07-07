@@ -16,8 +16,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -166,6 +169,7 @@ fun EdgeZApp() {
     var provisionMode by rememberSaveable { mutableStateOf(false) }
     var conversations by remember { mutableStateOf(edgeZDatabase.getMessages()) }
     var shareLocation by rememberSaveable { mutableStateOf(lastConnectionPreferences.getShareLocation()) }
+    var dashboardDeviceDisplays by remember { mutableStateOf(edgeZDatabase.getDashboardDeviceDisplays()) }
 
     fun resetHaLowInitTrigger() {
         pendingHaLowInitKey.set(null)
@@ -686,6 +690,12 @@ fun EdgeZApp() {
                         DeviceDetailScreen(
                             user = conversationUser,
                             samples = edgeZDatabase.getSensorData(conversationUserKey),
+                            dashboardDisplay = dashboardDeviceDisplays[conversationUserKey]
+                                ?: DashboardDeviceDisplay(deviceKey = conversationUserKey),
+                            onDashboardDisplayChange = { display ->
+                                edgeZDatabase.setDashboardDeviceDisplay(display)
+                                dashboardDeviceDisplays = dashboardDeviceDisplays + (display.deviceKey to display)
+                            },
                             onBack = { selectedConversationUser = null },
                         )
                     } else {
@@ -891,6 +901,7 @@ fun EdgeZApp() {
                             edgeZDatabase.deleteUser(userKey)
                             haLowUsers = haLowUsers - user.nodeNum
                             conversations = conversations - userKey
+                            dashboardDeviceDisplays = dashboardDeviceDisplays - userKey
                             if (selectedConversationUser?.let { conversationKey(it) } == userKey) {
                                 selectedConversationUser = null
                             }
@@ -903,6 +914,10 @@ fun EdgeZApp() {
             }
             AppDestination.PROFILE -> DashboardScreen(
                 users = haLowUsers.values.sortedByDescending { it.lastSeenMs },
+                sensorSamples = dashboardDeviceDisplays
+                    .filterValues { it.showOnDashboard }
+                    .mapValues { (_, display) -> edgeZDatabase.getSensorData(display.deviceKey) },
+                dashboardDeviceDisplays = dashboardDeviceDisplays,
                 gpsCursorMarker = mapCursorMarker,
                 savedCamera = savedMapCamera,
                 onCameraChanged = updateMapCamera,
@@ -945,6 +960,8 @@ private enum class AppDestination(
 @Composable
 private fun DashboardScreen(
     users: List<HaLowUser>,
+    sensorSamples: Map<String, List<SensorSample>>,
+    dashboardDeviceDisplays: Map<String, DashboardDeviceDisplay>,
     gpsCursorMarker: String,
     savedCamera: EdgeZMapCamera?,
     onCameraChanged: (EdgeZMapCamera) -> Unit,
@@ -952,53 +969,188 @@ private fun DashboardScreen(
     onOpenDeviceProvision: () -> Unit,
 ) {
     Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .padding(padding)
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "Dashboard",
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.headlineMedium,
-                )
-                Button(onClick = onOpenDeviceProvision) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_bluetooth),
-                        contentDescription = null,
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Dashboard",
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.headlineMedium,
                     )
-                    Spacer(Modifier.width(8.dp))
-                    Text("Provisioning")
+                    Button(onClick = onOpenDeviceProvision) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_bluetooth),
+                            contentDescription = null,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Provisioning")
+                    }
                 }
             }
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(180.dp),
-                shape = RoundedCornerShape(8.dp),
-                tonalElevation = 1.dp,
-            ) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    MapScreen(
-                        users = users,
-                        gpsCursorMarker = gpsCursorMarker,
-                        savedCamera = savedCamera,
-                        onCameraChanged = onCameraChanged,
-                        previewMode = true,
-                    )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clickable(onClick = onOpenMap),
-                    )
+            users.mapNotNull { user ->
+                val deviceKey = conversationKey(user)
+                val display = dashboardDeviceDisplays[deviceKey]?.takeIf { it.showOnDashboard } ?: return@mapNotNull null
+                DashboardDeviceItem(user, display, sensorSamples[deviceKey].orEmpty())
+            }.forEach { dashboardItem ->
+                item {
+                    DashboardSensorCard(dashboardItem)
+                }
+            }
+            item {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    tonalElevation = 1.dp,
+                ) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        MapScreen(
+                            users = users,
+                            gpsCursorMarker = gpsCursorMarker,
+                            savedCamera = savedCamera,
+                            onCameraChanged = onCameraChanged,
+                            previewMode = true,
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clickable(onClick = onOpenMap),
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+private data class DashboardDeviceItem(
+    val user: HaLowUser,
+    val display: DashboardDeviceDisplay,
+    val samples: List<SensorSample>,
+)
+
+@Composable
+private fun DashboardSensorCard(item: DashboardDeviceItem) {
+    val sample = dashboardSampleForRange(item.samples, item.display.range)
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "${item.user.deviceType.label} · ${item.user.displayName}",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(item.display.range.label, style = MaterialTheme.typography.bodySmall)
+                }
+                Text("Node ${item.user.nodeId}", style = MaterialTheme.typography.bodySmall)
+            }
+            if (sample == null || !sample.data.hasAnyValue) {
+                Text("No sensor data", style = MaterialTheme.typography.bodyMedium)
+            } else {
+                DashboardSensorValueRows(sample.data)
+                Text(
+                    if (item.display.range == DashboardDeviceRange.LATEST) {
+                        "Updated ${formatDashboardSensorAge(sample.timestampMs)}"
+                    } else {
+                        "${item.samples.countSamplesInRange(item.display.range)} samples"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DashboardSensorValueRows(data: EdgeZSensorData) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        DashboardSensorValueRow("Temperature", data.temperature, "°C")
+        DashboardSensorValueRow("Humidity", data.humidity, "%")
+        DashboardSensorValueRow("Pressure", data.pressure, "hPa")
+        DashboardSensorValueRow("Pass-by score", data.vibrationAverage, "")
+        DashboardSensorValueRow("Altitude", data.altitude, "m")
+    }
+}
+
+@Composable
+private fun DashboardSensorValueRow(label: String, value: Double?, unit: String) {
+    if (value == null) return
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(label, style = MaterialTheme.typography.bodySmall)
+        Text(
+            if (unit.isBlank()) formatDashboardSensorValue(value) else "${formatDashboardSensorValue(value)} $unit",
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+private fun dashboardSampleForRange(samples: List<SensorSample>, range: DashboardDeviceRange): SensorSample? {
+    if (samples.isEmpty()) return null
+    if (range == DashboardDeviceRange.LATEST) return samples.lastOrNull()
+    val since = System.currentTimeMillis() - (range.windowMs ?: return samples.lastOrNull())
+    val rangeSamples = samples.filter { it.timestampMs >= since }
+    if (rangeSamples.isEmpty()) return null
+    return SensorSample(
+        timestampMs = rangeSamples.maxOf { it.timestampMs },
+        data = EdgeZSensorData(
+            latitude = rangeSamples.averageOf { it.data.latitude },
+            longitude = rangeSamples.averageOf { it.data.longitude },
+            altitude = rangeSamples.averageOf { it.data.altitude },
+            temperature = rangeSamples.averageOf { it.data.temperature },
+            humidity = rangeSamples.averageOf { it.data.humidity },
+            pressure = rangeSamples.averageOf { it.data.pressure },
+            vibrationAverage = rangeSamples.averageOf { it.data.vibrationAverage },
+        ),
+    )
+}
+
+private fun List<SensorSample>.countSamplesInRange(range: DashboardDeviceRange): Int {
+    val windowMs = range.windowMs ?: return size
+    val since = System.currentTimeMillis() - windowMs
+    return count { it.timestampMs >= since }
+}
+
+private fun List<SensorSample>.averageOf(value: (SensorSample) -> Double?): Double? {
+    val values = mapNotNull(value)
+    if (values.isEmpty()) return null
+    return values.sum() / values.size
+}
+
+private fun formatDashboardSensorValue(value: Double): String {
+    return when {
+        kotlin.math.abs(value) >= 100.0 -> "%.0f".format(value)
+        kotlin.math.abs(value) >= 10.0 -> "%.1f".format(value)
+        else -> "%.2f".format(value)
+    }
+}
+
+private fun formatDashboardSensorAge(timestampMs: Long): String {
+    val ageSeconds = ((System.currentTimeMillis() - timestampMs).coerceAtLeast(0L) / 1000L)
+    return when {
+        ageSeconds < 60 -> "${ageSeconds}s ago"
+        ageSeconds < 3600 -> "${ageSeconds / 60}m ago"
+        ageSeconds < 86400 -> "${ageSeconds / 3600}h ago"
+        else -> "${ageSeconds / 86400}d ago"
     }
 }
