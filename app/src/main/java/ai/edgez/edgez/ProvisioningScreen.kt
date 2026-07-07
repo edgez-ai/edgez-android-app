@@ -68,7 +68,13 @@ private enum class ProvisionStep {
     GEO_FENCE,
     SENSOR,
     NETWORK,
+    UPSTREAM,
 }
+
+private data class BeaconUnicastOption(
+    val label: String,
+    val value: String,
+)
 
 private fun parseDeviceMacAddress(input: String): Long {
     val hex = input.filter { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }
@@ -165,6 +171,7 @@ private fun ProvisioningContent(
 
     var countryDropdownExpanded by remember { mutableStateOf(false) }
     var markerDropdownExpanded by remember { mutableStateOf(false) }
+    var beaconUnicastDropdownExpanded by remember { mutableStateOf(false) }
     var meshCountry by rememberSaveable { mutableStateOf(connectionPreferences.getMeshCountry()) }
     var meshId by rememberSaveable { mutableStateOf(connectionPreferences.getMeshId()) }
     var passphrase by rememberSaveable { mutableStateOf(connectionPreferences.getMeshPassphrase()) }
@@ -216,6 +223,7 @@ private fun ProvisioningContent(
         ProvisionStep.GEO_FENCE -> 4
         ProvisionStep.SENSOR -> 5
         ProvisionStep.NETWORK -> 6
+        ProvisionStep.UPSTREAM -> 7
     }
     val provisionStepTitle = when (provisionStep) {
         ProvisionStep.SELECT_BLE -> "Select BLE device"
@@ -224,7 +232,28 @@ private fun ProvisioningContent(
         ProvisionStep.GEO_FENCE -> "Geo fence"
         ProvisionStep.SENSOR -> "Sensor"
         ProvisionStep.NETWORK -> "Network"
+        ProvisionStep.UPSTREAM -> "Upstream Wi-Fi"
     }
+    val beaconUnicastOptions = remember(deviceBeaconUnicast) {
+        val knownNodeOptions = edgeZDatabase.getUsers()
+            .values
+            .sortedWith(compareBy<HaLowUser> { it.displayName.lowercase() }.thenBy { it.nodeId })
+            .map { user ->
+                BeaconUnicastOption(
+                    label = "${user.displayName} (${user.nodeId})",
+                    value = user.nodeId.uppercase(),
+                )
+            }
+        val current = deviceBeaconUnicast.takeIf { it.isNotBlank() }
+        val hasCurrent = current == null || knownNodeOptions.any { it.value.equals(current, ignoreCase = true) }
+        listOf(BeaconUnicastOption("Broadcast", "")) +
+            knownNodeOptions +
+            if (!hasCurrent && current != null) listOf(BeaconUnicastOption("Current ($current)", current)) else emptyList()
+    }
+    val selectedBeaconUnicastLabel = beaconUnicastOptions
+        .firstOrNull { it.value.equals(deviceBeaconUnicast, ignoreCase = true) }
+        ?.label
+        ?: "Broadcast"
 
     if (showGeoFencePage) {
         GeoFenceMaintenanceScreen(
@@ -657,6 +686,7 @@ private fun ProvisioningContent(
             ProvisionStep.GEO_FENCE -> ProvisionStep.LOCATION
             ProvisionStep.SENSOR -> ProvisionStep.GEO_FENCE
             ProvisionStep.NETWORK -> ProvisionStep.SENSOR
+            ProvisionStep.UPSTREAM -> ProvisionStep.NETWORK
         }
         status = if (provisionStep == ProvisionStep.SELECT_BLE) {
             "Select an EdgeZ BLE device"
@@ -682,7 +712,8 @@ private fun ProvisioningContent(
             ProvisionStep.LOCATION -> provisionStep = ProvisionStep.GEO_FENCE
             ProvisionStep.GEO_FENCE -> provisionStep = ProvisionStep.SENSOR
             ProvisionStep.SENSOR -> provisionStep = ProvisionStep.NETWORK
-            ProvisionStep.NETWORK -> sendDeviceSettingsToDevice(
+            ProvisionStep.NETWORK -> provisionStep = ProvisionStep.UPSTREAM
+            ProvisionStep.UPSTREAM -> sendDeviceSettingsToDevice(
                 onSuccessAction = {
                     disconnectProvisionTransport()
                     onProvisionComplete()
@@ -829,7 +860,7 @@ private fun ProvisioningContent(
                             goNextProvisionStep()
                         },
                     ) {
-                        Text(if (provisionStep == ProvisionStep.NETWORK) "Save" else "Next")
+                        Text(if (provisionStep == ProvisionStep.UPSTREAM) "Save" else "Next")
                     }
                 }
             }
@@ -845,7 +876,7 @@ private fun ProvisioningContent(
             item {
                 if (provisionMode) {
                     Text(
-                        "Step $provisionStepNumber of 6: $provisionStepTitle",
+                        "Step $provisionStepNumber of 7: $provisionStepTitle",
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Spacer(Modifier.height(6.dp))
@@ -1264,37 +1295,29 @@ private fun ProvisioningContent(
                     )
                     if (showDeviceSettingsOnly) {
                         Spacer(Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = deviceUpstreamWifiSsid,
-                            onValueChange = { value ->
-                                deviceUpstreamWifiSsid = value.take(32)
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Upstream Wi-Fi SSID") },
-                            singleLine = true,
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = deviceUpstreamWifiPassphrase,
-                            onValueChange = { value ->
-                                deviceUpstreamWifiPassphrase = value.take(64)
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Upstream Wi-Fi passphrase") },
-                            singleLine = true,
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = deviceBeaconUnicast,
-                            onValueChange = { value ->
-                                deviceBeaconUnicast = value
-                                    .filter { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' || it == ':' || it == '-' }
-                                    .take(17)
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Beacon unicast MAC") },
-                            singleLine = true,
-                        )
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = { beaconUnicastDropdownExpanded = true },
+                            ) {
+                                Text("Beacon unicast: $selectedBeaconUnicastLabel")
+                            }
+                            DropdownMenu(
+                                expanded = beaconUnicastDropdownExpanded,
+                                onDismissRequest = { beaconUnicastDropdownExpanded = false },
+                            ) {
+                                beaconUnicastOptions.forEach { option ->
+                                    DropdownMenuItem(
+                                        text = { Text(option.label) },
+                                        onClick = {
+                                            deviceBeaconUnicast = option.value
+                                            beaconUnicastDropdownExpanded = false
+                                            status = "Beacon unicast set to ${option.label}"
+                                        },
+                                    )
+                                }
+                            }
+                        }
                     }
                     if (!provisionMode) {
                         Spacer(Modifier.height(10.dp))
@@ -1302,6 +1325,30 @@ private fun ProvisioningContent(
                             Text(if (deviceMode) "Save to device" else "Save settings")
                         }
                     }
+                }
+            }
+
+            if (showDeviceSettingsOnly && provisionStep == ProvisionStep.UPSTREAM) item {
+                SettingsCard(title = "Upstream Wi-Fi") {
+                    OutlinedTextField(
+                        value = deviceUpstreamWifiSsid,
+                        onValueChange = { value ->
+                            deviceUpstreamWifiSsid = value.take(32)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("SSID") },
+                        singleLine = true,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = deviceUpstreamWifiPassphrase,
+                        onValueChange = { value ->
+                            deviceUpstreamWifiPassphrase = value.take(64)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Passphrase") },
+                        singleLine = true,
+                    )
                 }
             }
 
