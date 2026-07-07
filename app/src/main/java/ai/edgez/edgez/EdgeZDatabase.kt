@@ -15,6 +15,7 @@ private const val TABLE_MESSAGES = "conversation_messages"
 private const val TABLE_SENSOR_DATA = "sensor_data"
 private const val TABLE_GEO_FENCES = "device_geo_fences"
 private const val TAG_USERS = "EdgeZUsers"
+private const val DEFAULT_MESSAGE_PAGE_SIZE = 50
 
 data class SensorSample(
     val timestampMs: Long,
@@ -277,6 +278,65 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
             }
         }
         return messages
+    }
+
+    fun getMessages(
+        peerUserUuid: String,
+        beforeTimestampMs: Long? = null,
+        limit: Int = DEFAULT_MESSAGE_PAGE_SIZE,
+    ): List<ConversationEntry> {
+        val messages = mutableListOf<ConversationEntry>()
+        val selection = if (beforeTimestampMs == null) {
+            "peer_user_uuid = ?"
+        } else {
+            "peer_user_uuid = ? AND timestamp_ms < ?"
+        }
+        val args = if (beforeTimestampMs == null) {
+            arrayOf(peerUserUuid)
+        } else {
+            arrayOf(peerUserUuid, beforeTimestampMs.toString())
+        }
+        readableDatabase.query(
+            TABLE_MESSAGES,
+            arrayOf(
+                "text",
+                "mine",
+                "timestamp_ms",
+                "status",
+                "mime",
+                "audio_path",
+                "duration_ms",
+                "message_uuid",
+            ),
+            selection,
+            args,
+            null,
+            null,
+            "timestamp_ms DESC, id DESC",
+            limit.coerceIn(1, 200).toString(),
+        ).use { cursor ->
+            val textIndex = cursor.getColumnIndexOrThrow("text")
+            val mineIndex = cursor.getColumnIndexOrThrow("mine")
+            val timestampIndex = cursor.getColumnIndexOrThrow("timestamp_ms")
+            val statusIndex = cursor.getColumnIndexOrThrow("status")
+            val mimeIndex = cursor.getColumnIndexOrThrow("mime")
+            val audioPathIndex = cursor.getColumnIndexOrThrow("audio_path")
+            val durationIndex = cursor.getColumnIndexOrThrow("duration_ms")
+            val messageUuidIndex = cursor.getColumnIndexOrThrow("message_uuid")
+            while (cursor.moveToNext()) {
+                messages += ConversationEntry(
+                    text = cursor.getString(textIndex),
+                    mine = cursor.getInt(mineIndex) != 0,
+                    timestampMs = cursor.getLong(timestampIndex),
+                    status = cursor.getString(statusIndex),
+                    mime = PacketMime.fromWireValue(cursor.getInt(mimeIndex)),
+                    audioPath = cursor.getString(audioPathIndex),
+                    durationMs = cursor.getLong(durationIndex),
+                    messageUuid = cursor.getString(messageUuidIndex),
+                )
+            }
+        }
+        return messages.asReversed()
     }
 
     fun getDashboardDeviceDisplays(): Map<String, DashboardDeviceDisplay> {

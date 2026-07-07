@@ -114,13 +114,14 @@ fun DeviceDetailScreen(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     TextButton(onClick = onBack) {
                         Text("Back")
                     }
-                    Column {
-                        Text("${user.deviceType.label} · ${user.displayName}", style = MaterialTheme.typography.titleLarge)
-                        Text("Node ${user.nodeId}", style = MaterialTheme.typography.bodySmall)
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(user.displayName, style = MaterialTheme.typography.titleLarge)
+                        Text(user.deviceType.label, style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -158,7 +159,7 @@ private fun DashboardDisplayCard(
 ) {
     var expanded by remember { mutableStateOf(false) }
     var widgetExpanded by remember { mutableStateOf(false) }
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -249,9 +250,8 @@ private fun DeviceSummaryCard(user: HaLowUser) {
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text("Device", style = MaterialTheme.typography.titleMedium)
-            Text("Type ${user.deviceType.label}", style = MaterialTheme.typography.bodyMedium)
-            Text("Marker ${NodeMapMarker.fromId(user.marker).label}", style = MaterialTheme.typography.bodyMedium)
-            Text("User ${user.userIdText}", style = MaterialTheme.typography.bodySmall)
+            Text(user.nodeId, style = MaterialTheme.typography.bodyMedium)
+            Text("${NodeMapMarker.fromId(user.marker).label} marker", style = MaterialTheme.typography.bodySmall)
             if (user.sleeping) {
                 Text("Sleeping", style = MaterialTheme.typography.bodySmall)
             }
@@ -267,7 +267,7 @@ private fun DeviceSummaryCard(user: HaLowUser) {
 
 @Composable
 private fun GeoFenceCard(geoFence: DeviceGeoFence?, geoIndex: Int) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -291,7 +291,7 @@ private fun GeoFenceCard(geoFence: DeviceGeoFence?, geoIndex: Int) {
 
 @Composable
 private fun SensorLatestCard(data: EdgeZSensorData?, timestampMs: Long?) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()

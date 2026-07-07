@@ -14,9 +14,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -26,6 +28,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -41,6 +44,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
@@ -121,13 +125,13 @@ fun NodesScreen(
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.headlineMedium,
                     )
-                    Button(onClick = { showCreateGroupDialog = true }) {
+                    TextButton(onClick = { showCreateGroupDialog = true }) {
                         Icon(
                             painter = painterResource(R.drawable.ic_account_box),
                             contentDescription = null,
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text("Create group")
+                        Text("Create")
                     }
                 }
                 Spacer(Modifier.height(6.dp))
@@ -250,66 +254,77 @@ private fun NodeCard(
         }
     }
 
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-        Column(
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
+            NodeAvatar(user)
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = user.displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = user.markerTintColor() ?: MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = "${user.deviceType.label} · ${formatLastSeenAge(user.lastSeenMs, nowMs)} · ${user.route}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (user.geoFence != null || user.sleeping) {
+                    Text(
+                        text = listOfNotNull(
+                            user.geoFence?.name?.let { "Geofence $it" },
+                            "Sleeping".takeIf { user.sleeping },
+                        ).joinToString(" · "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column {
-                    Text(
-                        text = user.displayName,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = user.markerTintColor() ?: MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text("Node ${user.nodeId}", style = MaterialTheme.typography.bodyMedium)
-                    Text("User ${user.userIdText}", style = MaterialTheme.typography.bodySmall)
-                    Text("Type ${user.deviceType.label}", style = MaterialTheme.typography.bodySmall)
-                    user.geoFence?.let {
-                        Text("Geofence ${it.name}", style = MaterialTheme.typography.bodySmall)
+                if (user.deviceType == EdgeZDeviceType.USER || user.deviceType == EdgeZDeviceType.UNSPECIFIED) {
+                    TextButton(onClick = onToggleDashboard) {
+                        Text(if (showOnDashboard) "Hide" else "Show")
                     }
                 }
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (user.deviceType == EdgeZDeviceType.USER || user.deviceType == EdgeZDeviceType.UNSPECIFIED) {
-                        TextButton(onClick = onToggleDashboard) {
-                            Text(if (showOnDashboard) "Hide" else "Show")
-                        }
-                    }
-                    if (user.sleeping) {
-                        Text(
-                            text = "Sleeping",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                if (user.hasLocation()) {
+                    IconButton(onClick = { context.openUserLocationInMap(user) }) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_location),
+                            contentDescription = "Open location in map",
+                            tint = user.markerTintColor() ?: MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    Text(
-                        text = "Last seen ${formatLastSeenAge(user.lastSeenMs, nowMs)}",
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                    if (user.hasLocation()) {
-                        IconButton(onClick = { context.openUserLocationInMap(user) }) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_location),
-                                contentDescription = "Open location in map",
-                                tint = user.markerTintColor() ?: MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text(user.shortName.ifBlank { "User" }, style = MaterialTheme.typography.bodyMedium)
-                Text(user.route, style = MaterialTheme.typography.bodyMedium)
-            }
+        }
+    }
+}
+
+@Composable
+private fun NodeAvatar(user: HaLowUser) {
+    val markerColor = user.markerTintColor() ?: MaterialTheme.colorScheme.primary
+    Surface(
+        modifier = Modifier.size(42.dp),
+        shape = CircleShape,
+        color = markerColor,
+        contentColor = Color.White,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = user.displayName.take(1).uppercase(),
+                style = MaterialTheme.typography.titleMedium,
+            )
         }
     }
 }

@@ -232,7 +232,8 @@ fun EdgeZApp() {
     var selectedConversationUser by remember { mutableStateOf<HaLowUser?>(null) }
     var selectedNodeListFilter by rememberSaveable { mutableStateOf(NodeListFilter.USERS) }
     var provisionMode by rememberSaveable { mutableStateOf(false) }
-    var conversations by remember { mutableStateOf(edgeZDatabase.getMessages()) }
+    var conversations by remember { mutableStateOf<Map<String, List<ConversationEntry>>>(emptyMap()) }
+    var loadedConversationKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
     var shareLocation by rememberSaveable { mutableStateOf(lastConnectionPreferences.getShareLocation()) }
     var dashboardDeviceDisplays by remember { mutableStateOf(edgeZDatabase.getDashboardDeviceDisplays()) }
     var dashboardWidgetOrder by remember { mutableStateOf(lastConnectionPreferences.getDashboardWidgetOrder()) }
@@ -257,6 +258,35 @@ fun EdgeZApp() {
                 bleClient.connect(candidate)
             }
         }.isSuccess
+    }
+
+    fun loadLatestMessages(user: HaLowUser) {
+        val userKey = conversationKey(user)
+        if (userKey in loadedConversationKeys) return
+        val cachedMessages = conversations[userKey].orEmpty()
+        val latestMessages = edgeZDatabase.getMessages(userKey)
+        conversations = conversations + (
+            userKey to (latestMessages + cachedMessages)
+                .distinctBy { Triple(it.timestampMs, it.messageUuid, it.mine) }
+                .sortedBy { it.timestampMs }
+            )
+        loadedConversationKeys = loadedConversationKeys + userKey
+    }
+
+    fun loadOlderMessages(user: HaLowUser) {
+        val userKey = conversationKey(user)
+        val currentMessages = conversations[userKey].orEmpty()
+        val beforeTimestampMs = currentMessages.firstOrNull()?.timestampMs ?: return
+        val olderMessages = edgeZDatabase.getMessages(userKey, beforeTimestampMs = beforeTimestampMs)
+        if (olderMessages.isEmpty()) return
+        conversations = conversations + (
+            userKey to (olderMessages + currentMessages).distinctBy { Triple(it.timestampMs, it.messageUuid, it.mine) }
+            )
+    }
+
+    fun openConversation(user: HaLowUser) {
+        loadLatestMessages(user)
+        selectedConversationUser = user
     }
 
     fun markTransportConnected(connection: ActiveConnection) {
@@ -864,6 +894,7 @@ fun EdgeZApp() {
                             user = conversationUser,
                             messages = conversations[conversationUserKey] ?: emptyList(),
                             onBack = { selectedConversationUser = null },
+                            onLoadOlderMessages = { loadOlderMessages(conversationUser) },
                             onSendMessage = { text ->
                             val identity = lastConnectionPreferences.getOrCreateUserIdentity()
                             val fromNode = haLowStatus?.macAddress?.takeIf { it != 0L }
@@ -985,7 +1016,7 @@ fun EdgeZApp() {
                             edgeZDatabase.upsertUser(group)
                             haLowUsers = haLowUsers + (group.nodeNum to group)
                             selectedNodeListFilter = NodeListFilter.GROUPS
-                            selectedConversationUser = group
+                            openConversation(group)
                         },
                         onToggleDashboard = { user ->
                             val userKey = conversationKey(user)
@@ -1006,6 +1037,7 @@ fun EdgeZApp() {
                             edgeZDatabase.deleteUser(userKey)
                             haLowUsers = haLowUsers - user.nodeNum
                             conversations = conversations - userKey
+                            loadedConversationKeys = loadedConversationKeys - userKey
                             dashboardDeviceDisplays = dashboardDeviceDisplays - userKey
                             val nextOrder = dashboardWidgetOrder - userKey
                             dashboardWidgetOrder = nextOrder
@@ -1015,7 +1047,7 @@ fun EdgeZApp() {
                             }
                         },
                         onOpenConversation = { user ->
-                            selectedConversationUser = user
+                            openConversation(user)
                         },
                     )
                 }
@@ -1035,7 +1067,7 @@ fun EdgeZApp() {
                     currentDestination = AppDestination.MAP
                 },
                 onOpenConversation = { user ->
-                    selectedConversationUser = user
+                    openConversation(user)
                     currentDestination = AppDestination.NODES
                 },
                 onOpenSensorDetail = { user ->
