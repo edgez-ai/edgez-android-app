@@ -1,11 +1,19 @@
 package ai.edgez.edgez
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
 import android.content.SharedPreferences
 import android.content.Context
 import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,6 +51,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.PreviewScreenSizes
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.core.content.ContextCompat
 import ai.edgez.edgez.ble.EdgezBleClient
 import ai.edgez.edgez.usb.EdgezUsbClient
 import ai.edgez.edgez.usb.HaLowInterfaceStatus
@@ -54,6 +64,8 @@ import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.math.abs
 
 private const val RECONNECT_DELAY_MS = 2_000L
 private const val TAG_USERS = "EdgeZUsers"
@@ -103,6 +115,18 @@ private fun newMessageUuid(): MessageUuid {
 }
 
 private fun conversationKey(user: HaLowUser): String = user.userUuid.ifBlank { user.nodeNum.toString() }
+
+private fun isUserNode(user: HaLowUser): Boolean {
+    return user.deviceType == EdgeZDeviceType.USER || user.deviceType == EdgeZDeviceType.UNSPECIFIED
+}
+
+private fun normalizeDashboardWidgetOrder(
+    savedOrder: List<String>,
+    visibleKeys: Collection<String>,
+): List<String> {
+    val visibleSet = visibleKeys.toSet()
+    return savedOrder.filter { it in visibleSet } + visibleKeys.filter { it !in savedOrder }
+}
 
 private fun sortNodesByName(users: Collection<HaLowUser>): List<HaLowUser> {
     return users.sortedWith(
@@ -171,6 +195,7 @@ fun EdgeZApp() {
     var conversations by remember { mutableStateOf(edgeZDatabase.getMessages()) }
     var shareLocation by rememberSaveable { mutableStateOf(lastConnectionPreferences.getShareLocation()) }
     var dashboardDeviceDisplays by remember { mutableStateOf(edgeZDatabase.getDashboardDeviceDisplays()) }
+    var dashboardWidgetOrder by remember { mutableStateOf(lastConnectionPreferences.getDashboardWidgetOrder()) }
 
     fun resetHaLowInitTrigger() {
         pendingHaLowInitKey.set(null)
@@ -624,6 +649,91 @@ fun EdgeZApp() {
         mapCameraZoom = camera.zoom
     }
 
+    fun sendVoiceMessageToUser(
+        conversationUser: HaLowUser,
+        voiceBytes: ByteArray,
+        durationMs: Long,
+        localPath: String,
+        codec: Int,
+    ): Result<String> {
+        val conversationUserKey = conversationKey(conversationUser)
+        val identity = lastConnectionPreferences.getOrCreateUserIdentity()
+        val fromNode = haLowStatus?.macAddress?.takeIf { it != 0L }
+        val timestampMs = System.currentTimeMillis()
+        val messageUuid = newMessageUuid()
+        val entry = ConversationEntry(
+            text = "Voice message",
+            mine = true,
+            timestampMs = timestampMs,
+            status = "Sending voice...",
+            mime = PacketMime.VOICE,
+            audioPath = localPath,
+            durationMs = durationMs,
+            messageUuid = messageUuid.text,
+        )
+        edgeZDatabase.insertMessage(conversationUserKey, entry)
+        conversations = conversations + (
+            conversationUserKey to ((conversations[conversationUserKey] ?: emptyList()) + entry)
+            )
+
+        fun updateVoiceStatus(nextStatus: String) {
+            edgeZDatabase.updateMessageStatus(conversationUserKey, timestampMs, localPath, nextStatus)
+            conversations = conversations + (
+                conversationUserKey to ((conversations[conversationUserKey] ?: emptyList()).map {
+                    if (it.timestampMs == timestampMs && it.audioPath == localPath) {
+                        it.copy(status = nextStatus)
+                    } else {
+                        it
+                    }
+                })
+                )
+        }
+
+        if (fromNode == null) {
+            val error = "Voice failed: local HaLow node id unavailable"
+            updateVoiceStatus(error)
+            return Result.failure(IllegalStateException(error))
+        }
+
+        val result = runCatching {
+            val toNode = conversationUser.nodeNum
+            val maxHop = lastConnectionPreferences.getMeshMaxHop()
+            val groupId = timestampMs
+            val chunks = voiceBytes.asList().chunked(VOICE_CHUNK_AUDIO_BYTES)
+            chunks.forEachIndexed { index, chunkBytes ->
+                val voicePayload = encodeVoiceChunk(
+                    VoiceChunk(
+                        groupId = groupId,
+                        durationMs = durationMs,
+                        totalChunks = chunks.size,
+                        index = index,
+                        codec = codec,
+                        audio = chunkBytes.toByteArray(),
+                    ),
+                )
+                val encrypted = encryptConversationPayload(identity, conversationUser, voicePayload, fromNode)
+                val sendResult = when (activeConnection) {
+                    ActiveConnection.USB -> usbClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, index + 1, messageUuid.high, messageUuid.low, identity.userIdHigh, identity.userIdLow)
+                    ActiveConnection.BLE -> bleClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, index + 1, messageUuid.high, messageUuid.low, identity.userIdHigh, identity.userIdLow)
+                    ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+                }
+                sendResult.getOrThrow()
+                paceVoiceChunkSend(index, chunks.size)
+            }
+        }
+        return result.fold(
+            onSuccess = {
+                updateVoiceStatus("Voice sent via ${activeConnection.name}")
+                Result.success("Voice sent")
+            },
+            onFailure = {
+                val error = "Voice failed: ${it.message ?: "send timeout"}"
+                updateVoiceStatus(error)
+                Result.failure(IllegalStateException(error, it))
+            },
+        )
+    }
+
     NavigationSuiteScaffold(
         navigationSuiteItems = {
             AppDestination.entries.forEach { destination ->
@@ -685,8 +795,7 @@ fun EdgeZApp() {
                     )
                 } else if (conversationUser != null) {
                     val conversationUserKey = conversationKey(conversationUser)
-                    val isUserConversation = conversationUser.deviceType == EdgeZDeviceType.USER ||
-                        conversationUser.deviceType == EdgeZDeviceType.UNSPECIFIED
+                    val isUserConversation = isUserNode(conversationUser)
                     if (!isUserConversation) {
                         DeviceDetailScreen(
                             user = conversationUser,
@@ -696,6 +805,13 @@ fun EdgeZApp() {
                             onDashboardDisplayChange = { display ->
                                 edgeZDatabase.setDashboardDeviceDisplay(display)
                                 dashboardDeviceDisplays = dashboardDeviceDisplays + (display.deviceKey to display)
+                                val nextOrder = if (display.showOnDashboard) {
+                                    (dashboardWidgetOrder + display.deviceKey).distinct()
+                                } else {
+                                    dashboardWidgetOrder - display.deviceKey
+                                }
+                                dashboardWidgetOrder = nextOrder
+                                lastConnectionPreferences.setDashboardWidgetOrder(nextOrder)
                             },
                             onBack = { selectedConversationUser = null },
                         )
@@ -742,81 +858,7 @@ fun EdgeZApp() {
                             }
                         },
                             onSendVoiceMessage = { voiceBytes, durationMs, localPath, codec ->
-                            val identity = lastConnectionPreferences.getOrCreateUserIdentity()
-                            val fromNode = haLowStatus?.macAddress?.takeIf { it != 0L }
-                            val timestampMs = System.currentTimeMillis()
-                            val messageUuid = newMessageUuid()
-                            val entry = ConversationEntry(
-                                text = "Voice message",
-                                mine = true,
-                                timestampMs = timestampMs,
-                                status = "Sending voice...",
-                                mime = PacketMime.VOICE,
-                                audioPath = localPath,
-                                durationMs = durationMs,
-                                messageUuid = messageUuid.text,
-                            )
-                            edgeZDatabase.insertMessage(conversationUserKey, entry)
-                            conversations = conversations + (
-                                conversationUserKey to ((conversations[conversationUserKey] ?: emptyList()) + entry)
-                                )
-
-                            fun updateVoiceStatus(nextStatus: String) {
-                                edgeZDatabase.updateMessageStatus(conversationUserKey, timestampMs, localPath, nextStatus)
-                                conversations = conversations + (
-                                    conversationUserKey to ((conversations[conversationUserKey] ?: emptyList()).map {
-                                        if (it.timestampMs == timestampMs && it.audioPath == localPath) {
-                                            it.copy(status = nextStatus)
-                                        } else {
-                                            it
-                                        }
-                                    })
-                                    )
-                            }
-
-                            if (fromNode == null) {
-                                val error = "Voice failed: local HaLow node id unavailable"
-                                updateVoiceStatus(error)
-                                Result.failure(IllegalStateException(error))
-                            } else {
-                                val result = runCatching {
-                                    val toNode = conversationUser.nodeNum
-                                    val maxHop = lastConnectionPreferences.getMeshMaxHop()
-                                    val groupId = timestampMs
-                                    val chunks = voiceBytes.asList().chunked(VOICE_CHUNK_AUDIO_BYTES)
-                                    chunks.forEachIndexed { index, chunkBytes ->
-                                            val voicePayload = encodeVoiceChunk(
-                                                VoiceChunk(
-                                                    groupId = groupId,
-                                                    durationMs = durationMs,
-                                                    totalChunks = chunks.size,
-                                                    index = index,
-                                                    codec = codec,
-                                                    audio = chunkBytes.toByteArray(),
-                                                ),
-                                            )
-                                            val encrypted = encryptConversationPayload(identity, conversationUser, voicePayload, fromNode)
-                                            val sendResult = when (activeConnection) {
-                                                ActiveConnection.USB -> usbClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, index + 1, messageUuid.high, messageUuid.low, identity.userIdHigh, identity.userIdLow)
-                                                ActiveConnection.BLE -> bleClient.sendConversationMessage(encrypted, fromNode, toNode, PacketMime.VOICE, maxHop, index + 1, messageUuid.high, messageUuid.low, identity.userIdHigh, identity.userIdLow)
-                                                ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
-                                            }
-                                            sendResult.getOrThrow()
-                                            paceVoiceChunkSend(index, chunks.size)
-                                    }
-                                }
-                                result.fold(
-                                    onSuccess = {
-                                        updateVoiceStatus("Voice sent via ${activeConnection.name}")
-                                        Result.success("Voice sent")
-                                    },
-                                    onFailure = {
-                                        val error = "Voice failed: ${it.message ?: "send timeout"}"
-                                        updateVoiceStatus(error)
-                                        Result.failure(IllegalStateException(error, it))
-                                    },
-                                )
-                            }
+                            sendVoiceMessageToUser(conversationUser, voiceBytes, durationMs, localPath, codec)
                         },
                             onResendVoiceMessage = { entry ->
                             val identity = lastConnectionPreferences.getOrCreateUserIdentity()
@@ -893,9 +935,24 @@ fun EdgeZApp() {
                     NodesScreen(
                         users = sortNodesByName(haLowUsers.values),
                         selectedFilter = selectedNodeListFilter,
+                        dashboardDeviceDisplays = dashboardDeviceDisplays,
                         onSelectedFilterChange = { selectedNodeListFilter = it },
                         onCreateGroup = {
                             selectedNodeListFilter = NodeListFilter.GROUPS
+                        },
+                        onToggleDashboard = { user ->
+                            val userKey = conversationKey(user)
+                            val currentDisplay = dashboardDeviceDisplays[userKey] ?: DashboardDeviceDisplay(deviceKey = userKey)
+                            val nextDisplay = currentDisplay.copy(showOnDashboard = !currentDisplay.showOnDashboard)
+                            edgeZDatabase.setDashboardDeviceDisplay(nextDisplay)
+                            dashboardDeviceDisplays = dashboardDeviceDisplays + (userKey to nextDisplay)
+                            val nextOrder = if (nextDisplay.showOnDashboard) {
+                                (dashboardWidgetOrder + userKey).distinct()
+                            } else {
+                                dashboardWidgetOrder - userKey
+                            }
+                            dashboardWidgetOrder = nextOrder
+                            lastConnectionPreferences.setDashboardWidgetOrder(nextOrder)
                         },
                         onRemoveNode = { user ->
                             val userKey = conversationKey(user)
@@ -903,6 +960,9 @@ fun EdgeZApp() {
                             haLowUsers = haLowUsers - user.nodeNum
                             conversations = conversations - userKey
                             dashboardDeviceDisplays = dashboardDeviceDisplays - userKey
+                            val nextOrder = dashboardWidgetOrder - userKey
+                            dashboardWidgetOrder = nextOrder
+                            lastConnectionPreferences.setDashboardWidgetOrder(nextOrder)
                             if (selectedConversationUser?.let { conversationKey(it) } == userKey) {
                                 selectedConversationUser = null
                             }
@@ -915,19 +975,41 @@ fun EdgeZApp() {
             }
             AppDestination.PROFILE -> DashboardScreen(
                 users = haLowUsers.values.sortedByDescending { it.lastSeenMs },
+                activeConnection = activeConnection,
                 sensorSamples = dashboardDeviceDisplays
                     .filterValues { it.showOnDashboard }
                     .mapValues { (_, display) -> edgeZDatabase.getSensorData(display.deviceKey) },
                 dashboardDeviceDisplays = dashboardDeviceDisplays,
+                dashboardWidgetOrder = dashboardWidgetOrder,
                 gpsCursorMarker = mapCursorMarker,
                 savedCamera = savedMapCamera,
                 onCameraChanged = updateMapCamera,
                 onOpenMap = {
                     currentDestination = AppDestination.MAP
                 },
+                onOpenConversation = { user ->
+                    selectedConversationUser = user
+                    currentDestination = AppDestination.NODES
+                },
                 onOpenSensorDetail = { user ->
                     selectedConversationUser = user
                     currentDestination = AppDestination.NODES
+                },
+                onSendUserVoiceMessage = { user, voiceBytes, durationMs, localPath, codec ->
+                    sendVoiceMessageToUser(user, voiceBytes, durationMs, localPath, codec)
+                },
+                onMoveWidget = { widgetKey, direction ->
+                    val visibleKeys = dashboardDeviceDisplays.filterValues { it.showOnDashboard }.keys
+                    val normalizedOrder = normalizeDashboardWidgetOrder(dashboardWidgetOrder, visibleKeys)
+                    val index = normalizedOrder.indexOf(widgetKey)
+                    val targetIndex = (index + direction).coerceIn(0, normalizedOrder.lastIndex)
+                    if (index >= 0 && index != targetIndex) {
+                        val nextOrder = normalizedOrder.toMutableList().apply {
+                            add(targetIndex, removeAt(index))
+                        }
+                        dashboardWidgetOrder = nextOrder
+                        lastConnectionPreferences.setDashboardWidgetOrder(nextOrder)
+                    }
                 },
                 onOpenDeviceProvision = { openDeviceProvisioning() },
             )
@@ -965,13 +1047,18 @@ private enum class AppDestination(
 @Composable
 private fun DashboardScreen(
     users: List<HaLowUser>,
+    activeConnection: ActiveConnection,
     sensorSamples: Map<String, List<SensorSample>>,
     dashboardDeviceDisplays: Map<String, DashboardDeviceDisplay>,
+    dashboardWidgetOrder: List<String>,
     gpsCursorMarker: String,
     savedCamera: EdgeZMapCamera?,
     onCameraChanged: (EdgeZMapCamera) -> Unit,
     onOpenMap: () -> Unit,
+    onOpenConversation: (HaLowUser) -> Unit,
     onOpenSensorDetail: (HaLowUser) -> Unit,
+    onSendUserVoiceMessage: (HaLowUser, ByteArray, Long, String, Int) -> Result<String>,
+    onMoveWidget: (String, Int) -> Unit,
     onOpenDeviceProvision: () -> Unit,
 ) {
     Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
@@ -986,8 +1073,9 @@ private fun DashboardScreen(
                 val display = dashboardDeviceDisplays[deviceKey]?.takeIf { it.showOnDashboard } ?: return@mapNotNull null
                 DashboardDeviceItem(user, display, sensorSamples[deviceKey].orEmpty())
             }
-            val compactItems = dashboardItems.filter { it.display.widget != DashboardDeviceWidget.TIME_SERIES }
-            val fullWidthItems = dashboardItems.filter { it.display.widget == DashboardDeviceWidget.TIME_SERIES }
+            val itemsByKey = dashboardItems.associateBy { it.display.deviceKey }
+            val orderedItems = normalizeDashboardWidgetOrder(dashboardWidgetOrder, itemsByKey.keys)
+                .mapNotNull { itemsByKey[it] }
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1033,31 +1121,53 @@ private fun DashboardScreen(
                     }
                 }
             }
-            compactItems.chunked(2).forEach { rowItems ->
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        rowItems.forEach { dashboardItem ->
-                            DashboardSensorCard(
+            var index = 0
+            while (index < orderedItems.size) {
+                val dashboardItem = orderedItems[index]
+                if (dashboardItem.isCompactWidget) {
+                    val nextItem = orderedItems.getOrNull(index + 1)?.takeIf { it.isCompactWidget }
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            DashboardWidgetCard(
                                 item = dashboardItem,
+                                activeConnection = activeConnection,
                                 modifier = Modifier.weight(1f),
+                                onOpenConversation = onOpenConversation,
                                 onOpenSensorDetail = onOpenSensorDetail,
+                                onSendVoiceMessage = onSendUserVoiceMessage,
+                                onMoveWidget = onMoveWidget,
                             )
-                        }
-                        if (rowItems.size == 1) {
-                            Spacer(Modifier.weight(1f))
+                            if (nextItem != null) {
+                                DashboardWidgetCard(
+                                    item = nextItem,
+                                    activeConnection = activeConnection,
+                                    modifier = Modifier.weight(1f),
+                                    onOpenConversation = onOpenConversation,
+                                    onOpenSensorDetail = onOpenSensorDetail,
+                                    onSendVoiceMessage = onSendUserVoiceMessage,
+                                    onMoveWidget = onMoveWidget,
+                                )
+                            } else {
+                                Spacer(Modifier.weight(1f))
+                            }
                         }
                     }
-                }
-            }
-            fullWidthItems.forEach { dashboardItem ->
-                item {
-                    DashboardSensorCard(
-                        item = dashboardItem,
-                        onOpenSensorDetail = onOpenSensorDetail,
-                    )
+                    index += if (nextItem != null) 2 else 1
+                } else {
+                    item {
+                        DashboardWidgetCard(
+                            item = dashboardItem,
+                            activeConnection = activeConnection,
+                            onOpenConversation = onOpenConversation,
+                            onOpenSensorDetail = onOpenSensorDetail,
+                            onSendVoiceMessage = onSendUserVoiceMessage,
+                            onMoveWidget = onMoveWidget,
+                        )
+                    }
+                    index += 1
                 }
             }
         }
@@ -1068,13 +1178,169 @@ private data class DashboardDeviceItem(
     val user: HaLowUser,
     val display: DashboardDeviceDisplay,
     val samples: List<SensorSample>,
-)
+) {
+    val isCompactWidget: Boolean
+        get() = isUserNode(user) || display.widget != DashboardDeviceWidget.TIME_SERIES
+}
+
+@Composable
+private fun DashboardWidgetCard(
+    item: DashboardDeviceItem,
+    activeConnection: ActiveConnection,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+    onOpenConversation: (HaLowUser) -> Unit,
+    onOpenSensorDetail: (HaLowUser) -> Unit,
+    onSendVoiceMessage: (HaLowUser, ByteArray, Long, String, Int) -> Result<String>,
+    onMoveWidget: (String, Int) -> Unit,
+) {
+    if (isUserNode(item.user)) {
+        DashboardUserCard(
+            item = item,
+            activeConnection = activeConnection,
+            modifier = modifier,
+            onOpenConversation = onOpenConversation,
+            onSendVoiceMessage = onSendVoiceMessage,
+            onMoveWidget = onMoveWidget,
+        )
+    } else {
+        DashboardSensorCard(
+            item = item,
+            modifier = modifier,
+            onOpenSensorDetail = onOpenSensorDetail,
+            onMoveWidget = onMoveWidget,
+        )
+    }
+}
+
+@Composable
+private fun DashboardDragHandle(
+    widgetKey: String,
+    onMoveWidget: (String, Int) -> Unit,
+) {
+    var dragOffset by remember(widgetKey) { mutableStateOf(0f) }
+    Text(
+        text = "Drag",
+        modifier = Modifier.pointerInput(widgetKey) {
+            detectVerticalDragGestures(
+                onDragEnd = { dragOffset = 0f },
+                onDragCancel = { dragOffset = 0f },
+                onVerticalDrag = { _, dragAmount ->
+                    dragOffset += dragAmount
+                    if (abs(dragOffset) >= 48f) {
+                        onMoveWidget(widgetKey, if (dragOffset > 0f) 1 else -1)
+                        dragOffset = 0f
+                    }
+                },
+            )
+        },
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+private fun DashboardUserCard(
+    item: DashboardDeviceItem,
+    activeConnection: ActiveConnection,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+    onOpenConversation: (HaLowUser) -> Unit,
+    onSendVoiceMessage: (HaLowUser, ByteArray, Long, String, Int) -> Result<String>,
+    onMoveWidget: (String, Int) -> Unit,
+) {
+    val context = LocalContext.current
+    val userKey = conversationKey(item.user)
+    val recorder = remember(userKey) { VoiceMessageRecorder(context.applicationContext) }
+    var recording by remember(userKey) { mutableStateOf(false) }
+    var status by remember(userKey) { mutableStateOf("") }
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        status = if (granted) "Hold to talk" else "Microphone permission denied"
+    }
+    val canSendVoice = activeConnection != ActiveConnection.NONE
+    val markerBackground = item.user.markerTintColor()?.let { markerColor ->
+        lerp(MaterialTheme.colorScheme.surfaceVariant, markerColor, 0.40f)
+    } ?: MaterialTheme.colorScheme.surfaceVariant
+
+    Card(
+        modifier = modifier.pointerInput(userKey, canSendVoice) {
+            awaitEachGesture {
+                awaitFirstDown()
+                val releasedBeforeHold = withTimeoutOrNull(280L) {
+                    waitForUpOrCancellation()
+                }
+                if (releasedBeforeHold != null) {
+                    onOpenConversation(item.user)
+                    return@awaitEachGesture
+                }
+                if (!canSendVoice) {
+                    status = "Connect to send voice"
+                    waitForUpOrCancellation()
+                    return@awaitEachGesture
+                }
+                val hasPermission = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.RECORD_AUDIO,
+                ) == PackageManager.PERMISSION_GRANTED
+                if (!hasPermission) {
+                    audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    waitForUpOrCancellation()
+                    return@awaitEachGesture
+                }
+                val started = recorder.start()
+                if (started.isFailure) {
+                    status = started.exceptionOrNull()?.message ?: "Voice record failed"
+                    waitForUpOrCancellation()
+                    return@awaitEachGesture
+                }
+                recording = true
+                status = "Recording"
+                val released = waitForUpOrCancellation() != null
+                recording = false
+                val voice = recorder.stop(delete = !released)
+                if (released && voice != null) {
+                    val result = onSendVoiceMessage(item.user, voice.bytes, voice.durationMs, voice.path, voice.codec)
+                    status = result.exceptionOrNull()?.message ?: result.getOrNull().orEmpty()
+                } else {
+                    status = "Voice canceled"
+                }
+            }
+        },
+        colors = CardDefaults.cardColors(containerColor = markerBackground),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(item.user.displayName, style = MaterialTheme.typography.titleSmall)
+                DashboardDragHandle(item.display.deviceKey, onMoveWidget)
+            }
+            Text(
+                when {
+                    recording -> "Recording"
+                    status.isNotBlank() -> status
+                    canSendVoice -> "Hold to talk"
+                    else -> "Connect to talk"
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
 
 @Composable
 private fun DashboardSensorCard(
     item: DashboardDeviceItem,
     modifier: Modifier = Modifier.fillMaxWidth(),
     onOpenSensorDetail: (HaLowUser) -> Unit,
+    onMoveWidget: (String, Int) -> Unit,
 ) {
     val sample = dashboardSampleForRange(item.samples, item.display.range)
     val compact = item.display.widget != DashboardDeviceWidget.TIME_SERIES
@@ -1093,14 +1359,22 @@ private fun DashboardSensorCard(
             verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 6.dp),
         ) {
             if (item.display.widget == DashboardDeviceWidget.TEMP_HUMIDITY) {
-                Text(
-                    item.user.displayName,
-                    style = MaterialTheme.typography.titleSmall,
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        item.user.displayName,
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    DashboardDragHandle(item.display.deviceKey, onMoveWidget)
+                }
             } else {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
@@ -1109,8 +1383,14 @@ private fun DashboardSensorCard(
                         )
                         Text(item.display.range.label, style = MaterialTheme.typography.bodySmall)
                     }
-                    if (!compact) {
-                        Text("Node ${item.user.nodeId}", style = MaterialTheme.typography.bodySmall)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (!compact) {
+                            Text("Node ${item.user.nodeId}", style = MaterialTheme.typography.bodySmall)
+                        }
+                        DashboardDragHandle(item.display.deviceKey, onMoveWidget)
                     }
                 }
             }

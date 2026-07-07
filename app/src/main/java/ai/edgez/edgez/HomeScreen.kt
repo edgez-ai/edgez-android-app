@@ -27,6 +27,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -51,8 +52,10 @@ import kotlin.math.roundToInt
 fun NodesScreen(
     users: List<HaLowUser>,
     selectedFilter: NodeListFilter,
+    dashboardDeviceDisplays: Map<String, DashboardDeviceDisplay>,
     onSelectedFilterChange: (NodeListFilter) -> Unit,
     onCreateGroup: () -> Unit,
+    onToggleDashboard: (HaLowUser) -> Unit,
     onRemoveNode: (HaLowUser) -> Unit,
     onOpenConversation: (HaLowUser) -> Unit,
 ) {
@@ -109,7 +112,9 @@ fun NodesScreen(
             items(filteredUsers, key = { user -> user.userUuid.ifBlank { user.nodeNum.toString() } }) { user ->
                 SwipeToRemoveNodeCard(
                     user = user,
+                    showOnDashboard = dashboardDeviceDisplays[user.userUuid.ifBlank { user.nodeNum.toString() }]?.showOnDashboard == true,
                     onRemove = { onRemoveNode(user) },
+                    onToggleDashboard = { onToggleDashboard(user) },
                     onOpenConversation = { onOpenConversation(user) },
                 )
             }
@@ -136,7 +141,9 @@ enum class NodeListFilter(val label: String, val emptyLabel: String) {
 @Composable
 private fun SwipeToRemoveNodeCard(
     user: HaLowUser,
+    showOnDashboard: Boolean,
     onRemove: () -> Unit,
+    onToggleDashboard: () -> Unit,
     onOpenConversation: () -> Unit,
 ) {
     val actionWidth = 96.dp
@@ -178,13 +185,21 @@ private fun SwipeToRemoveNodeCard(
                     )
                 },
         ) {
-            NodeCard(user)
+            NodeCard(
+                user = user,
+                showOnDashboard = showOnDashboard,
+                onToggleDashboard = onToggleDashboard,
+            )
         }
     }
 }
 
 @Composable
-private fun NodeCard(user: HaLowUser) {
+private fun NodeCard(
+    user: HaLowUser,
+    showOnDashboard: Boolean,
+    onToggleDashboard: () -> Unit,
+) {
     val context = LocalContext.current
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
@@ -224,6 +239,11 @@ private fun NodeCard(user: HaLowUser) {
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    if (user.deviceType == EdgeZDeviceType.USER || user.deviceType == EdgeZDeviceType.UNSPECIFIED) {
+                        TextButton(onClick = onToggleDashboard) {
+                            Text(if (showOnDashboard) "Hide" else "Show")
+                        }
+                    }
                     if (user.sleeping) {
                         Text(
                             text = "Sleeping",
@@ -292,8 +312,10 @@ private fun HomePreview() {
                 ),
             ),
             selectedFilter = NodeListFilter.USERS,
+            dashboardDeviceDisplays = emptyMap(),
             onSelectedFilterChange = {},
             onCreateGroup = {},
+            onToggleDashboard = {},
             onRemoveNode = {},
             onOpenConversation = {},
         )

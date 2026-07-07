@@ -23,6 +23,7 @@ private const val KEY_SELECTED_BLE_LABEL = "selected_ble_label"
 private const val KEY_BLE_AUTO_CONNECT = "ble_auto_connect"
 private const val KEY_DEVICE_GEOFENCES = "device_geofences"
 private const val KEY_SELECTED_DEVICE_GEOFENCE = "selected_device_geofence"
+private const val KEY_DASHBOARD_WIDGET_ORDER = "dashboard_widget_order"
 private const val DEFAULT_MESH_ID = "edgez"
 private const val DEFAULT_MESH_MAX_HOP = 2
 const val DEFAULT_BEACON_INTERVAL_SECONDS = 30
@@ -155,6 +156,21 @@ class LastConnectionPreferences(context: Context) {
     fun setSelectedDeviceGeoFenceKey(key: String?) {
         prefs.edit()
             .putString(KEY_SELECTED_DEVICE_GEOFENCE, key?.takeIf { it.isNotBlank() })
+            .apply()
+    }
+
+    fun getDashboardWidgetOrder(): List<String> {
+        return prefs.getString(KEY_DASHBOARD_WIDGET_ORDER, "")?.lineSequence()
+            ?.map { it.trim() }
+            ?.filter { it.isNotBlank() }
+            ?.distinct()
+            ?.toList()
+            .orEmpty()
+    }
+
+    fun setDashboardWidgetOrder(order: List<String>) {
+        prefs.edit()
+            .putString(KEY_DASHBOARD_WIDGET_ORDER, order.filter { it.isNotBlank() }.distinct().joinToString("\n"))
             .apply()
     }
 
