@@ -11,6 +11,7 @@ import android.util.Log
 import ai.edgez.edgez.ble.EdgezBleClient
 import ai.edgez.edgez.usb.EdgezUsbClient
 import ai.edgez.edgez.usb.HaLowInterfaceStatus
+import ai.edgez.edgez.usb.EdgezUsbControlProto
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -25,6 +26,7 @@ object EdgeZBeaconRunner {
     @Volatile private var bleClient: EdgezBleClient? = null
     @Volatile private var activeConnection: ActiveConnection = ActiveConnection.NONE
     @Volatile private var haLowStatus: HaLowInterfaceStatus? = null
+    @Volatile private var onFramePublished: ((ByteArray) -> Unit)? = null
     @Volatile private var running = false
     private var executor: ExecutorService? = null
 
@@ -41,10 +43,16 @@ object EdgeZBeaconRunner {
         }
     }
 
-    fun attach(context: Context, usbClient: EdgezUsbClient, bleClient: EdgezBleClient) {
+    fun attach(
+        context: Context,
+        usbClient: EdgezUsbClient,
+        bleClient: EdgezBleClient,
+        onFramePublished: ((ByteArray) -> Unit)? = null,
+    ) {
         appContext = context.applicationContext
         this.usbClient = usbClient
         this.bleClient = bleClient
+        this.onFramePublished = onFramePublished
     }
 
     fun setActiveConnection(connection: ActiveConnection) {
@@ -56,6 +64,78 @@ object EdgeZBeaconRunner {
 
     fun setHaLowStatus(status: HaLowInterfaceStatus?) {
         haLowStatus = status
+    }
+
+    fun setFramePublishedListener(listener: ((ByteArray) -> Unit)?) {
+        onFramePublished = listener
+    }
+
+    fun publishSelfBeaconToLibp2p(context: Context) {
+        val status = haLowStatus
+        if (DeviceModeState.enabled) return
+        val source = activeConnection
+        if (source == ActiveConnection.NONE) {
+            return
+        }
+        val publishToLibp2p = status == null || (status.supported && status.stackInitialized && status.meshMode)
+
+        val contextRef = context.applicationContext
+        val preferences = LastConnectionPreferences(contextRef)
+        val userIdentity = preferences.getOrCreateUserIdentity()
+        val meshPassphrase = preferences.getMeshPassphrase()
+        val marker = preferences.getUserMarker()
+        val location = if (preferences.getShareLocation()) {
+            contextRef.getBestKnownLocation()
+        } else {
+            null
+        }
+        val frame = runCatching {
+            EdgezUsbControlProto.encodeHaLowBeacon(
+                userIdentity.userIdHigh,
+                userIdentity.userIdLow,
+                userIdentity.name,
+                userIdentity.publicKey,
+                meshPassphrase,
+                location?.latitude,
+                location?.longitude,
+                location?.time ?: 0L,
+                marker,
+            )
+        }.getOrNull() ?: return
+
+        val localExecutor = synchronized(lock) {
+            executor ?: Executors.newSingleThreadExecutor().also { executor = it }
+        }
+        localExecutor.execute {
+            when (source) {
+                ActiveConnection.USB -> usbClient?.sendHaLowBeacon(
+                    userIdentity.userIdHigh,
+                    userIdentity.userIdLow,
+                    userIdentity.name,
+                    userIdentity.publicKey,
+                    meshPassphrase,
+                    location?.latitude,
+                    location?.longitude,
+                    location?.time ?: 0L,
+                    marker,
+                )
+                ActiveConnection.BLE -> bleClient?.sendHaLowBeacon(
+                    userIdentity.userIdHigh,
+                    userIdentity.userIdLow,
+                    userIdentity.name,
+                    userIdentity.publicKey,
+                    meshPassphrase,
+                    location?.latitude,
+                    location?.longitude,
+                    location?.time ?: 0L,
+                    marker,
+                )
+                ActiveConnection.NONE -> null
+            }
+            if (publishToLibp2p) {
+                onFramePublished?.invoke(frame)
+            }
+        }
     }
 
     fun start(context: Context) {
@@ -106,6 +186,19 @@ object EdgeZBeaconRunner {
 
         val executor = executor ?: return
         executor.execute {
+            val beaconFrame = runCatching {
+                EdgezUsbControlProto.encodeHaLowBeacon(
+                    userIdentity.userIdHigh,
+                    userIdentity.userIdLow,
+                    userIdentity.name,
+                    userIdentity.publicKey,
+                    meshPassphrase,
+                    location?.latitude,
+                    location?.longitude,
+                    location?.time ?: 0L,
+                    marker,
+                )
+            }.getOrNull() ?: return@execute
             when (source) {
                 ActiveConnection.USB -> usbClient?.sendHaLowBeacon(
                     userIdentity.userIdHigh,
@@ -117,7 +210,7 @@ object EdgeZBeaconRunner {
                     location?.longitude,
                     location?.time ?: 0L,
                     marker,
-                )
+                )?.onSuccess { onFramePublished?.invoke(beaconFrame) }
                 ActiveConnection.BLE -> bleClient?.sendHaLowBeacon(
                     userIdentity.userIdHigh,
                     userIdentity.userIdLow,
@@ -128,7 +221,7 @@ object EdgeZBeaconRunner {
                     location?.longitude,
                     location?.time ?: 0L,
                     marker,
-                )
+                )?.onSuccess { onFramePublished?.invoke(beaconFrame) }
                 ActiveConnection.NONE -> Unit
             }
         }
