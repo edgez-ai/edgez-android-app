@@ -80,6 +80,57 @@ fun SettingsScreen(
     activeConnection: ActiveConnection,
     edgeZDatabase: EdgeZDatabase,
     shareLocation: Boolean,
+    onShareLocationChange: (Boolean) -> Unit,
+    onTransportConnectionChange: (ActiveConnection, Boolean) -> Unit,
+    onTransportDisconnect: (ActiveConnection) -> Unit,
+) {
+    SettingsContent(
+        client = client,
+        bleClient = bleClient,
+        activeConnection = activeConnection,
+        edgeZDatabase = edgeZDatabase,
+        shareLocation = shareLocation,
+        provisionMode = false,
+        onShareLocationChange = onShareLocationChange,
+        onTransportConnectionChange = onTransportConnectionChange,
+        onTransportDisconnect = onTransportDisconnect,
+        onProvisionComplete = {},
+    )
+}
+
+@Composable
+fun DeviceProvisionScreen(
+    client: EdgezUsbClient,
+    bleClient: EdgezBleClient,
+    activeConnection: ActiveConnection,
+    edgeZDatabase: EdgeZDatabase,
+    shareLocation: Boolean,
+    onShareLocationChange: (Boolean) -> Unit,
+    onTransportConnectionChange: (ActiveConnection, Boolean) -> Unit,
+    onTransportDisconnect: (ActiveConnection) -> Unit,
+    onProvisionComplete: () -> Unit,
+) {
+    SettingsContent(
+        client = client,
+        bleClient = bleClient,
+        activeConnection = activeConnection,
+        edgeZDatabase = edgeZDatabase,
+        shareLocation = shareLocation,
+        provisionMode = true,
+        onShareLocationChange = onShareLocationChange,
+        onTransportConnectionChange = onTransportConnectionChange,
+        onTransportDisconnect = onTransportDisconnect,
+        onProvisionComplete = onProvisionComplete,
+    )
+}
+
+@Composable
+private fun SettingsContent(
+    client: EdgezUsbClient,
+    bleClient: EdgezBleClient,
+    activeConnection: ActiveConnection,
+    edgeZDatabase: EdgeZDatabase,
+    shareLocation: Boolean,
     provisionMode: Boolean,
     onShareLocationChange: (Boolean) -> Unit,
     onTransportConnectionChange: (ActiveConnection, Boolean) -> Unit,
@@ -1339,11 +1390,9 @@ private fun SettingsPreview() {
             activeConnection = ActiveConnection.NONE,
             edgeZDatabase = EdgeZDatabase(context),
             shareLocation = false,
-            provisionMode = false,
             onShareLocationChange = {},
             onTransportConnectionChange = { _, _ -> },
             onTransportDisconnect = {},
-            onProvisionComplete = {},
         )
     }
 }

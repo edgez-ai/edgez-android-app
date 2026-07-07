@@ -614,7 +614,7 @@ fun EdgeZApp() {
                     label = { Text(destination.label) },
                     selected = destination == currentDestination,
                     onClick = {
-                        if (destination != AppDestination.SETTINGS && provisionMode) {
+                        if (destination != AppDestination.NODES && provisionMode) {
                             provisionMode = false
                             DeviceModeState.enabled = false
                         }
@@ -645,7 +645,29 @@ fun EdgeZApp() {
             )
             AppDestination.NODES -> {
                 val conversationUser = selectedConversationUser
-                if (conversationUser != null) {
+                if (provisionMode) {
+                    DeviceProvisionScreen(
+                        client = usbClient,
+                        bleClient = bleClient,
+                        activeConnection = activeConnection,
+                        edgeZDatabase = edgeZDatabase,
+                        shareLocation = shareLocation,
+                        onShareLocationChange = { enabled ->
+                            shareLocation = enabled
+                            lastConnectionPreferences.setShareLocation(enabled)
+                        },
+                        onTransportConnectionChange = { connection, connected ->
+                            setTransportConnected(connection, connected)
+                        },
+                        onTransportDisconnect = { connection ->
+                            disconnectTransport(connection)
+                        },
+                        onProvisionComplete = {
+                            provisionMode = false
+                            DeviceModeState.enabled = false
+                        },
+                    )
+                } else if (conversationUser != null) {
                     val conversationUserKey = conversationKey(conversationUser)
                     val isUserConversation = conversationUser.deviceType == EdgeZDeviceType.USER ||
                         conversationUser.deviceType == EdgeZDeviceType.UNSPECIFIED
@@ -851,9 +873,9 @@ fun EdgeZApp() {
                         selectedFilter = selectedNodeListFilter,
                         onSelectedFilterChange = { selectedNodeListFilter = it },
                         onOpenDeviceProvision = {
+                            disconnectTransport(activeConnection)
                             provisionMode = true
                             DeviceModeState.enabled = true
-                            currentDestination = AppDestination.SETTINGS
                         },
                         onRemoveNode = { user ->
                             val userKey = conversationKey(user)
@@ -877,7 +899,6 @@ fun EdgeZApp() {
                 activeConnection = activeConnection,
                 edgeZDatabase = edgeZDatabase,
                 shareLocation = shareLocation,
-                provisionMode = provisionMode,
                 onShareLocationChange = { enabled ->
                     shareLocation = enabled
                     lastConnectionPreferences.setShareLocation(enabled)
@@ -887,10 +908,6 @@ fun EdgeZApp() {
                 },
                 onTransportDisconnect = { connection ->
                     disconnectTransport(connection)
-                },
-                onProvisionComplete = {
-                    provisionMode = false
-                    currentDestination = AppDestination.NODES
                 },
             )
         }
