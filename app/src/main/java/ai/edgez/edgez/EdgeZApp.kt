@@ -217,6 +217,7 @@ fun EdgeZApp() {
     val reconnectExecutor = remember { Executors.newSingleThreadExecutor() }
     val beaconExecutor = remember { Executors.newSingleThreadExecutor() }
     val messageAckExecutor = remember { Executors.newSingleThreadExecutor() }
+    val libp2pExecutor = remember { Executors.newSingleThreadExecutor() }
     val pendingHaLowInitKey = remember { AtomicReference<String?>(null) }
     val pendingVoiceMessages = remember { mutableMapOf<String, PendingVoiceMessage>() }
     var libp2pBridgeHolder by remember { mutableStateOf<Libp2pMeshBridge?>(null) }
@@ -410,12 +411,14 @@ fun EdgeZApp() {
                 key == "user_public_key"
             ) {
                 libp2pBridgeHolder?.let { bridge ->
-                    if (lastConnectionPreferences.getLibp2pMeshEnabled()) {
-                        bridge.start(bridge.configFromPreferences(lastConnectionPreferences)).onFailure {
-                            Log.w(TAG_USERS, "libp2p mesh restart failed", it)
+                    libp2pExecutor.execute {
+                        if (lastConnectionPreferences.getLibp2pMeshEnabled()) {
+                            bridge.start(bridge.configFromPreferences(lastConnectionPreferences)).onFailure {
+                                Log.w(TAG_USERS, "libp2p mesh restart failed", it)
+                            }
+                        } else {
+                            bridge.stop()
                         }
-                    } else {
-                        bridge.stop()
                     }
                 }
             }
@@ -697,12 +700,14 @@ fun EdgeZApp() {
         }
         libp2pBridgeHolder = libp2pBridge
         fun syncLibp2pMesh() {
-            if (lastConnectionPreferences.getLibp2pMeshEnabled()) {
-                libp2pBridge.start(libp2pBridge.configFromPreferences(lastConnectionPreferences)).onFailure {
-                    Log.w(TAG_USERS, "libp2p mesh start failed", it)
+            libp2pExecutor.execute {
+                if (lastConnectionPreferences.getLibp2pMeshEnabled()) {
+                    libp2pBridge.start(libp2pBridge.configFromPreferences(lastConnectionPreferences)).onFailure {
+                        Log.w(TAG_USERS, "libp2p mesh start failed", it)
+                    }
+                } else {
+                    libp2pBridge.stop()
                 }
-            } else {
-                libp2pBridge.stop()
             }
         }
         syncLibp2pMesh()
@@ -725,7 +730,9 @@ fun EdgeZApp() {
             shuttingDown.set(true)
             clearReconnect()
             connectionPrefs.unregisterOnSharedPreferenceChangeListener(preferenceListener)
-            libp2pBridge.stop()
+            libp2pExecutor.execute {
+                libp2pBridge.stop()
+            }
             libp2pBridgeHolder = null
             removeUsbFrameListener()
             removeBleFrameListener()
@@ -749,11 +756,11 @@ fun EdgeZApp() {
         }
     }
 
-    val savedMapCamera = if (mapCameraLatitude != null && mapCameraLongitude != null && mapCameraZoom != null) {
+    val savedMapCamera = if (mapCameraLatitude != null && mapCameraLongitude != null && (mapCameraZoom ?: 0) > 0) {
         EdgeZMapCamera(
             latitude = mapCameraLatitude ?: 0.0,
             longitude = mapCameraLongitude ?: 0.0,
-            zoom = mapCameraZoom ?: 0,
+            zoom = mapCameraZoom ?: 9,
         )
     } else {
         null
@@ -1103,8 +1110,6 @@ fun EdgeZApp() {
                 dashboardDeviceDisplays = dashboardDeviceDisplays,
                 dashboardWidgetOrder = dashboardWidgetOrder,
                 gpsCursorMarker = mapCursorMarker,
-                savedCamera = savedMapCamera,
-                onCameraChanged = updateMapCamera,
                 onOpenMap = {
                     currentDestination = AppDestination.MAP
                 },
@@ -1173,8 +1178,6 @@ private fun DashboardScreen(
     dashboardDeviceDisplays: Map<String, DashboardDeviceDisplay>,
     dashboardWidgetOrder: List<String>,
     gpsCursorMarker: String,
-    savedCamera: EdgeZMapCamera?,
-    onCameraChanged: (EdgeZMapCamera) -> Unit,
     onOpenMap: () -> Unit,
     onOpenConversation: (HaLowUser) -> Unit,
     onOpenSensorDetail: (HaLowUser) -> Unit,
@@ -1231,24 +1234,12 @@ private fun DashboardScreen(
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(220.dp),
+                        .height(220.dp)
+                        .clickable(onClick = onOpenMap),
                     shape = RoundedCornerShape(8.dp),
                     tonalElevation = 1.dp,
                 ) {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        MapScreen(
-                            users = users,
-                            gpsCursorMarker = gpsCursorMarker,
-                            savedCamera = savedCamera,
-                            onCameraChanged = onCameraChanged,
-                            previewMode = true,
-                        )
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clickable(onClick = onOpenMap),
-                        )
-                    }
+                    DashboardMapPreview(users = users, gpsCursorMarker = gpsCursorMarker)
                 }
             }
             var index = 0
@@ -1314,6 +1305,62 @@ private data class DashboardDeviceItem(
 ) {
     val isCompactWidget: Boolean
         get() = isUserNode(user) || display.widget != DashboardDeviceWidget.TIME_SERIES
+}
+
+@Composable
+private fun DashboardMapPreview(
+    users: List<HaLowUser>,
+    gpsCursorMarker: String,
+) {
+    val locatedUsers = users.filter { it.hasValidMapLocation() }.take(4)
+    val gpsColor = markerTintColor(gpsCursorMarker) ?: MaterialTheme.colorScheme.primary
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+    ) {
+        Column(
+            modifier = Modifier.align(Alignment.TopStart),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text("Map", style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (locatedUsers.isEmpty()) {
+                    "No shared locations yet"
+                } else {
+                    "${locatedUsers.size} visible location${if (locatedUsers.size == 1) "" else "s"}"
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        Column(
+            modifier = Modifier.align(Alignment.BottomStart),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            locatedUsers.forEach { user ->
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Surface(
+                        modifier = Modifier
+                            .width(10.dp)
+                            .height(10.dp),
+                        shape = RoundedCornerShape(5.dp),
+                        color = user.markerTintColor() ?: gpsColor,
+                        content = {},
+                    )
+                    Text(user.displayName, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+        Text(
+            "Open",
+            modifier = Modifier.align(Alignment.BottomEnd),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
 }
 
 @Composable

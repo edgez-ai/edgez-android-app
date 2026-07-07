@@ -570,6 +570,10 @@ private fun readCurrentMapCamera(): EdgeZMapCamera? {
 }
 
 private fun restoreMapCamera(camera: EdgeZMapCamera, controller: MapController?) {
+    if (camera.zoom <= 0) {
+        Log.w(TAG_MAP, "Skipping map camera restore with invalid zoom=${camera.zoom}")
+        return
+    }
     runCatching {
         Framework.nativeStopLocationFollow()
         Framework.nativeZoomToPoint(camera.latitude, camera.longitude, camera.zoom, false)

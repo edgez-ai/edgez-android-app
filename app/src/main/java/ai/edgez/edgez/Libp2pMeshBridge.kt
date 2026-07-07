@@ -22,19 +22,27 @@ class Libp2pMeshBridge(
     private val onGossipPayload: (ByteArray) -> Unit,
 ) : Libp2pNative.Callback {
     private val appContext = context.applicationContext
+    @Volatile
     private var running = false
 
+    @Synchronized
     fun start(config: Libp2pMeshConfig): Result<String> {
         return runCatching {
             Libp2pNative.setCallback(this)
             val result = Libp2pNative.start(config.toJson())
+            val json = JSONObject(result)
+            check(json.optBoolean("ok", false)) { json.optString("error", "libp2p mesh start failed") }
             running = true
             Log.i(TAG_LIBP2P, "libp2p mesh start result=$result")
             result
+        }.onFailure {
+            runCatching { Libp2pNative.setCallback(null) }
         }
     }
 
+    @Synchronized
     fun stop(): Result<String> {
+        if (!running) return Result.success("""{"ok":true,"state":"stopped"}""")
         return runCatching {
             running = false
             val result = Libp2pNative.stop()
