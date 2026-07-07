@@ -9,7 +9,7 @@ import ai.edgez.edgez.usb.PacketMime
 import java.util.UUID
 
 private const val DATABASE_NAME = "edgez_local.db"
-private const val DATABASE_VERSION = 8
+private const val DATABASE_VERSION = 9
 private const val TABLE_USERS = "halow_users"
 private const val TABLE_MESSAGES = "conversation_messages"
 private const val TABLE_SENSOR_DATA = "sensor_data"
@@ -52,6 +52,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 geo_fence_alert_condition INTEGER NOT NULL DEFAULT 0,
                 sleeping INTEGER NOT NULL DEFAULT 0,
                 dashboard_show_on INTEGER NOT NULL DEFAULT 0,
+                dashboard_widget TEXT NOT NULL DEFAULT 'TEMP_HUMIDITY',
                 dashboard_range TEXT NOT NULL DEFAULT 'LATEST'
             )
             """.trimIndent(),
@@ -113,6 +114,18 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
         if (oldVersion < 8) {
             addColumnIfMissing(db, TABLE_USERS, "dashboard_show_on", "INTEGER NOT NULL DEFAULT 0")
             addColumnIfMissing(db, TABLE_USERS, "dashboard_range", "TEXT NOT NULL DEFAULT 'LATEST'")
+        }
+        if (oldVersion < 9) {
+            addColumnIfMissing(db, TABLE_USERS, "dashboard_widget", "TEXT NOT NULL DEFAULT 'TEMP_HUMIDITY'")
+            db.execSQL(
+                """
+                UPDATE $TABLE_USERS
+                SET dashboard_widget = CASE
+                    WHEN dashboard_range = 'LATEST' THEN 'TEMP_HUMIDITY'
+                    ELSE 'TIME_SERIES'
+                END
+                """.trimIndent(),
+            )
         }
     }
 
@@ -270,7 +283,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
         val displays = linkedMapOf<String, DashboardDeviceDisplay>()
         readableDatabase.query(
             TABLE_USERS,
-            arrayOf("user_uuid", "dashboard_show_on", "dashboard_range"),
+            arrayOf("user_uuid", "dashboard_show_on", "dashboard_widget", "dashboard_range"),
             null,
             null,
             null,
@@ -279,12 +292,14 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
         ).use { cursor ->
             val userUuidIndex = cursor.getColumnIndexOrThrow("user_uuid")
             val showIndex = cursor.getColumnIndexOrThrow("dashboard_show_on")
+            val widgetIndex = cursor.getColumnIndexOrThrow("dashboard_widget")
             val rangeIndex = cursor.getColumnIndexOrThrow("dashboard_range")
             while (cursor.moveToNext()) {
                 val deviceKey = cursor.getString(userUuidIndex)
                 displays[deviceKey] = DashboardDeviceDisplay(
                     deviceKey = deviceKey,
                     showOnDashboard = cursor.getInt(showIndex) != 0,
+                    widget = DashboardDeviceWidget.fromName(cursor.getString(widgetIndex)),
                     range = DashboardDeviceRange.fromName(cursor.getString(rangeIndex)),
                 )
             }
@@ -297,6 +312,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
             TABLE_USERS,
             ContentValues().apply {
                 put("dashboard_show_on", if (display.showOnDashboard) 1 else 0)
+                put("dashboard_widget", display.widget.name)
                 put("dashboard_range", display.range.name)
             },
             "user_uuid = ?",
@@ -307,7 +323,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
     fun getDashboardDeviceDisplay(deviceKey: String): DashboardDeviceDisplay {
         readableDatabase.query(
             TABLE_USERS,
-            arrayOf("dashboard_show_on", "dashboard_range"),
+            arrayOf("dashboard_show_on", "dashboard_widget", "dashboard_range"),
             "user_uuid = ?",
             arrayOf(deviceKey),
             null,
@@ -319,6 +335,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 return DashboardDeviceDisplay(
                     deviceKey = deviceKey,
                     showOnDashboard = cursor.getInt(cursor.getColumnIndexOrThrow("dashboard_show_on")) != 0,
+                    widget = DashboardDeviceWidget.fromName(cursor.getString(cursor.getColumnIndexOrThrow("dashboard_widget"))),
                     range = DashboardDeviceRange.fromName(cursor.getString(cursor.getColumnIndexOrThrow("dashboard_range"))),
                 )
             }
@@ -354,6 +371,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 put("geo_fence_alert_condition", 0)
                 put("sleeping", if (user.sleeping) 1 else 0)
                 put("dashboard_show_on", if (dashboardDisplay.showOnDashboard) 1 else 0)
+                put("dashboard_widget", dashboardDisplay.widget.name)
                 put("dashboard_range", dashboardDisplay.range.name)
             },
             SQLiteDatabase.CONFLICT_REPLACE,

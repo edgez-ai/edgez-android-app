@@ -975,6 +975,13 @@ private fun DashboardScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            val dashboardItems = users.mapNotNull { user ->
+                val deviceKey = conversationKey(user)
+                val display = dashboardDeviceDisplays[deviceKey]?.takeIf { it.showOnDashboard } ?: return@mapNotNull null
+                DashboardDeviceItem(user, display, sensorSamples[deviceKey].orEmpty())
+            }
+            val compactItems = dashboardItems.filter { it.display.widget != DashboardDeviceWidget.TIME_SERIES }
+            val fullWidthItems = dashboardItems.filter { it.display.widget == DashboardDeviceWidget.TIME_SERIES }
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -994,15 +1001,6 @@ private fun DashboardScreen(
                         Spacer(Modifier.width(8.dp))
                         Text("Provisioning")
                     }
-                }
-            }
-            users.mapNotNull { user ->
-                val deviceKey = conversationKey(user)
-                val display = dashboardDeviceDisplays[deviceKey]?.takeIf { it.showOnDashboard } ?: return@mapNotNull null
-                DashboardDeviceItem(user, display, sensorSamples[deviceKey].orEmpty())
-            }.forEach { dashboardItem ->
-                item {
-                    DashboardSensorCard(dashboardItem)
                 }
             }
             item {
@@ -1029,6 +1027,29 @@ private fun DashboardScreen(
                     }
                 }
             }
+            compactItems.chunked(2).forEach { rowItems ->
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        rowItems.forEach { dashboardItem ->
+                            DashboardSensorCard(
+                                item = dashboardItem,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        if (rowItems.size == 1) {
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+            fullWidthItems.forEach { dashboardItem ->
+                item {
+                    DashboardSensorCard(dashboardItem)
+                }
+            }
         }
     }
 }
@@ -1040,34 +1061,60 @@ private data class DashboardDeviceItem(
 )
 
 @Composable
-private fun DashboardSensorCard(item: DashboardDeviceItem) {
+private fun DashboardSensorCard(
+    item: DashboardDeviceItem,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+) {
     val sample = dashboardSampleForRange(item.samples, item.display.range)
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+    val titleColor = item.user.markerTintColor() ?: MaterialTheme.colorScheme.onSurface
+    val compact = item.display.widget != DashboardDeviceWidget.TIME_SERIES
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+                .padding(if (compact) 8.dp else 12.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 6.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "${item.user.deviceType.label} · ${item.user.displayName}",
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Text(item.display.range.label, style = MaterialTheme.typography.bodySmall)
+            if (item.display.widget == DashboardDeviceWidget.TEMP_HUMIDITY) {
+                Text(
+                    item.user.displayName,
+                    color = titleColor,
+                    style = MaterialTheme.typography.titleSmall,
+                )
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "${item.user.deviceType.label} · ${item.user.displayName}",
+                            color = titleColor,
+                            style = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
+                        )
+                        Text(item.display.range.label, style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (!compact) {
+                        Text("Node ${item.user.nodeId}", style = MaterialTheme.typography.bodySmall)
+                    }
                 }
-                Text("Node ${item.user.nodeId}", style = MaterialTheme.typography.bodySmall)
             }
             if (sample == null || !sample.data.hasAnyValue) {
-                Text("No sensor data", style = MaterialTheme.typography.bodyMedium)
+                Text("No sensor data", style = MaterialTheme.typography.bodySmall)
+            } else if (item.display.widget == DashboardDeviceWidget.TEMP_HUMIDITY) {
+                if (sample.data.temperature == null && sample.data.humidity == null) {
+                    Text("No temp or humidity", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    DashboardSensorValueRow("Temp", sample.data.temperature, "°C")
+                    DashboardSensorValueRow("Humidity", sample.data.humidity, "%")
+                }
             } else {
                 DashboardSensorValueRows(sample.data)
                 Text(
-                    if (item.display.range == DashboardDeviceRange.LATEST) {
+                    if (item.display.widget == DashboardDeviceWidget.LATEST_VALUE) {
                         "Updated ${formatDashboardSensorAge(sample.timestampMs)}"
                     } else {
                         "${item.samples.countSamplesInRange(item.display.range)} samples"

@@ -53,6 +53,20 @@ private data class SensorChartScale(
 
 private const val SENSOR_CHART_WINDOW_MS = 60L * 60L * 1000L
 
+enum class DashboardDeviceWidget(
+    val label: String,
+) {
+    TEMP_HUMIDITY("Temp & Humidity"),
+    LATEST_VALUE("Latest value"),
+    TIME_SERIES("Time series");
+
+    companion object {
+        fun fromName(name: String?): DashboardDeviceWidget {
+            return entries.firstOrNull { it.name == name } ?: TEMP_HUMIDITY
+        }
+    }
+}
+
 enum class DashboardDeviceRange(
     val label: String,
     val windowMs: Long?,
@@ -63,6 +77,8 @@ enum class DashboardDeviceRange(
     LAST_6_HOURS("Last 6 hours", 6L * 60L * 60L * 1000L);
 
     companion object {
+        val timeSeriesOptions: List<DashboardDeviceRange> = listOf(LAST_30_MIN, LAST_1_HOUR, LAST_6_HOURS)
+
         fun fromName(name: String?): DashboardDeviceRange {
             return entries.firstOrNull { it.name == name } ?: LATEST
         }
@@ -72,6 +88,7 @@ enum class DashboardDeviceRange(
 data class DashboardDeviceDisplay(
     val deviceKey: String,
     val showOnDashboard: Boolean = false,
+    val widget: DashboardDeviceWidget = DashboardDeviceWidget.TEMP_HUMIDITY,
     val range: DashboardDeviceRange = DashboardDeviceRange.LATEST,
 )
 
@@ -140,12 +157,13 @@ private fun DashboardDisplayCard(
     onDisplayChange: (DashboardDeviceDisplay) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var widgetExpanded by remember { mutableStateOf(false) }
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -164,15 +182,49 @@ private fun DashboardDisplayCard(
                 TextButton(
                     modifier = Modifier.fillMaxWidth(),
                     enabled = display.showOnDashboard,
-                    onClick = { expanded = true },
+                    onClick = { widgetExpanded = true },
                 ) {
-                    Text(display.range.label)
+                    Text("Widget: ${display.widget.label}")
                 }
                 DropdownMenu(
-                    expanded = expanded && display.showOnDashboard,
+                    expanded = widgetExpanded && display.showOnDashboard,
+                    onDismissRequest = { widgetExpanded = false },
+                ) {
+                    DashboardDeviceWidget.entries.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option.label) },
+                            onClick = {
+                                onDisplayChange(
+                                    display.copy(
+                                        widget = option,
+                                        range = if (option != DashboardDeviceWidget.TIME_SERIES) {
+                                            DashboardDeviceRange.LATEST
+                                        } else if (display.range == DashboardDeviceRange.LATEST) {
+                                            DashboardDeviceRange.LAST_30_MIN
+                                        } else {
+                                            display.range
+                                        },
+                                    ),
+                                )
+                                widgetExpanded = false
+                            },
+                        )
+                    }
+                }
+            }
+            Box {
+                TextButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = display.showOnDashboard && display.widget == DashboardDeviceWidget.TIME_SERIES,
+                    onClick = { expanded = true },
+                ) {
+                    Text("Range: ${display.range.takeIf { it != DashboardDeviceRange.LATEST }?.label ?: DashboardDeviceRange.LAST_30_MIN.label}")
+                }
+                DropdownMenu(
+                    expanded = expanded && display.showOnDashboard && display.widget == DashboardDeviceWidget.TIME_SERIES,
                     onDismissRequest = { expanded = false },
                 ) {
-                    DashboardDeviceRange.entries.forEach { option ->
+                    DashboardDeviceRange.timeSeriesOptions.forEach { option ->
                         DropdownMenuItem(
                             text = { Text(option.label) },
                             onClick = {
