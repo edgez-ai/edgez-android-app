@@ -916,23 +916,10 @@ private fun SettingsContent(
                     Spacer(Modifier.height(6.dp))
                 } else {
                     Text("Settings", style = MaterialTheme.typography.headlineMedium)
-                    Spacer(Modifier.height(6.dp))
                 }
-                Text("Interface: ${activeConnection.name}", style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(6.dp))
-                if (!provisionMode) {
-                    Text(
-                        "Settings source: ${if (showDeviceSettingsOnly) "Device" else "App"}",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
+                if (provisionMode || showDeviceSettingsOnly) {
                     Spacer(Modifier.height(6.dp))
-                }
-                Text(status, style = MaterialTheme.typography.bodyMedium)
-                if (!provisionMode && !showDeviceSettingsOnly) {
-                    Spacer(Modifier.height(10.dp))
-                    Button(onClick = { requestIgnoreBatteryOptimizations() }) {
-                        Text("Allow background connection")
-                    }
+                    Text(status, style = MaterialTheme.typography.bodyMedium)
                 }
             }
 
@@ -951,7 +938,14 @@ private fun SettingsContent(
             }
 
             if (!showDeviceSettingsOnly) item {
-                SettingsCard(title = "BLE connection") {
+                SettingsCard(
+                    title = "BLE connection",
+                    action = {
+                        OutlinedButton(onClick = { showBlePicker = true }) {
+                            Text("Select")
+                        }
+                    },
+                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -972,9 +966,6 @@ private fun SettingsContent(
                             )
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = { showBlePicker = true }) {
-                                Text("Select")
-                            }
                             Button(
                                 enabled = activeConnection == ActiveConnection.BLE || selectedBleAddress.isNotBlank(),
                                 onClick = { connectSavedBle() },
@@ -1348,6 +1339,24 @@ private fun SettingsContent(
                         Spacer(Modifier.height(10.dp))
                         Button(onClick = { saveMeshPreferences() }) {
                             Text(if (deviceMode) "Save to device" else "Save settings")
+                        }
+                    }
+                }
+            }
+
+            if (!provisionMode && !showDeviceSettingsOnly && selectedSettingsTab == SettingsTab.OTHERS) item {
+                SettingsCard(title = "Background connection") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Allow background connection", style = MaterialTheme.typography.titleSmall)
+                            Text("Request permission to keep BLE connected in the background", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Button(onClick = { requestIgnoreBatteryOptimizations() }) {
+                            Text("Allow")
                         }
                     }
                 }
