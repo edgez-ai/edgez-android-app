@@ -63,6 +63,7 @@ import ai.edgez.edgez.usb.PacketMime
 import ai.edgez.halow.UsbControl
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.security.SecureRandom
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -75,6 +76,7 @@ private const val TAG_USERS = "EdgeZUsers"
 private const val HALOW_BROADCAST_NODE_48 = 0xffffffffffffL
 private const val HALOW_BROADCAST_NODE_32 = 0xffffffffL
 private const val VOICE_CHUNK_SEND_SPACING_MS = 120L
+private val GROUP_RANDOM = SecureRandom()
 
 private fun paceVoiceChunkSend(index: Int, totalChunks: Int) {
     if (index >= totalChunks - 1) return
@@ -121,6 +123,41 @@ private fun conversationKey(user: HaLowUser): String = user.userUuid.ifBlank { u
 
 private fun isUserNode(user: HaLowUser): Boolean {
     return user.deviceType == EdgeZDeviceType.USER || user.deviceType == EdgeZDeviceType.UNSPECIFIED
+}
+
+private fun isConversationNode(user: HaLowUser): Boolean {
+    return isUserNode(user) || user.deviceType == EdgeZDeviceType.GROUP
+}
+
+private fun newGroupPsk(): ByteArray = ByteArray(32).also(GROUP_RANDOM::nextBytes)
+
+private fun newGroupNodeNum(existingNodeNums: Set<Long>): Long {
+    while (true) {
+        val candidate = GROUP_RANDOM.nextLong() and 0xffffffffffffL
+        if (candidate != 0L &&
+            candidate != HALOW_BROADCAST_NODE_48 &&
+            candidate != HALOW_BROADCAST_NODE_32 &&
+            candidate !in existingNodeNums
+        ) {
+            return candidate
+        }
+    }
+}
+
+private fun createGroupNode(name: String, existingNodeNums: Set<Long>): HaLowUser {
+    val groupUuid = UUID.randomUUID()
+    val groupName = name.ifBlank { "Group" }.take(64)
+    return HaLowUser(
+        nodeNum = newGroupNodeNum(existingNodeNums),
+        userId = groupUuid.leastSignificantBits,
+        userUuid = groupUuid.toString(),
+        shortName = groupName.take(4),
+        longName = groupName,
+        route = "LOCAL",
+        lastSeenMs = System.currentTimeMillis(),
+        publicKey = newGroupPsk(),
+        deviceType = EdgeZDeviceType.GROUP,
+    )
 }
 
 private fun normalizeDashboardWidgetOrder(
@@ -506,7 +543,10 @@ fun EdgeZApp() {
                     if (message != null && conversationMessage != null) {
                         val identity = lastConnectionPreferences.getOrCreateUserIdentity()
                         val senderUserUuid = packetUserUuid(message.userHigh, message.userLow)
-                        val senderUser = if (senderUserUuid.isNotBlank()) {
+                        val groupUser = haLowUsers.values.firstOrNull {
+                            it.deviceType == EdgeZDeviceType.GROUP && it.nodeNum == message.to
+                        }
+                        val senderUser = groupUser ?: if (senderUserUuid.isNotBlank()) {
                             haLowUsers.values.firstOrNull { it.userUuid == senderUserUuid }
                                 ?: user?.takeIf { it.userUuid == senderUserUuid }
                         } else {
@@ -519,7 +559,7 @@ fun EdgeZApp() {
                                     .format(message.from, message.to),
                             )
                         } else {
-                            val senderNodeNum = senderUser.nodeNum
+                            val senderNodeNum = if (senderUser.deviceType == EdgeZDeviceType.GROUP) message.from else senderUser.nodeNum
                             val entry = runCatching {
                                 when (message.mime) {
                                     PacketMime.VOICE -> {
@@ -798,7 +838,7 @@ fun EdgeZApp() {
                     )
                 } else if (conversationUser != null) {
                     val conversationUserKey = conversationKey(conversationUser)
-                    val isUserConversation = isUserNode(conversationUser)
+                    val isUserConversation = isConversationNode(conversationUser)
                     if (!isUserConversation) {
                         DeviceDetailScreen(
                             user = conversationUser,
@@ -940,8 +980,12 @@ fun EdgeZApp() {
                         selectedFilter = selectedNodeListFilter,
                         dashboardDeviceDisplays = dashboardDeviceDisplays,
                         onSelectedFilterChange = { selectedNodeListFilter = it },
-                        onCreateGroup = {
+                        onCreateGroup = { groupName ->
+                            val group = createGroupNode(groupName, haLowUsers.keys)
+                            edgeZDatabase.upsertUser(group)
+                            haLowUsers = haLowUsers + (group.nodeNum to group)
                             selectedNodeListFilter = NodeListFilter.GROUPS
+                            selectedConversationUser = group
                         },
                         onToggleDashboard = { user ->
                             val userKey = conversationKey(user)

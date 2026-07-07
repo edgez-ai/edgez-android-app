@@ -248,7 +248,8 @@ enum class EdgeZDeviceType(val protoValue: Int, val label: String) {
     USER(2, "User"),
     GATEWAY(3, "Gateway"),
     BEACON(4, "Beacon"),
-    SENSOR(5, "Sensor");
+    SENSOR(5, "Sensor"),
+    GROUP(100, "Group");
 
     companion object {
         fun fromProtoValue(value: Int): EdgeZDeviceType {

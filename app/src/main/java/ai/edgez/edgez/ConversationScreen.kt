@@ -64,8 +64,9 @@ fun ConversationScreen(
     ) { granted ->
         status = if (granted) "Hold voice to record" else "Microphone permission denied"
     }
-    val canSend = activeConnection != ActiveConnection.NONE && user.publicKey.size == 32 && draft.isNotBlank()
-    val canSendVoice = activeConnection != ActiveConnection.NONE
+    val hasConversationKey = user.publicKey.size == 32
+    val canSend = activeConnection != ActiveConnection.NONE && hasConversationKey && draft.isNotBlank()
+    val canSendVoice = activeConnection != ActiveConnection.NONE && hasConversationKey
 
     Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
         Column(
@@ -113,13 +114,21 @@ fun ConversationScreen(
             }
 
             Text(
-                text = if (user.publicKey.size == 32) {
-                    "Encrypted with ECDH + AES-GCM"
+                text = if (hasConversationKey) {
+                    if (user.deviceType == EdgeZDeviceType.GROUP) {
+                        "Encrypted with group PSK + AES-GCM"
+                    } else {
+                        "Encrypted with ECDH + AES-GCM"
+                    }
                 } else {
-                    "Waiting for this user's public key"
+                    if (user.deviceType == EdgeZDeviceType.GROUP) {
+                        "Waiting for this group's PSK"
+                    } else {
+                        "Waiting for this user's public key"
+                    }
                 },
                 style = MaterialTheme.typography.bodyMedium,
-                color = if (user.publicKey.size == 32) {
+                color = if (hasConversationKey) {
                     MaterialTheme.colorScheme.primary
                 } else {
                     MaterialTheme.colorScheme.error
@@ -255,7 +264,8 @@ fun ConversationScreen(
                     text = when {
                         recording -> "Recording"
                         canSendVoice -> "Hold to Talk"
-                        else -> "Connect to send voice"
+                        activeConnection == ActiveConnection.NONE -> "Connect to send voice"
+                        else -> "Missing encryption key"
                     },
                     modifier = Modifier
                         .fillMaxWidth()
