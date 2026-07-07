@@ -1104,7 +1104,7 @@ private fun DashboardSensorCard(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "${item.user.deviceType.label} · ${item.user.displayName}",
+                            item.user.displayName,
                             style = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
                         )
                         Text(item.display.range.label, style = MaterialTheme.typography.bodySmall)
