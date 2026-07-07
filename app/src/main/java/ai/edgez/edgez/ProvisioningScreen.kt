@@ -63,7 +63,11 @@ import java.util.UUID
 
 private enum class ProvisionStep {
     SELECT_BLE,
-    DEVICE_SETTINGS,
+    IDENTITY,
+    LOCATION,
+    GEO_FENCE,
+    SENSOR,
+    NETWORK,
 }
 
 private fun parseDeviceMacAddress(input: String): Long {
@@ -202,9 +206,25 @@ private fun ProvisioningContent(
     val activity = context as? ComponentActivity
     val currentOnTransportConnectionChange by rememberUpdatedState(onTransportConnectionChange)
     val provisionBleReady = provisionMode && activeConnection == ActiveConnection.BLE && bleReady
-    val showProvisionDeviceSettings = provisionMode && provisionStep == ProvisionStep.DEVICE_SETTINGS && provisionBleReady
+    val showProvisionDeviceSettings = provisionMode && provisionStep != ProvisionStep.SELECT_BLE && provisionBleReady
     val deviceMode = provisionBleReady
     val showDeviceSettingsOnly = showProvisionDeviceSettings
+    val provisionStepNumber = when (provisionStep) {
+        ProvisionStep.SELECT_BLE -> 1
+        ProvisionStep.IDENTITY -> 2
+        ProvisionStep.LOCATION -> 3
+        ProvisionStep.GEO_FENCE -> 4
+        ProvisionStep.SENSOR -> 5
+        ProvisionStep.NETWORK -> 6
+    }
+    val provisionStepTitle = when (provisionStep) {
+        ProvisionStep.SELECT_BLE -> "Select BLE device"
+        ProvisionStep.IDENTITY -> "Name, ID, and keys"
+        ProvisionStep.LOCATION -> "Location"
+        ProvisionStep.GEO_FENCE -> "Geo fence"
+        ProvisionStep.SENSOR -> "Sensor"
+        ProvisionStep.NETWORK -> "Network"
+    }
 
     if (showGeoFencePage) {
         GeoFenceMaintenanceScreen(
@@ -627,25 +647,47 @@ private fun ProvisioningContent(
     }
 
     fun goBackProvisionStep() {
-        if (provisionStep == ProvisionStep.DEVICE_SETTINGS) {
-            provisionStep = ProvisionStep.SELECT_BLE
-            status = "Select an EdgeZ BLE device"
+        provisionStep = when (provisionStep) {
+            ProvisionStep.SELECT_BLE -> {
+                cancelProvision()
+                return
+            }
+            ProvisionStep.IDENTITY -> ProvisionStep.SELECT_BLE
+            ProvisionStep.LOCATION -> ProvisionStep.IDENTITY
+            ProvisionStep.GEO_FENCE -> ProvisionStep.LOCATION
+            ProvisionStep.SENSOR -> ProvisionStep.GEO_FENCE
+            ProvisionStep.NETWORK -> ProvisionStep.SENSOR
+        }
+        status = if (provisionStep == ProvisionStep.SELECT_BLE) {
+            "Select an EdgeZ BLE device"
         } else {
-            cancelProvision()
+            "Device settings loaded"
         }
     }
 
     fun goNextProvisionStep() {
-        if (provisionStep == ProvisionStep.SELECT_BLE) {
-            if (!provisionBleReady) {
-                if (connectSelectedBleForProvision()) {
-                    pendingProvisionNext = true
+        when (provisionStep) {
+            ProvisionStep.SELECT_BLE -> {
+                if (!provisionBleReady) {
+                    if (connectSelectedBleForProvision()) {
+                        pendingProvisionNext = true
+                    }
+                    return
                 }
-                return
+                pendingProvisionNext = false
+                provisionStep = ProvisionStep.IDENTITY
+                requestDeviceSettings(ActiveConnection.BLE)
             }
-            pendingProvisionNext = false
-            provisionStep = ProvisionStep.DEVICE_SETTINGS
-            requestDeviceSettings(ActiveConnection.BLE)
+            ProvisionStep.IDENTITY -> provisionStep = ProvisionStep.LOCATION
+            ProvisionStep.LOCATION -> provisionStep = ProvisionStep.GEO_FENCE
+            ProvisionStep.GEO_FENCE -> provisionStep = ProvisionStep.SENSOR
+            ProvisionStep.SENSOR -> provisionStep = ProvisionStep.NETWORK
+            ProvisionStep.NETWORK -> sendDeviceSettingsToDevice(
+                onSuccessAction = {
+                    disconnectProvisionTransport()
+                    onProvisionComplete()
+                },
+            )
         }
     }
 
@@ -705,7 +747,7 @@ private fun ProvisioningContent(
                     if (provisionMode && provisionStep == ProvisionStep.SELECT_BLE) {
                         if (pendingProvisionNext) {
                             pendingProvisionNext = false
-                            provisionStep = ProvisionStep.DEVICE_SETTINGS
+                            provisionStep = ProvisionStep.IDENTITY
                             requestDeviceSettings(ActiveConnection.BLE)
                         } else {
                             status = "BLE ready; tap Next"
@@ -740,7 +782,7 @@ private fun ProvisioningContent(
     }
 
     LaunchedEffect(activeConnection, bleReady, provisionMode) {
-        if (provisionMode && !provisionBleReady && provisionStep == ProvisionStep.DEVICE_SETTINGS) {
+        if (provisionMode && !provisionBleReady && provisionStep != ProvisionStep.SELECT_BLE) {
             provisionStep = ProvisionStep.SELECT_BLE
         }
     }
@@ -784,14 +826,10 @@ private fun ProvisioningContent(
                         modifier = Modifier.weight(1f),
                         enabled = if (provisionStep == ProvisionStep.SELECT_BLE) selectedBle != null else showDeviceSettingsOnly,
                         onClick = {
-                            if (provisionStep == ProvisionStep.SELECT_BLE) {
-                                goNextProvisionStep()
-                            } else {
-                                saveMeshPreferences()
-                            }
+                            goNextProvisionStep()
                         },
                     ) {
-                        Text(if (provisionStep == ProvisionStep.SELECT_BLE) "Next" else "Save")
+                        Text(if (provisionStep == ProvisionStep.NETWORK) "Save" else "Next")
                     }
                 }
             }
@@ -807,11 +845,7 @@ private fun ProvisioningContent(
             item {
                 if (provisionMode) {
                     Text(
-                        if (provisionStep == ProvisionStep.SELECT_BLE) {
-                            "Step 1 of 2: Select BLE device"
-                        } else {
-                            "Step 2 of 2: Configure device"
-                        },
+                        "Step $provisionStepNumber of 6: $provisionStepTitle",
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Spacer(Modifier.height(6.dp))
@@ -935,9 +969,9 @@ private fun ProvisioningContent(
                 }
             }
 
-            if (!provisionMode || showDeviceSettingsOnly) item {
+            if (!provisionMode || (showDeviceSettingsOnly && provisionStep == ProvisionStep.IDENTITY)) item {
                 SettingsCard(title = if (showDeviceSettingsOnly) "Device user" else "User") {
-                    Text("User ID", style = MaterialTheme.typography.titleSmall)
+                    Text(if (showDeviceSettingsOnly) "ID" else "User ID", style = MaterialTheme.typography.titleSmall)
                     Text(
                         if (showDeviceSettingsOnly) deviceIdentity?.userUuid ?: "Not loaded" else userIdentity.userUuid,
                         style = MaterialTheme.typography.bodyMedium,
@@ -972,7 +1006,7 @@ private fun ProvisioningContent(
                         Text(deviceIdentity?.privateKey?.let(::formatHex) ?: "Not loaded", style = MaterialTheme.typography.bodySmall)
                         Spacer(Modifier.height(10.dp))
                         Button(onClick = { regenerateDeviceIdentity() }) {
-                            Text("Regenerate device user ID")
+                            Text("Regenerate ID and key pair")
                         }
                     } else {
                         Spacer(Modifier.height(10.dp))
@@ -1020,7 +1054,11 @@ private fun ProvisioningContent(
                             }
                         }
                     }
-                    Spacer(Modifier.height(10.dp))
+                }
+            }
+
+            if (!provisionMode || (showDeviceSettingsOnly && provisionStep == ProvisionStep.LOCATION)) item {
+                SettingsCard(title = if (showDeviceSettingsOnly) "Device location" else "Location") {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1061,7 +1099,7 @@ private fun ProvisioningContent(
                 }
             }
 
-            if (showDeviceSettingsOnly) item {
+            if (showDeviceSettingsOnly && provisionStep == ProvisionStep.GEO_FENCE) item {
                 SettingsCard(title = "Device geofence") {
                     val selectedGeoFence = deviceGeoFences.firstOrNull { DeviceGeoFence.matchesKey(it, selectedDeviceGeoFenceKey) }
                     Text(
@@ -1111,7 +1149,7 @@ private fun ProvisioningContent(
                 }
             }
 
-            if (showDeviceSettingsOnly) item {
+            if (showDeviceSettingsOnly && provisionStep == ProvisionStep.SENSOR) item {
                 SettingsCard(title = "Device sensors") {
                     SensorTypeDropdown(
                         label = "UART/I2C connector",
@@ -1136,15 +1174,11 @@ private fun ProvisioningContent(
                             status = "RS485 sensor set to ${selectedSensor.label}"
                         },
                     )
-                    Spacer(Modifier.height(10.dp))
-                    Button(onClick = { sendDeviceSettingsToDevice() }) {
-                        Text("Save sensors")
-                    }
                 }
             }
 
-            if (!provisionMode || showDeviceSettingsOnly) item {
-                SettingsCard(title = if (showDeviceSettingsOnly) "Device settings" else "Mesh network") {
+            if (!provisionMode || (showDeviceSettingsOnly && provisionStep == ProvisionStep.NETWORK)) item {
+                SettingsCard(title = if (showDeviceSettingsOnly) "Network" else "Mesh network") {
                     if (!showDeviceSettingsOnly) {
                         Box(modifier = Modifier.fillMaxWidth()) {
                             OutlinedButton(
