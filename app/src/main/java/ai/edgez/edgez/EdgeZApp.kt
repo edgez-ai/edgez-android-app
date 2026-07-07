@@ -1113,7 +1113,7 @@ private fun DashboardScreen(
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(180.dp),
+                        .height(220.dp),
                     shape = RoundedCornerShape(8.dp),
                     tonalElevation = 1.dp,
                 ) {
