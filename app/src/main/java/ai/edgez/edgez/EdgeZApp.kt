@@ -412,6 +412,7 @@ fun EdgeZApp() {
             EdgeZBeaconRunner.setActiveConnection(ActiveConnection.NONE)
             BleForegroundService.stop(context.applicationContext)
             if (lastConnectionPreferences.getLibp2pMeshEnabled()) {
+                Log.d(TAG_USERS, "libp2p still enabled; keep beacon runner after ${connection.name} disconnect")
                 startMeshBeaconRunner()
             }
             scheduleReconnect(connection)
@@ -434,6 +435,7 @@ fun EdgeZApp() {
             EdgeZBeaconRunner.setActiveConnection(ActiveConnection.NONE)
             BleForegroundService.stop(context.applicationContext)
             if (lastConnectionPreferences.getLibp2pMeshEnabled()) {
+                Log.d(TAG_USERS, "libp2p still enabled; keep beacon runner after manual disconnect of ${connection.name}")
                 startMeshBeaconRunner()
             }
         }

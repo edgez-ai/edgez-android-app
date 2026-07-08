@@ -27,7 +27,9 @@ class BleForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP_CONNECTION_SERVICE -> {
-                EdgeZBeaconRunner.stop()
+                if (!LastConnectionPreferences(this).getLibp2pMeshEnabled()) {
+                    EdgeZBeaconRunner.stop()
+                }
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 return START_NOT_STICKY
