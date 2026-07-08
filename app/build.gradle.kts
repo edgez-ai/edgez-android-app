@@ -7,6 +7,7 @@ val buildEdgezLibp2pAndroid by tasks.registering(Exec::class) {
     workingDir = rootProject.projectDir
     commandLine(rootProject.file("tools/build-edgez-libp2p-android.sh").absolutePath)
     environment("GOCACHE", rootProject.layout.projectDirectory.dir(".gocache").asFile.absolutePath)
+    environment("GOMODCACHE", rootProject.layout.projectDirectory.dir(".gomodcache").asFile.absolutePath)
     inputs.files(fileTree(rootProject.file("native/edgez-libp2p")) {
         include("**/*.go", "go.mod", "go.sum")
     })

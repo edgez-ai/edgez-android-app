@@ -42,6 +42,7 @@ if [[ -z "${NDK_DIR}" || ! -d "${NDK_DIR}" ]]; then
 fi
 
 export GOCACHE="${GOCACHE:-${ROOT_DIR}/.gocache}"
+export GOMODCACHE="${GOMODCACHE:-${ROOT_DIR}/.gomodcache}"
 HOST_TAG="darwin-x86_64"
 case "$(uname -s)" in
   Linux) HOST_TAG="linux-x86_64" ;;
@@ -64,6 +65,8 @@ build_one() {
   mkdir -p "${out_dir}"
 
   echo "Building libedgezlibp2p.so for ${abi}"
+  mkdir -p "${GOCACHE}" "${GOMODCACHE}" "${out_dir}"
+
   if [[ -n "${goarm}" ]]; then
     GOOS=android GOARCH="${goarch}" GOARM="${goarm}" CGO_ENABLED=1 CC="${TOOLCHAIN}/${cc}" \
       go build -buildmode=c-shared -trimpath -ldflags="${LD_FLAGS}" -o "${out_dir}/libedgezlibp2p.so" .
