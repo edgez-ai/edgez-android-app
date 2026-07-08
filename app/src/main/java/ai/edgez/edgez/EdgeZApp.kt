@@ -567,9 +567,9 @@ fun EdgeZApp() {
     ): Result<String> {
         val result = sendAction()
         val meshPassphrase = lastConnectionPreferences.getMeshPassphrase()
-        decodeHaLowSyncFrame(packet, meshPassphrase)?.let {
-            rememberForwardedPacket(it, 0)
-        } ?: decodeNetworkPacket(packet, meshPassphrase)?.let {
+        val decodedPacket = decodeHaLowSyncFrame(packet, meshPassphrase)
+            ?: EdgezUsbControlProto.decodeNetworkPacket(packet, meshPassphrase)
+        decodedPacket?.let {
             rememberForwardedPacket(it, 0)
         }
         publishLibp2pFrame(packet)
