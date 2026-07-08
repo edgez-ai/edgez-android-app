@@ -87,13 +87,21 @@ private enum class Libp2pExtraServerOption(val label: String) {
 }
 
 private fun libp2pExtraServerOptionFor(peers: String): Libp2pExtraServerOption {
-    val normalized = peers.trim()
+    val normalized = normalizeLibp2pBootstrapPeers(peers)
+    val defaultPeers = normalizeLibp2pBootstrapPeers(DEFAULT_LIBP2P_BOOTSTRAP_PEERS)
     return when {
-        normalized.isBlank() -> Libp2pExtraServerOption.NONE
+        normalized == defaultPeers -> Libp2pExtraServerOption.NONE
         normalized == EDGEZ_LIBP2P_BOOTSTRAP_PEER -> Libp2pExtraServerOption.EDGEZ
         else -> Libp2pExtraServerOption.CUSTOM
     }
 }
+
+private fun normalizeLibp2pBootstrapPeers(peers: String): String = peers
+    .split(',', '\n', ';')
+    .map { it.trim() }
+    .filter { it.isNotBlank() }
+    .distinct()
+    .joinToString("\n")
 
 private fun parseDeviceMacAddress(input: String): Long {
     val hex = input.filter { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }
@@ -204,6 +212,8 @@ private fun SettingsContent(
     var libp2pExtraServerOption by rememberSaveable {
         mutableStateOf(libp2pExtraServerOptionFor(libp2pBootstrapPeers))
     }
+    val isCustomBootstrapServerMissing = libp2pExtraServerOption == Libp2pExtraServerOption.CUSTOM && libp2pBootstrapPeers.trim()
+        .isBlank()
     var beaconIntervalSeconds by rememberSaveable {
         mutableStateOf(connectionPreferences.getBeaconIntervalSeconds().toString())
     }
@@ -755,6 +765,10 @@ private fun SettingsContent(
                     }
                 },
             )
+            return
+        }
+        if (libp2pExtraServerOption == Libp2pExtraServerOption.CUSTOM && libp2pBootstrapPeers.trim().isBlank()) {
+            status = "Custom bootstrap server cannot be empty"
             return
         }
         connectionPreferences.setMeshCredentials(country, id, password, hopLimit, beaconInterval)
@@ -1315,7 +1329,11 @@ private fun SettingsContent(
                                     painter = painterResource(
                                         if (passphraseVisible) R.drawable.ic_visibility_off else R.drawable.ic_visibility,
                                     ),
-                                    contentDescription = if (passphraseVisible) "Hide passphrase" else "Show passphrase",
+                                    contentDescription = if (passphraseVisible) {
+                                        "Hide passphrase"
+                                    } else {
+                                        "Show passphrase"
+                                    },
                                 )
                             }
                         },
@@ -1358,11 +1376,9 @@ private fun SettingsContent(
                                         onClick = {
                                             libp2pExtraServerOption = option
                                             libp2pBootstrapPeers = when (option) {
-                                                Libp2pExtraServerOption.NONE -> ""
+                                                Libp2pExtraServerOption.NONE -> DEFAULT_LIBP2P_BOOTSTRAP_PEERS
                                                 Libp2pExtraServerOption.EDGEZ -> EDGEZ_LIBP2P_BOOTSTRAP_PEER
-                                                Libp2pExtraServerOption.CUSTOM -> {
-                                                    if (libp2pBootstrapPeers == EDGEZ_LIBP2P_BOOTSTRAP_PEER) "" else libp2pBootstrapPeers
-                                                }
+                                                Libp2pExtraServerOption.CUSTOM -> libp2pBootstrapPeers
                                             }
                                             libp2pExtraServerDropdownExpanded = false
                                         },
@@ -1370,22 +1386,25 @@ private fun SettingsContent(
                                 }
                             }
                         }
-                        if (libp2pExtraServerOption == Libp2pExtraServerOption.CUSTOM) {
-                            Spacer(Modifier.height(8.dp))
-                            OutlinedTextField(
-                                value = libp2pBootstrapPeers,
-                                onValueChange = { value ->
-                                    libp2pBootstrapPeers = value
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                label = { Text("Custom bootstrap server") },
-                                singleLine = false,
-                                maxLines = 4,
-                                supportingText = {
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = libp2pBootstrapPeers,
+                            onValueChange = { value ->
+                                libp2pBootstrapPeers = value
+                                libp2pExtraServerOption = libp2pExtraServerOptionFor(value)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Bootstrap server list") },
+                            singleLine = false,
+                            maxLines = 4,
+                            supportingText = {
+                                if (isCustomBootstrapServerMissing) {
+                                    Text("Custom bootstrap server cannot be empty")
+                                } else {
                                     Text("Enter relay/DHT server multiaddrs, one per line or separated by commas")
-                                },
-                            )
-                        }
+                                }
+                            },
+                        )
                     }
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
@@ -1447,7 +1466,11 @@ private fun SettingsContent(
                                 IconButton(onClick = { deviceUpstreamWifiPassphraseVisible = !deviceUpstreamWifiPassphraseVisible }) {
                                     Icon(
                                         painter = painterResource(
-                                            if (deviceUpstreamWifiPassphraseVisible) R.drawable.ic_visibility_off else R.drawable.ic_visibility,
+                                            if (deviceUpstreamWifiPassphraseVisible) {
+                                                R.drawable.ic_visibility_off
+                                            } else {
+                                                R.drawable.ic_visibility
+                                            },
                                         ),
                                         contentDescription = if (deviceUpstreamWifiPassphraseVisible) {
                                             "Hide upstream Wi-Fi passphrase"
@@ -1473,7 +1496,10 @@ private fun SettingsContent(
                     }
                     if (!provisionMode) {
                         Spacer(Modifier.height(10.dp))
-                        Button(onClick = { saveMeshPreferences() }) {
+                        Button(
+                            onClick = { saveMeshPreferences() },
+                            enabled = !isCustomBootstrapServerMissing,
+                        ) {
                             Text(if (deviceMode) "Save to device" else "Save settings")
                         }
                     }

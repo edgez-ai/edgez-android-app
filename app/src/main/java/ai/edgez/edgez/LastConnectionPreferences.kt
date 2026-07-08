@@ -28,8 +28,15 @@ private const val KEY_SELECTED_DEVICE_GEOFENCE = "selected_device_geofence"
 private const val KEY_DASHBOARD_WIDGET_ORDER = "dashboard_widget_order"
 private const val DEFAULT_MESH_ID = "edgez"
 private const val DEFAULT_MESH_MAX_HOP = 2
-const val EDGEZ_LIBP2P_BOOTSTRAP_PEER =
+val EDGEZ_LIBP2P_BOOTSTRAP_PEER: String =
     "/ip4/65.20.115.199/tcp/4001/p2p/12D3KooWSMXRqi2rd7p4UPErgVS6zFeYpYuddo8qayYxkSR2WT7Q"
+val DEFAULT_LIBP2P_BOOTSTRAP_PEERS = """
+    /dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN
+    /dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa
+    /dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb
+    /dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt
+    /ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ
+""".trimIndent()
 const val DEFAULT_BEACON_INTERVAL_SECONDS = 30
 private const val DEFAULT_USER_NAME = "EdgeZ User"
 private val SUPPORTED_MESH_COUNTRIES = setOf("US", "JP", "EU")
@@ -65,7 +72,11 @@ class LastConnectionPreferences(context: Context) {
     fun getLibp2pMeshEnabled(): Boolean = prefs.getBoolean(KEY_LIBP2P_MESH_ENABLED, false)
 
     fun getLibp2pBootstrapPeers(): List<String> =
-        parseMultiaddrList(prefs.getString(KEY_LIBP2P_BOOTSTRAP_PEERS, null)).distinct()
+        parseMultiaddrList(
+            prefs.getString(KEY_LIBP2P_BOOTSTRAP_PEERS, null)?.trim()?.ifBlank {
+                DEFAULT_LIBP2P_BOOTSTRAP_PEERS
+            },
+        ).distinct()
 
     fun setLibp2pMeshEnabled(enabled: Boolean) {
         prefs.edit()
@@ -75,7 +86,10 @@ class LastConnectionPreferences(context: Context) {
 
     fun setLibp2pBootstrapPeers(input: String) {
         prefs.edit()
-            .putString(KEY_LIBP2P_BOOTSTRAP_PEERS, input.trim())
+            .putString(
+                KEY_LIBP2P_BOOTSTRAP_PEERS,
+                input.trim().ifBlank { DEFAULT_LIBP2P_BOOTSTRAP_PEERS },
+            )
             .apply()
     }
 
