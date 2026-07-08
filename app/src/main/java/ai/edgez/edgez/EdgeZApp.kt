@@ -462,7 +462,10 @@ fun EdgeZApp() {
                     libp2pExecutor.execute {
                         if (lastConnectionPreferences.getLibp2pMeshEnabled()) {
                             bridge.start(bridge.configFromPreferences(lastConnectionPreferences)).onFailure {
-                                mainHandler.post { libp2pMeshConnected = false }
+                                mainHandler.post {
+                                    libp2pMeshConnected = false
+                                    stopMeshBeaconRunnerIfIdle()
+                                }
                                 Log.w(TAG_USERS, "libp2p mesh restart failed", it)
                             }.onSuccess {
                                 mainHandler.post {
@@ -852,7 +855,10 @@ fun EdgeZApp() {
             libp2pExecutor.execute {
                 if (lastConnectionPreferences.getLibp2pMeshEnabled()) {
                     libp2pBridge.start(libp2pBridge.configFromPreferences(lastConnectionPreferences)).onFailure {
-                        mainHandler.post { libp2pMeshConnected = false }
+                        mainHandler.post {
+                            libp2pMeshConnected = false
+                            stopMeshBeaconRunnerIfIdle()
+                        }
                         Log.w(TAG_USERS, "libp2p mesh start failed", it)
                     }
                         .onSuccess {
