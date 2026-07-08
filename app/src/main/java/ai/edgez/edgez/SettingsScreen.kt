@@ -1346,7 +1346,7 @@ private fun SettingsContent(
                                 modifier = Modifier.fillMaxWidth(),
                                 onClick = { libp2pExtraServerDropdownExpanded = true },
                             ) {
-                                Text("Extra server: ${libp2pExtraServerOption.label}")
+                                Text("Bootstrap Server: ${libp2pExtraServerOption.label}")
                             }
                             DropdownMenu(
                                 expanded = libp2pExtraServerDropdownExpanded,
@@ -1378,7 +1378,7 @@ private fun SettingsContent(
                                     libp2pBootstrapPeers = value
                                 },
                                 modifier = Modifier.fillMaxWidth(),
-                                label = { Text("Custom extra server") },
+                                label = { Text("Custom bootstrap server") },
                                 singleLine = false,
                                 maxLines = 4,
                                 supportingText = {
