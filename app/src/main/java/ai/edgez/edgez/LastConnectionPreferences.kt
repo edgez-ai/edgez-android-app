@@ -28,8 +28,10 @@ private const val KEY_SELECTED_DEVICE_GEOFENCE = "selected_device_geofence"
 private const val KEY_DASHBOARD_WIDGET_ORDER = "dashboard_widget_order"
 private const val DEFAULT_MESH_ID = "edgez"
 private const val DEFAULT_MESH_MAX_HOP = 2
-val EDGEZ_LIBP2P_BOOTSTRAP_PEER: String =
-    "/ip4/65.20.115.199/tcp/4001/p2p/12D3KooWSMXRqi2rd7p4UPErgVS6zFeYpYuddo8qayYxkSR2WT7Q"
+val EDGEZ_LIBP2P_BOOTSTRAP_PEERS: String = """
+    /ip4/65.20.115.199/tcp/4001/p2p/12D3KooWSMXRqi2rd7p4UPErgVS6zFeYpYuddo8qayYxkSR2WT7Q
+    /ip4/207.148.107.129/tcp/4001/p2p/12D3KooWT29aoqxDYCno7ZcGMWjW6j9R6hNrqVFcFQsCcSwih1zx
+""".trimIndent()
 const val EDGEZ_LIBP2P_SWARM_KEY = "dde06cad2512343bcb572f3b9a6f7f3d7165492aa9d257b80958108848cdcf22"
 val DEFAULT_LIBP2P_BOOTSTRAP_PEERS = """
     /dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN
@@ -41,6 +43,9 @@ val DEFAULT_LIBP2P_BOOTSTRAP_PEERS = """
 const val DEFAULT_BEACON_INTERVAL_SECONDS = 30
 private const val DEFAULT_USER_NAME = "EdgeZ User"
 private val SUPPORTED_MESH_COUNTRIES = setOf("US", "JP", "EU")
+
+fun normalizeLibp2pBootstrapPeers(peers: String): String = parseMultiaddrList(peers)
+    .joinToString("\n")
 
 class LastConnectionPreferences(context: Context) {
     private val appContext = context.applicationContext

@@ -89,19 +89,13 @@ private enum class Libp2pExtraServerOption(val label: String) {
 private fun libp2pExtraServerOptionFor(peers: String): Libp2pExtraServerOption {
     val normalized = normalizeLibp2pBootstrapPeers(peers)
     val defaultPeers = normalizeLibp2pBootstrapPeers(DEFAULT_LIBP2P_BOOTSTRAP_PEERS)
+    val edgezPeers = normalizeLibp2pBootstrapPeers(EDGEZ_LIBP2P_BOOTSTRAP_PEERS)
     return when {
         normalized == defaultPeers -> Libp2pExtraServerOption.NONE
-        normalized == EDGEZ_LIBP2P_BOOTSTRAP_PEER -> Libp2pExtraServerOption.EDGEZ
+        normalized == edgezPeers -> Libp2pExtraServerOption.EDGEZ
         else -> Libp2pExtraServerOption.CUSTOM
     }
 }
-
-private fun normalizeLibp2pBootstrapPeers(peers: String): String = peers
-    .split(',', '\n', ';')
-    .map { it.trim() }
-    .filter { it.isNotBlank() }
-    .distinct()
-    .joinToString("\n")
 
 private fun parseDeviceMacAddress(input: String): Long {
     val hex = input.filter { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }
@@ -1381,7 +1375,7 @@ private fun SettingsContent(
                                             libp2pExtraServerOption = option
                                             libp2pBootstrapPeers = when (option) {
                                                 Libp2pExtraServerOption.NONE -> DEFAULT_LIBP2P_BOOTSTRAP_PEERS
-                                                Libp2pExtraServerOption.EDGEZ -> EDGEZ_LIBP2P_BOOTSTRAP_PEER
+                                                Libp2pExtraServerOption.EDGEZ -> EDGEZ_LIBP2P_BOOTSTRAP_PEERS
                                                 Libp2pExtraServerOption.CUSTOM -> libp2pBootstrapPeers
                                             }
                                             libp2pExtraServerDropdownExpanded = false

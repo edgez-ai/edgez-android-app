@@ -82,7 +82,8 @@ class Libp2pMeshBridge(
         Log.d(TAG_LIBP2P, "libp2p listen=$listen")
         val bootstrapPeers = preferences.getLibp2pBootstrapPeers()
         Log.d(TAG_LIBP2P, "libp2p bootstrap peers=${bootstrapPeers.size}")
-        val swarmKey = if (bootstrapPeers == listOf(EDGEZ_LIBP2P_BOOTSTRAP_PEER)) {
+        val isEdgeZBootstrap = bootstrapPeers.size >= 1 && isEdgeZBootstrapPreset(bootstrapPeers)
+        val swarmKey = if (isEdgeZBootstrap) {
             EDGEZ_LIBP2P_SWARM_KEY
         } else {
             ""
@@ -121,6 +122,12 @@ class Libp2pMeshBridge(
             .put("public_dht", publicDht)
             .put("swarm_key", swarmKey)
             .toString()
+    }
+
+    private fun isEdgeZBootstrapPreset(bootstrapPeers: List<String>): Boolean {
+        val normalizedPeers = normalizeLibp2pBootstrapPeers(bootstrapPeers.joinToString("\n"))
+        val edgezPeers = normalizeLibp2pBootstrapPeers(EDGEZ_LIBP2P_BOOTSTRAP_PEERS)
+        return normalizedPeers == edgezPeers
     }
 
     private fun localListenAddr(): String {
