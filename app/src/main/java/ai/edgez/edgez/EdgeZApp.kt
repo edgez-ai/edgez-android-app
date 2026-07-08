@@ -79,6 +79,10 @@ private const val HALOW_BROADCAST_NODE_48 = 0xffffffffffffL
 private const val HALOW_BROADCAST_NODE_32 = 0xffffffffL
 private const val LIBP2P_PSEUDO_NODE = 1L
 private const val VOICE_CHUNK_SEND_SPACING_MS = 120L
+private const val ROUTE_BLE = "BLE"
+private const val ROUTE_BLE_FORWARD = "BLE_FORWARD"
+private const val ROUTE_LIBP2P = "LIBP2P"
+private const val FORWARD_CACHE_SIZE = 1024
 private val GROUP_RANDOM = SecureRandom()
 
 private fun paceVoiceChunkSend(index: Int, totalChunks: Int) {
@@ -112,6 +116,12 @@ private fun parseMessageUuid(uuid: String): MessageUuid? {
         text = parsed.toString(),
     )
 }
+
+private data class ForwardPacketKey(
+    val messageIdHigh: Long,
+    val messageIdLow: Long,
+    val sequence: Int,
+)
 
 private fun summarizeLibp2pPayload(payload: ByteArray): String {
     if (payload.isEmpty()) return "bytes=0"
@@ -248,6 +258,7 @@ fun EdgeZApp() {
     val libp2pExecutor = remember { Executors.newSingleThreadExecutor() }
     val pendingHaLowInitKey = remember { AtomicReference<String?>(null) }
     val pendingVoiceMessages = remember { mutableMapOf<String, PendingVoiceMessage>() }
+    val forwardPacketCache = remember { LinkedHashMap<ForwardPacketKey, Int>(FORWARD_CACHE_SIZE * 2) }
     var libp2pBridgeHolder by remember { mutableStateOf<Libp2pMeshBridge?>(null) }
     var libp2pMeshConnected by remember { mutableStateOf(false) }
     val reconnectRequested = remember { AtomicReference<ActiveConnection?>(null) }
@@ -497,18 +508,57 @@ fun EdgeZApp() {
     }
     val currentActiveConnection by rememberUpdatedState(activeConnection)
 
-    fun publishLibp2pFrame(frame: ByteArray) {
-        if (frame.isEmpty() || !lastConnectionPreferences.getLibp2pMeshEnabled()) return
-        val bridge = libp2pBridgeHolder ?: return
-        Log.d(TAG_USERS, "libp2p publish start: ${summarizeLibp2pPayload(frame)}")
-        libp2pExecutor.execute {
+        fun publishLibp2pFrame(frame: ByteArray) {
+            if (frame.isEmpty() || !lastConnectionPreferences.getLibp2pMeshEnabled()) return
+            val bridge = libp2pBridgeHolder ?: return
+            Log.d(TAG_USERS, "libp2p publish start: ${summarizeLibp2pPayload(frame)}")
+            libp2pExecutor.execute {
             bridge.publish(frame).onSuccess {
                 Log.d(TAG_USERS, "libp2p publish success: ${summarizeLibp2pPayload(frame)}")
             }.onFailure {
                 Log.w(TAG_USERS, "libp2p publish failed: ${summarizeLibp2pPayload(frame)}", it)
             }
+            }
         }
-    }
+
+        fun rememberForwardedPacket(packet: ai.edgez.edgez.usb.NetworkPacket, hop: Int) {
+            if (packet.messageIdHigh == 0L && packet.messageIdLow == 0L) return
+            val key = ForwardPacketKey(packet.messageIdHigh, packet.messageIdLow, packet.sequence)
+            synchronized(forwardPacketCache) {
+                val previous = forwardPacketCache[key]
+                if (previous != null && previous <= hop) {
+                    return@rememberForwardedPacket
+                }
+                forwardPacketCache[key] = hop
+                if (forwardPacketCache.size > FORWARD_CACHE_SIZE * 2) {
+                    val iterator = forwardPacketCache.entries.iterator()
+                    repeat(forwardPacketCache.size - FORWARD_CACHE_SIZE) {
+                        if (!iterator.hasNext()) return@repeat
+                        forwardPacketCache.remove(iterator.next().key)
+                    }
+                }
+            }
+        }
+
+        fun shouldProcessForwardedPacket(packet: ai.edgez.edgez.usb.NetworkPacket, incomingHop: Int): Boolean {
+            if (packet.messageIdHigh == 0L && packet.messageIdLow == 0L) return true
+            val key = ForwardPacketKey(packet.messageIdHigh, packet.messageIdLow, packet.sequence)
+            synchronized(forwardPacketCache) {
+                val previous = forwardPacketCache[key]
+                if (previous == null || incomingHop < previous) {
+                    forwardPacketCache[key] = incomingHop
+                    if (forwardPacketCache.size > FORWARD_CACHE_SIZE * 2) {
+                        val iterator = forwardPacketCache.entries.iterator()
+                        repeat(forwardPacketCache.size - FORWARD_CACHE_SIZE) {
+                            if (!iterator.hasNext()) return@repeat
+                            forwardPacketCache.remove(iterator.next().key)
+                        }
+                    }
+                    return true
+                }
+            }
+            return false
+        }
 
     fun sendAndReplicate(
         _source: ActiveConnection,
@@ -516,6 +566,12 @@ fun EdgeZApp() {
         sendAction: () -> Result<String>,
     ): Result<String> {
         val result = sendAction()
+        val meshPassphrase = lastConnectionPreferences.getMeshPassphrase()
+        decodeHaLowSyncFrame(packet, meshPassphrase)?.let {
+            rememberForwardedPacket(it, 0)
+        } ?: decodeNetworkPacket(packet, meshPassphrase)?.let {
+            rememberForwardedPacket(it, 0)
+        }
         publishLibp2pFrame(packet)
         return if (result.isFailure && activeConnection == ActiveConnection.NONE && libp2pMeshConnected) {
             Result.success("Queued via libp2p")
@@ -629,7 +685,11 @@ fun EdgeZApp() {
                 )
         }
 
-        fun sendConversationAck(source: ActiveConnection, message: ai.edgez.edgez.usb.NetworkPacket) {
+        fun sendConversationAck(
+            source: ActiveConnection,
+            route: String,
+            message: ai.edgez.edgez.usb.NetworkPacket,
+        ) {
             if (message.messageIdHigh == 0L && message.messageIdLow == 0L) return
             val identity = lastConnectionPreferences.getOrCreateUserIdentity()
             val fromNode = haLowStatus?.macAddress?.takeIf { it != 0L } ?: message.to.takeIf { it != 0L } ?: return
@@ -654,7 +714,18 @@ fun EdgeZApp() {
             messageAckExecutor.execute {
                 val result = when (source) {
                     ActiveConnection.USB -> usbClient.sendConversationAck(message.messageIdHigh, message.messageIdLow, fromNode, toNode, identity.userIdHigh, identity.userIdLow, maxHop)
-                    ActiveConnection.BLE -> bleClient.sendConversationAck(message.messageIdHigh, message.messageIdLow, fromNode, toNode, identity.userIdHigh, identity.userIdLow, maxHop)
+                    ActiveConnection.BLE -> when (route) {
+                        ROUTE_LIBP2P, ROUTE_BLE_FORWARD -> bleClient.sendConversationAckForward(
+                            message.messageIdHigh,
+                            message.messageIdLow,
+                            fromNode,
+                            toNode,
+                            identity.userIdHigh,
+                            identity.userIdLow,
+                            maxHop,
+                        )
+                        else -> bleClient.sendConversationAck(message.messageIdHigh, message.messageIdLow, fromNode, toNode, identity.userIdHigh, identity.userIdLow, maxHop)
+                    }
                     ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
                 }
                 result.onSuccess { publishLibp2pFrame(packet.getOrNull() ?: ByteArray(0)) }
@@ -666,8 +737,9 @@ fun EdgeZApp() {
 
         fun handleMeshFrame(route: String, frame: ByteArray) {
             val meshPassphrase = lastConnectionPreferences.getMeshPassphrase()
-            val message = decodeHaLowSyncFrame(frame, meshPassphrase)
-                ?: EdgezUsbControlProto.decodeNetworkPacket(frame, meshPassphrase)
+            val inferredHop = if (route == ROUTE_LIBP2P || route == ROUTE_BLE_FORWARD) 1 else 0
+            val parsed = decodeHaLowSyncFrame(frame, meshPassphrase) ?: EdgezUsbControlProto.decodeNetworkPacket(frame, meshPassphrase)
+            val message = parsed?.copy(hop = inferredHop.coerceAtLeast(parsed.hop))
             val status = message?.halowStatus ?: decodeHaLowStatusFrame(frame, meshPassphrase)
             val user = message?.toHaLowUser(route)
             val sensorData = message?.beaconSensorData()
@@ -678,7 +750,32 @@ fun EdgeZApp() {
                     it.sequence == 0 &&
                     (localNode == null || it.from != localNode)
             } == true
+
             if (status == null && user == null && conversationMessage == null && !conversationAck) return
+            if (message != null && (conversationMessage != null || conversationAck)) {
+                if (!shouldProcessForwardedPacket(message, message.hop)) {
+                    Log.d(TAG_USERS, "drop duplicate frame route=$route messageId=${formatMessageUuid(message.messageIdHigh, message.messageIdLow)}")
+                    return
+                }
+                when (route) {
+                    ROUTE_BLE, ROUTE_BLE_FORWARD -> {
+                        if (libp2pMeshConnected) {
+                            rememberForwardedPacket(message.copy(hop = message.hop + 1), message.hop + 1)
+                            publishLibp2pFrame(frame)
+                        }
+                    }
+                    ROUTE_LIBP2P -> {
+                        if (activeConnection == ActiveConnection.BLE) {
+                            rememberForwardedPacket(message.copy(hop = message.hop + 1), message.hop + 1)
+                            val result = bleClient.sendForwardPayload(frame)
+                            result.onFailure {
+                                Log.w(TAG_USERS, "BLE forward send failed: ${it.message}")
+                            }
+                        }
+                    }
+                }
+            }
+
             if (status != null) {
                 val source = currentActiveConnection
                 if (source != ActiveConnection.NONE) {
@@ -686,7 +783,7 @@ fun EdgeZApp() {
                 }
             }
             mainHandler.post {
-                if (route == "LIBP2P" || currentActiveConnection != ActiveConnection.NONE) {
+                if (route == ROUTE_LIBP2P || currentActiveConnection != ActiveConnection.NONE) {
                     if (status != null) {
                         haLowStatus = status
                         EdgeZBeaconRunner.setHaLowStatus(status)
@@ -813,7 +910,7 @@ fun EdgeZApp() {
                             }.getOrElse {
                                 Log.w(
                                     TAG_USERS,
-                                "conversation decrypt failed mime=${message.mime} from=0x%012x to=0x%012x seq=${message.sequence} payload=${message.payload.size} nonce=${conversationMessage.nonce.size} cipher=${conversationMessage.ciphertext.size}",
+                                    "conversation decrypt failed mime=${message.mime} from=0x%012x to=0x%012x seq=${message.sequence} payload=${message.payload.size} nonce=${conversationMessage.nonce.size} cipher=${conversationMessage.ciphertext.size}",
                                     it,
                                 )
                                 ConversationEntry(
@@ -824,36 +921,43 @@ fun EdgeZApp() {
                                     messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow),
                                 )
                             }
-                    if (entry != null) {
-                        val senderKey = conversationKey(senderUser)
-                        edgeZDatabase.insertMessage(senderKey, entry)
-                        conversations = conversations + (
-                            senderKey to ((conversations[senderKey] ?: emptyList()) + entry)
-                            )
-                        if (route != "LIBP2P" || currentActiveConnection != ActiveConnection.NONE) {
-                            sendConversationAck(currentActiveConnection, message)
+                            if (entry != null) {
+                                val senderKey = conversationKey(senderUser)
+                                edgeZDatabase.insertMessage(senderKey, entry)
+                                conversations = conversations + (
+                                    senderKey to ((conversations[senderKey] ?: emptyList()) + entry)
+                                    )
+                                if (route != ROUTE_LIBP2P || currentActiveConnection != ActiveConnection.NONE) {
+                                    sendConversationAck(currentActiveConnection, route, message)
+                                }
+                            }
                         }
                     }
-                }
-            }
                 }
             }
         }
 
         fun handleTransportFrame(source: ActiveConnection, frame: ByteArray) {
             if (source != currentActiveConnection) return
-            handleMeshFrame(source.name, frame)
+            handleMeshFrame(ROUTE_BLE, frame)
         }
 
         val removeUsbFrameListener = usbClient.addFrameListener { frame ->
             handleTransportFrame(ActiveConnection.USB, frame)
         }
         val removeBleFrameListener = bleClient.addFrameListener { frame ->
-            handleTransportFrame(ActiveConnection.BLE, frame)
+            if (currentActiveConnection == ActiveConnection.BLE) {
+                handleMeshFrame(ROUTE_BLE, frame)
+            }
+        }
+        val removeBleForwardFrameListener = bleClient.addForwardFrameListener { frame ->
+            if (currentActiveConnection == ActiveConnection.BLE) {
+                handleMeshFrame(ROUTE_BLE_FORWARD, frame)
+            }
         }
         val libp2pBridge = Libp2pMeshBridge(context.applicationContext) { frame ->
             Log.d(TAG_USERS, "libp2p callback receive: ${summarizeLibp2pPayload(frame)}")
-            handleMeshFrame("LIBP2P", frame)
+            handleMeshFrame(ROUTE_LIBP2P, frame)
         }
         libp2pBridgeHolder = libp2pBridge
         syncLibp2pMesh()
@@ -883,6 +987,7 @@ fun EdgeZApp() {
             libp2pBridgeHolder = null
             removeUsbFrameListener()
             removeBleFrameListener()
+            removeBleForwardFrameListener()
             removeUsbDebugListener()
             removeBleDebugListener()
             EdgeZBeaconRunner.setActiveConnection(ActiveConnection.NONE)

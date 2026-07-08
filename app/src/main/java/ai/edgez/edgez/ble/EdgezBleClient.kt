@@ -41,6 +41,8 @@ private const val EDGEZ_BLE_REQUESTED_MTU = 517
 private val EDGEZ_SERVICE_UUID: UUID = UUID.fromString("0000fff0-0000-1000-8000-00805f9b34fb")
 private val EDGEZ_RX_UUID: UUID = UUID.fromString("0000fff1-0000-1000-8000-00805f9b34fb")
 private val EDGEZ_TX_UUID: UUID = UUID.fromString("0000fff2-0000-1000-8000-00805f9b34fb")
+private val EDGEZ_FORWARD_RX_UUID: UUID = UUID.fromString("0000fff3-0000-1000-8000-00805f9b34fb")
+private val EDGEZ_FORWARD_TX_UUID: UUID = UUID.fromString("0000fff4-0000-1000-8000-00805f9b34fb")
 private val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
 data class BleCandidate(
@@ -56,14 +58,22 @@ class EdgezBleClient(private val context: Context) {
     private val bluetoothManager = context.getSystemService(BluetoothManager::class.java)
     private val bluetoothAdapter: BluetoothAdapter? = bluetoothManager?.adapter
     private val frameListeners = CopyOnWriteArraySet<(ByteArray) -> Unit>()
+    private val forwardFrameListeners = CopyOnWriteArraySet<(ByteArray) -> Unit>()
     private val debugListeners = CopyOnWriteArraySet<(String) -> Unit>()
     private val rxBuffer = ByteArray(EDGEZ_MAX_FRAME * 2)
     private var rxLen = 0
+    private val forwardRxBuffer = ByteArray(EDGEZ_MAX_FRAME * 2)
+    private var forwardRxLen = 0
     private var scanCallback: ScanCallback? = null
     private var gatt: BluetoothGatt? = null
     private var rxCharacteristic: BluetoothGattCharacteristic? = null
+    private var txCharacteristic: BluetoothGattCharacteristic? = null
+    private var forwardRxCharacteristic: BluetoothGattCharacteristic? = null
+    private var forwardTxCharacteristic: BluetoothGattCharacteristic? = null
     private val txQueue = ArrayDeque<ByteArray>()
+    private val forwardTxQueue = ArrayDeque<ByteArray>()
     private var txWriteInFlight = false
+    private var forwardTxWriteInFlight = false
 
     fun requiredPermissions(): Array<String> {
         return if (Build.VERSION.SDK_INT >= 31) {
@@ -84,6 +94,11 @@ class EdgezBleClient(private val context: Context) {
     fun addFrameListener(listener: (ByteArray) -> Unit): () -> Unit {
         frameListeners.add(listener)
         return { frameListeners.remove(listener) }
+    }
+
+    fun addForwardFrameListener(listener: (ByteArray) -> Unit): () -> Unit {
+        forwardFrameListeners.add(listener)
+        return { forwardFrameListeners.remove(listener) }
     }
 
     fun addDebugListener(listener: (String) -> Unit): () -> Unit {
@@ -152,10 +167,14 @@ class EdgezBleClient(private val context: Context) {
     fun close() {
         stopScan()
         rxCharacteristic = null
+        txCharacteristic = null
+        forwardRxCharacteristic = null
+        forwardTxCharacteristic = null
         clearTxQueue()
         gatt?.close()
         gatt = null
         rxLen = 0
+        forwardRxLen = 0
         emitDebug("CLOSE")
     }
 
@@ -271,6 +290,41 @@ class EdgezBleClient(private val context: Context) {
         return sendFrame(packet)
     }
 
+    fun sendConversationMessageForward(
+        message: ConversationMessage,
+        from: Long,
+        to: Long,
+        mime: PacketMime = PacketMime.TEXT,
+        maxHop: Int = 0,
+        sequence: Int = 1,
+        messageIdHigh: Long = 0,
+        messageIdLow: Long = 0,
+        userIdHigh: Long,
+        userIdLow: Long,
+        groupIdHigh: Long = 0,
+        groupIdLow: Long = 0,
+    ): Result<String> {
+        val packet = runCatching {
+            EdgezUsbControlProto.encodeConversationMessage(
+                message = message,
+                from = from,
+                to = to,
+                mime = mime,
+                maxHop = maxHop,
+                sequence = sequence,
+                messageIdHigh = messageIdHigh,
+                messageIdLow = messageIdLow,
+                userIdHigh = userIdHigh,
+                userIdLow = userIdLow,
+                groupIdHigh = groupIdHigh,
+                groupIdLow = groupIdLow,
+            )
+        }.getOrElse { error ->
+            return Result.failure(error)
+        }
+        return sendForwardFrame(packet)
+    }
+
     fun sendConversationAck(
         messageIdHigh: Long,
         messageIdLow: Long,
@@ -296,6 +350,35 @@ class EdgezBleClient(private val context: Context) {
         return sendFrame(packet)
     }
 
+    fun sendConversationAckForward(
+        messageIdHigh: Long,
+        messageIdLow: Long,
+        from: Long,
+        to: Long,
+        userIdHigh: Long,
+        userIdLow: Long,
+        maxHop: Int = 0,
+    ): Result<String> {
+        val packet = runCatching {
+            EdgezUsbControlProto.encodeConversationAck(
+                messageIdHigh = messageIdHigh,
+                messageIdLow = messageIdLow,
+                from = from,
+                to = to,
+                userIdHigh = userIdHigh,
+                userIdLow = userIdLow,
+                maxHop = maxHop,
+            )
+        }.getOrElse { error ->
+            return Result.failure(error)
+        }
+        return sendForwardFrame(packet)
+    }
+
+    fun sendForwardPayload(payload: ByteArray): Result<String> {
+        return sendForwardFrame(payload)
+    }
+
     @SuppressLint("MissingPermission")
     private fun sendFrame(payload: ByteArray): Result<String> {
         val gatt = gatt ?: return Result.failure(IllegalStateException("BLE is not connected"))
@@ -315,7 +398,7 @@ class EdgezBleClient(private val context: Context) {
         synchronized(this) {
             txQueue.add(frame)
         }
-        return if (writeNextFrame(gatt, rx)) {
+        return if (writeNextFrame(gatt, rx, isForward = false)) {
             Result.success("BLE queued protobuf")
         } else {
             synchronized(this) {
@@ -326,17 +409,54 @@ class EdgezBleClient(private val context: Context) {
     }
 
     @SuppressLint("MissingPermission")
+    private fun sendForwardFrame(payload: ByteArray): Result<String> {
+        val gatt = gatt ?: return Result.failure(IllegalStateException("BLE is not connected"))
+        val rx = forwardRxCharacteristic ?: return Result.failure(IllegalStateException("BLE forward service is not ready"))
+        if (payload.size > EDGEZ_MAX_PAYLOAD) {
+            return Result.failure(IllegalArgumentException("Payload too large: ${payload.size}/$EDGEZ_MAX_PAYLOAD"))
+        }
+
+        val tx = ByteBuffer.allocate(EDGEZ_HEADER_LEN + payload.size).order(ByteOrder.LITTLE_ENDIAN)
+        tx.put(EDGEZ_MAGIC_0)
+        tx.put(EDGEZ_MAGIC_1)
+        tx.putShort(payload.size.toShort())
+        tx.put(payload)
+
+        val frame = tx.array()
+        emitDebug("TX forward frame len=${payload.size} queue=${synchronized(this) { forwardTxQueue.size }}")
+        synchronized(this) {
+            forwardTxQueue.add(frame)
+        }
+        return if (writeNextFrame(gatt, rx, isForward = true)) {
+            Result.success("BLE forward queued protobuf")
+        } else {
+            synchronized(this) {
+                forwardTxQueue.remove(frame)
+            }
+            Result.failure(IllegalStateException("BLE forward write failed"))
+        }
+    }
+
+    @SuppressLint("MissingPermission")
     private fun writeNextFrame(
-        activeGatt: BluetoothGatt? = gatt,
-        writeCharacteristic: BluetoothGattCharacteristic? = rxCharacteristic,
+        activeGatt: BluetoothGatt?,
+        writeCharacteristic: BluetoothGattCharacteristic?,
+        isForward: Boolean,
     ): Boolean {
         val gatt = activeGatt ?: return false
         val rx = writeCharacteristic ?: return false
         val frame = synchronized(this) {
-            if (txWriteInFlight) return true
-            val nextFrame = txQueue.peekFirst() ?: return true
-            txWriteInFlight = true
-            nextFrame
+            if (isForward) {
+                if (forwardTxWriteInFlight) return true
+                val nextFrame = forwardTxQueue.peekFirst() ?: return true
+                forwardTxWriteInFlight = true
+                nextFrame
+            } else {
+                if (txWriteInFlight) return true
+                val nextFrame = txQueue.peekFirst() ?: return true
+                txWriteInFlight = true
+                nextFrame
+            }
         }
 
         val ok = if (Build.VERSION.SDK_INT >= 33) {
@@ -347,10 +467,16 @@ class EdgezBleClient(private val context: Context) {
             gatt.writeCharacteristic(rx)
         }
         if (ok) {
-            emitDebug("TX start frame=${frame.size} queued=${synchronized(this) { txQueue.size }}")
+            emitDebug("TX start frame=${frame.size} queued=${synchronized(this) {
+                if (isForward) forwardTxQueue.size else txQueue.size
+            }}")
         } else {
             synchronized(this) {
-                txWriteInFlight = false
+                if (isForward) {
+                    forwardTxWriteInFlight = false
+                } else {
+                    txWriteInFlight = false
+                }
             }
         }
         return ok
@@ -359,7 +485,23 @@ class EdgezBleClient(private val context: Context) {
     @Synchronized
     private fun clearTxQueue() {
         txQueue.clear()
+        forwardTxQueue.clear()
         txWriteInFlight = false
+        forwardTxWriteInFlight = false
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun writeNextFrame(activeGatt: BluetoothGatt?): Boolean {
+        val gatt = activeGatt ?: return false
+        val controlRx = rxCharacteristic
+        if (controlRx != null && synchronized(this) { !txWriteInFlight && txQueue.isNotEmpty() }) {
+            return writeNextFrame(gatt, controlRx, isForward = false)
+        }
+        val forwardRx = forwardRxCharacteristic
+        if (forwardRx != null && synchronized(this) { !forwardTxWriteInFlight && forwardTxQueue.isNotEmpty() }) {
+            return writeNextFrame(gatt, forwardRx, isForward = true)
+        }
+        return false
     }
 
     private val callback = object : BluetoothGattCallback() {
@@ -370,7 +512,11 @@ class EdgezBleClient(private val context: Context) {
                 gatt.requestMtu(EDGEZ_BLE_REQUESTED_MTU)
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 rxCharacteristic = null
+                txCharacteristic = null
+                forwardRxCharacteristic = null
+                forwardTxCharacteristic = null
                 rxLen = 0
+                forwardRxLen = 0
                 clearTxQueue()
             }
         }
@@ -387,12 +533,17 @@ class EdgezBleClient(private val context: Context) {
             val service: BluetoothGattService? = gatt.getService(EDGEZ_SERVICE_UUID)
             val rx = service?.getCharacteristic(EDGEZ_RX_UUID)
             val tx = service?.getCharacteristic(EDGEZ_TX_UUID)
+            val forwardRx = service?.getCharacteristic(EDGEZ_FORWARD_RX_UUID)
+            val forwardTx = service?.getCharacteristic(EDGEZ_FORWARD_TX_UUID)
             if (rx == null || tx == null) {
                 emitDebug("SERVICE missing rx=${rx != null} tx=${tx != null}")
                 return
             }
 
             rxCharacteristic = rx
+            txCharacteristic = tx
+            forwardRxCharacteristic = forwardRx
+            forwardTxCharacteristic = forwardTx
             gatt.setCharacteristicNotification(tx, true)
             val descriptor = tx.getDescriptor(CCCD_UUID)
             if (descriptor != null) {
@@ -403,6 +554,20 @@ class EdgezBleClient(private val context: Context) {
                     gatt.writeDescriptor(descriptor)
                 }
             }
+            if (forwardRx != null && forwardTx != null) {
+                gatt.setCharacteristicNotification(forwardTx, true)
+                val forwardDescriptor = forwardTx.getDescriptor(CCCD_UUID)
+                if (forwardDescriptor != null) {
+                    if (Build.VERSION.SDK_INT >= 33) {
+                        gatt.writeDescriptor(forwardDescriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+                    } else {
+                        forwardDescriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                        gatt.writeDescriptor(forwardDescriptor)
+                    }
+                }
+            } else {
+                emitDebug("SERVICE forward missing rx=${forwardRx != null} tx=${forwardTx != null}")
+            }
             emitDebug("SERVICE ready")
         }
 
@@ -411,7 +576,11 @@ class EdgezBleClient(private val context: Context) {
             characteristic: BluetoothGattCharacteristic,
             value: ByteArray,
         ) {
-            handleBytes(value)
+            when (characteristic.uuid) {
+                txCharacteristic?.uuid -> handleBytes(value)
+                forwardTxCharacteristic?.uuid -> handleForwardBytes(value)
+                else -> emitDebug("RX unknown char=${characteristic.uuid}")
+            }
         }
 
         @Deprecated("Deprecated in Java")
@@ -419,7 +588,12 @@ class EdgezBleClient(private val context: Context) {
             gatt: BluetoothGatt,
             characteristic: BluetoothGattCharacteristic,
         ) {
-            handleBytes(characteristic.value ?: return)
+            val value = characteristic.value ?: return
+            when (characteristic.uuid) {
+                txCharacteristic?.uuid -> handleBytes(value)
+                forwardTxCharacteristic?.uuid -> handleForwardBytes(value)
+                else -> emitDebug("RX unknown char=${characteristic.uuid}")
+            }
         }
 
         override fun onCharacteristicWrite(
@@ -427,17 +601,33 @@ class EdgezBleClient(private val context: Context) {
             characteristic: BluetoothGattCharacteristic,
             status: Int,
         ) {
+            val isForwardWrite = characteristic.uuid == forwardTxCharacteristic?.uuid
             synchronized(this@EdgezBleClient) {
-                txWriteInFlight = false
-                if (status == BluetoothGatt.GATT_SUCCESS) {
-                    txQueue.pollFirst()
+                if (isForwardWrite) {
+                    forwardTxWriteInFlight = false
+                    if (status == BluetoothGatt.GATT_SUCCESS) {
+                        forwardTxQueue.pollFirst()
+                    } else {
+                        forwardTxQueue.clear()
+                    }
                 } else {
-                    txQueue.clear()
+                    txWriteInFlight = false
+                    if (status == BluetoothGatt.GATT_SUCCESS) {
+                        txQueue.pollFirst()
+                    } else {
+                        txQueue.clear()
+                    }
                 }
             }
-            emitDebug("TX complete status=$status remaining=${synchronized(this@EdgezBleClient) { txQueue.size }}")
+            emitDebug("TX complete status=$status remaining=${synchronized(this@EdgezBleClient) {
+                if (isForwardWrite) forwardTxQueue.size else txQueue.size
+            }}")
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                writeNextFrame(gatt, characteristic)
+                if (isForwardWrite) {
+                    writeNextFrame(gatt, forwardRxCharacteristic, isForward = true)
+                } else {
+                    writeNextFrame(gatt, rxCharacteristic, isForward = false)
+                }
             }
         }
     }
@@ -488,6 +678,56 @@ class EdgezBleClient(private val context: Context) {
             } else {
                 System.arraycopy(rxBuffer, frameLen, rxBuffer, 0, rxLen - frameLen)
                 rxLen -= frameLen
+            }
+        }
+    }
+
+    private fun handleForwardBytes(bytes: ByteArray) {
+        if (forwardRxLen + bytes.size > forwardRxBuffer.size) {
+            emitDebug("RX forward overflow buffered=$forwardRxLen read=${bytes.size}; reset")
+            forwardRxLen = 0
+        }
+
+        System.arraycopy(bytes, 0, forwardRxBuffer, forwardRxLen, bytes.size)
+        forwardRxLen += bytes.size
+        emitDebug("RX forward chunk read=${bytes.size} buffered=$forwardRxLen")
+
+        while (forwardRxLen >= EDGEZ_HEADER_LEN) {
+            val magicOffset = findMagicOffset(forwardRxBuffer, forwardRxLen)
+            if (magicOffset < 0) {
+                emitDebug("RX forward no magic buffered=$forwardRxLen; drop")
+                forwardRxLen = 0
+                break
+            }
+            if (magicOffset > 0) {
+                emitDebug("RX forward resync skip=$magicOffset buffered=$forwardRxLen")
+                System.arraycopy(forwardRxBuffer, magicOffset, forwardRxBuffer, 0, forwardRxLen - magicOffset)
+                forwardRxLen -= magicOffset
+            }
+
+            if (forwardRxLen < EDGEZ_HEADER_LEN) {
+                break
+            }
+            val payloadLen = readLe16(forwardRxBuffer, 2)
+            if (payloadLen > EDGEZ_MAX_PAYLOAD) {
+                emitDebug("RX forward bad len=$payloadLen; resync")
+                System.arraycopy(forwardRxBuffer, 1, forwardRxBuffer, 0, forwardRxLen - 1)
+                forwardRxLen -= 1
+                continue
+            }
+            val frameLen = EDGEZ_HEADER_LEN + payloadLen
+            if (forwardRxLen < frameLen) {
+                break
+            }
+
+            val frame = forwardRxBuffer.copyOf(frameLen)
+            emitDebug("RX forward protobuf frame len=$payloadLen")
+            forwardFrameListeners.forEach { it(frame) }
+            if (forwardRxLen == frameLen) {
+                forwardRxLen = 0
+            } else {
+                System.arraycopy(forwardRxBuffer, frameLen, forwardRxBuffer, 0, forwardRxLen - frameLen)
+                forwardRxLen -= frameLen
             }
         }
     }

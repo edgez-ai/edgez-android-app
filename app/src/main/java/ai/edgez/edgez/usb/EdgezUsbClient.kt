@@ -285,6 +285,7 @@ data class NetworkPacket(
     val groupIdLow: Long = 0,
     val mime: PacketMime = PacketMime.UNSPECIFIED,
     val maxHop: Int = 0,
+    val hop: Int = 0,
     val payload: ByteArray = ByteArray(0),
     val beacon: EdgeZAssocMetadata? = null,
     val beaconRaw: String = "",
@@ -317,6 +318,7 @@ data class NetworkPacket(
             groupIdLow == other.groupIdLow &&
             mime == other.mime &&
             maxHop == other.maxHop &&
+            hop == other.hop &&
             payload.contentEquals(other.payload) &&
             beacon == other.beacon &&
             beaconRaw == other.beaconRaw &&
@@ -339,6 +341,7 @@ data class NetworkPacket(
         result = 31 * result + groupIdLow.hashCode()
         result = 31 * result + mime.hashCode()
         result = 31 * result + maxHop
+        result = 31 * result + hop
         result = 31 * result + payload.contentHashCode()
         result = 31 * result + (beacon?.hashCode() ?: 0)
         result = 31 * result + beaconRaw.hashCode()
