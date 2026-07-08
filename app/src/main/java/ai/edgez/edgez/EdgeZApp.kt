@@ -321,6 +321,16 @@ fun EdgeZApp() {
         selectedConversationUser = user
     }
 
+    fun startMeshBeaconRunner() {
+        EdgeZBeaconRunner.start(context.applicationContext)
+    }
+
+    fun stopMeshBeaconRunnerIfIdle() {
+        if (activeConnection == ActiveConnection.NONE && !lastConnectionPreferences.getLibp2pMeshEnabled()) {
+            EdgeZBeaconRunner.stop()
+        }
+    }
+
     fun markTransportConnected(connection: ActiveConnection) {
         val wasActiveConnection = activeConnection == connection
         clearReconnect()
@@ -401,6 +411,9 @@ fun EdgeZApp() {
             resetHaLowInitTrigger()
             EdgeZBeaconRunner.setActiveConnection(ActiveConnection.NONE)
             BleForegroundService.stop(context.applicationContext)
+            if (lastConnectionPreferences.getLibp2pMeshEnabled()) {
+                startMeshBeaconRunner()
+            }
             scheduleReconnect(connection)
         }
     }
@@ -420,6 +433,9 @@ fun EdgeZApp() {
             resetHaLowInitTrigger()
             EdgeZBeaconRunner.setActiveConnection(ActiveConnection.NONE)
             BleForegroundService.stop(context.applicationContext)
+            if (lastConnectionPreferences.getLibp2pMeshEnabled()) {
+                startMeshBeaconRunner()
+            }
         }
     }
 
@@ -449,11 +465,18 @@ fun EdgeZApp() {
                                 mainHandler.post { libp2pMeshConnected = false }
                                 Log.w(TAG_USERS, "libp2p mesh restart failed", it)
                             }.onSuccess {
-                                mainHandler.post { libp2pMeshConnected = true }
+                                mainHandler.post {
+                                    libp2pMeshConnected = true
+                                    startMeshBeaconRunner()
+                                    EdgeZBeaconRunner.publishSelfBeaconToLibp2p(context.applicationContext)
+                                }
                             }
                         } else {
                             bridge.stop()
-                            mainHandler.post { libp2pMeshConnected = false }
+                            mainHandler.post {
+                                libp2pMeshConnected = false
+                                stopMeshBeaconRunnerIfIdle()
+                            }
                         }
                     }
                 }
@@ -833,12 +856,18 @@ fun EdgeZApp() {
                         Log.w(TAG_USERS, "libp2p mesh start failed", it)
                     }
                         .onSuccess {
-                            mainHandler.post { libp2pMeshConnected = true }
-                            EdgeZBeaconRunner.publishSelfBeaconToLibp2p(context.applicationContext)
+                            mainHandler.post {
+                                libp2pMeshConnected = true
+                                startMeshBeaconRunner()
+                                EdgeZBeaconRunner.publishSelfBeaconToLibp2p(context.applicationContext)
+                            }
                         }
                 } else {
                     libp2pBridge.stop()
-                    mainHandler.post { libp2pMeshConnected = false }
+                    mainHandler.post {
+                        libp2pMeshConnected = false
+                        stopMeshBeaconRunnerIfIdle()
+                    }
                 }
             }
         }
