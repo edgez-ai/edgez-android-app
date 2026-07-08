@@ -335,7 +335,7 @@ func startMesh(configJSON string) string {
 		logInfo("bootstrap", fmt.Sprintf("using private bootstrap peers=%d", len(cfg.BootstrapPeers)))
 	}
 	meshBootstrapPeers = dedupePeerInfo(meshBootstrapPeers)
-	dhtOptions := []dht.Option{dht.Mode(dht.ModeServer)}
+	dhtOptions := []dht.Option{dht.Mode(dht.ModeClient)}
 	if len(meshBootstrapPeers) > 0 {
 		dhtOptions = append(dhtOptions, dht.BootstrapPeers(meshBootstrapPeers...))
 	}
