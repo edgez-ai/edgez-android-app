@@ -306,11 +306,19 @@ func startMesh(configJSON string) string {
 	if listen == "" {
 		listen = "/ip4/0.0.0.0/tcp/0"
 	}
+	configuredBootstrapPeers := parseBootstrapPeers(cfg.BootstrapPeers)
 	hostOptions := []libp2p.Option{
 		libp2p.Identity(priv),
 		libp2p.ListenAddrStrings(listen),
 		libp2p.EnableRelay(),
 		libp2p.EnableHolePunching(),
+	}
+	if len(configuredBootstrapPeers) > 0 {
+		hostOptions = append(hostOptions,
+			libp2p.NATPortMap(),
+			libp2p.EnableAutoNATv2(),
+			libp2p.EnableAutoRelayWithStaticRelays(configuredBootstrapPeers),
+		)
 	}
 	if swarmKey, err := readOptionalSwarmKey(cfg.SwarmKey); err != nil {
 		cancel()
@@ -325,11 +333,14 @@ func startMesh(configJSON string) string {
 		return errorJSON(fmt.Sprintf("start libp2p host: %v", err))
 	}
 
-	meshBootstrapPeers := parseBootstrapPeers(cfg.BootstrapPeers)
+	meshBootstrapPeers := configuredBootstrapPeers
 	if len(meshBootstrapPeers) == 0 {
 		meshBootstrapPeers = parseBootstrapPeers(publicDHTBootstrapPeerAddrs)
 	}
 	logDebug("start", fmt.Sprintf("mesh config mesh_id=%s topic=%s listen=%s public_dht=%t custom_bootstraps=%d dht_bootstraps=%d", cfg.MeshID, cfg.Topic, cfg.Listen, cfg.PublicDHT, len(cfg.BootstrapPeers), len(meshBootstrapPeers)))
+	if len(configuredBootstrapPeers) > 0 {
+		logInfo("bootstrap", fmt.Sprintf("using configured bootstrap peers=%d", len(configuredBootstrapPeers)))
+	}
 	meshBootstrapPeers = dedupePeerInfo(meshBootstrapPeers)
 	dhtOptions := []dht.Option{dht.Mode(dht.ModeClient)}
 	if len(meshBootstrapPeers) > 0 {
@@ -347,6 +358,7 @@ func startMesh(configJSON string) string {
 		cancel()
 		return errorJSON(fmt.Sprintf("bootstrap dht: %v", err))
 	}
+	connectBootstrapAddrInfos(ctx, h, meshBootstrapPeers)
 	rd := routing.NewRoutingDiscovery(kad)
 	ps, err := pubsub.NewGossipSub(ctx, h, pubsub.WithDiscovery(rd))
 	if err != nil {
