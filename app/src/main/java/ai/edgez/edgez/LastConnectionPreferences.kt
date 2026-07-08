@@ -28,7 +28,7 @@ private const val KEY_SELECTED_DEVICE_GEOFENCE = "selected_device_geofence"
 private const val KEY_DASHBOARD_WIDGET_ORDER = "dashboard_widget_order"
 private const val DEFAULT_MESH_ID = "edgez"
 private const val DEFAULT_MESH_MAX_HOP = 2
-private const val DEFAULT_LIBP2P_BOOTSTRAP_PEER =
+const val EDGEZ_LIBP2P_BOOTSTRAP_PEER =
     "/ip4/65.20.115.199/tcp/4001/p2p/12D3KooWSMXRqi2rd7p4UPErgVS6zFeYpYuddo8qayYxkSR2WT7Q"
 const val DEFAULT_BEACON_INTERVAL_SECONDS = 30
 private const val DEFAULT_USER_NAME = "EdgeZ User"
@@ -65,8 +65,7 @@ class LastConnectionPreferences(context: Context) {
     fun getLibp2pMeshEnabled(): Boolean = prefs.getBoolean(KEY_LIBP2P_MESH_ENABLED, false)
 
     fun getLibp2pBootstrapPeers(): List<String> =
-        (parseMultiaddrList(prefs.getString(KEY_LIBP2P_BOOTSTRAP_PEERS, null)) +
-            DEFAULT_LIBP2P_BOOTSTRAP_PEER).distinct()
+        parseMultiaddrList(prefs.getString(KEY_LIBP2P_BOOTSTRAP_PEERS, null)).distinct()
 
     fun setLibp2pMeshEnabled(enabled: Boolean) {
         prefs.edit()

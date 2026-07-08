@@ -80,6 +80,21 @@ private enum class SettingsTab(val label: String) {
     OTHERS("Others"),
 }
 
+private enum class Libp2pExtraServerOption(val label: String) {
+    NONE("IPFS default"),
+    EDGEZ("EdgeZ"),
+    CUSTOM("Custom"),
+}
+
+private fun libp2pExtraServerOptionFor(peers: String): Libp2pExtraServerOption {
+    val normalized = peers.trim()
+    return when {
+        normalized.isBlank() -> Libp2pExtraServerOption.NONE
+        normalized == EDGEZ_LIBP2P_BOOTSTRAP_PEER -> Libp2pExtraServerOption.EDGEZ
+        else -> Libp2pExtraServerOption.CUSTOM
+    }
+}
+
 private fun parseDeviceMacAddress(input: String): Long {
     val hex = input.filter { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }
     if (hex.isBlank()) return 0L
@@ -185,6 +200,10 @@ private fun SettingsContent(
     var libp2pBootstrapPeers by rememberSaveable {
         mutableStateOf(connectionPreferences.getLibp2pBootstrapPeers().joinToString("\n"))
     }
+    var libp2pExtraServerDropdownExpanded by remember { mutableStateOf(false) }
+    var libp2pExtraServerOption by rememberSaveable {
+        mutableStateOf(libp2pExtraServerOptionFor(libp2pBootstrapPeers))
+    }
     var beaconIntervalSeconds by rememberSaveable {
         mutableStateOf(connectionPreferences.getBeaconIntervalSeconds().toString())
     }
@@ -275,6 +294,7 @@ private fun SettingsContent(
         maxHop = connectionPreferences.getMeshMaxHop().toString()
         libp2pMeshEnabled = connectionPreferences.getLibp2pMeshEnabled()
         libp2pBootstrapPeers = connectionPreferences.getLibp2pBootstrapPeers().joinToString("\n")
+        libp2pExtraServerOption = libp2pExtraServerOptionFor(libp2pBootstrapPeers)
         beaconIntervalSeconds = connectionPreferences.getBeaconIntervalSeconds().toString()
         userIdentity = connectionPreferences.getOrCreateUserIdentity()
         userName = userIdentity.name
@@ -1321,19 +1341,51 @@ private fun SettingsContent(
                             )
                         }
                         Spacer(Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = libp2pBootstrapPeers,
-                            onValueChange = { value ->
-                                libp2pBootstrapPeers = value
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Libp2p private DHT peers") },
-                            singleLine = false,
-                            maxLines = 4,
-                            supportingText = {
-                                Text("Enter relay/DHT server multiaddrs, one per line or separated by commas")
-                            },
-                        )
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = { libp2pExtraServerDropdownExpanded = true },
+                            ) {
+                                Text("Extra server: ${libp2pExtraServerOption.label}")
+                            }
+                            DropdownMenu(
+                                expanded = libp2pExtraServerDropdownExpanded,
+                                onDismissRequest = { libp2pExtraServerDropdownExpanded = false },
+                            ) {
+                                Libp2pExtraServerOption.entries.forEach { option ->
+                                    DropdownMenuItem(
+                                        text = { Text(option.label) },
+                                        onClick = {
+                                            libp2pExtraServerOption = option
+                                            libp2pBootstrapPeers = when (option) {
+                                                Libp2pExtraServerOption.NONE -> ""
+                                                Libp2pExtraServerOption.EDGEZ -> EDGEZ_LIBP2P_BOOTSTRAP_PEER
+                                                Libp2pExtraServerOption.CUSTOM -> {
+                                                    if (libp2pBootstrapPeers == EDGEZ_LIBP2P_BOOTSTRAP_PEER) "" else libp2pBootstrapPeers
+                                                }
+                                            }
+                                            libp2pExtraServerDropdownExpanded = false
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                        if (libp2pExtraServerOption == Libp2pExtraServerOption.CUSTOM) {
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = libp2pBootstrapPeers,
+                                onValueChange = { value ->
+                                    libp2pBootstrapPeers = value
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("Custom extra server") },
+                                singleLine = false,
+                                maxLines = 4,
+                                supportingText = {
+                                    Text("Enter relay/DHT server multiaddrs, one per line or separated by commas")
+                                },
+                            )
+                        }
                     }
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
