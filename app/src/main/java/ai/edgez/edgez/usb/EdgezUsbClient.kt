@@ -1107,6 +1107,15 @@ object EdgezUsbControlProto {
     }
 
     private fun UsbControl.SensorData.toAppSensorData(): EdgeZSensorData? {
+        val mappedMime = EdgeZBinaryMime.fromProtoValue(binaryMimeValue)
+        val hasNumericValues = latitude != 0f ||
+            longitude != 0f ||
+            altitude != 0f ||
+            temperature != 0f ||
+            humidity != 0f ||
+            pressure != 0f ||
+            vibrationAverage != 0f
+        if (!hasNumericValues && mappedMime == EdgeZBinaryMime.UNSPECIFIED) return null
         return EdgeZSensorData(
             latitude = latitude.toDouble().takeIf { latitude != 0f },
             longitude = longitude.toDouble().takeIf { longitude != 0f },
@@ -1115,7 +1124,8 @@ object EdgezUsbControlProto {
             humidity = humidity.toDouble().takeIf { humidity != 0f },
             pressure = pressure.toDouble().takeIf { pressure != 0f },
             vibrationAverage = vibrationAverage.toDouble().takeIf { vibrationAverage != 0f },
-        ).takeIf { it.hasAnyValue }
+            binaryMime = mappedMime,
+        )
     }
 
     private fun encodeBeaconUserName(userName: String, marker: String): String {

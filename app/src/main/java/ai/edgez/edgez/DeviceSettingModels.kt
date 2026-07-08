@@ -186,6 +186,7 @@ object DeviceSensorCatalog {
         key: String,
     ): DeviceSensorScriptConfig? {
         val definition = definitionFor(context, connector, key) ?: return null
+        val globalBufferSize = if (definition.key == "1004-1") 32768 else 4096
         return DeviceSensorScriptConfig(
             scriptId = definition.id,
             version = definition.version,
@@ -194,6 +195,7 @@ object DeviceSensorCatalog {
             selectUartI2c = connector == DeviceSensorConnector.UART_I2C,
             selectRs485 = connector == DeviceSensorConnector.RS485,
             script = definition.script,
+            globalBufferSize = globalBufferSize,
         )
     }
 
@@ -258,6 +260,21 @@ enum class EdgeZDeviceType(val protoValue: Int, val label: String) {
     }
 }
 
+enum class EdgeZBinaryMime(val protoValue: Int) {
+    UNSPECIFIED(0),
+    RAW(1),
+    IMAGE_JPEG(2),
+    IMAGE_PNG(3),
+    IMAGE_BMP(4),
+    RAW_GRAY8(5);
+
+    companion object {
+        fun fromProtoValue(value: Int): EdgeZBinaryMime {
+            return entries.firstOrNull { it.protoValue == value } ?: UNSPECIFIED
+        }
+    }
+}
+
 data class EdgeZSensorData(
     val latitude: Double? = null,
     val longitude: Double? = null,
@@ -266,6 +283,7 @@ data class EdgeZSensorData(
     val humidity: Double? = null,
     val pressure: Double? = null,
     val vibrationAverage: Double? = null,
+    val binaryMime: EdgeZBinaryMime = EdgeZBinaryMime.UNSPECIFIED,
 ) {
     val hasAnyValue: Boolean
         get() = latitude != null ||

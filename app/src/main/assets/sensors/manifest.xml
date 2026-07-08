@@ -52,6 +52,14 @@
     </sensor>
 
     <sensor
+        interface="uart_i2c"
+        key="1004-1"
+        id="1004"
+        version="1"
+        name="VC0706 UART Camera"
+        script="uart_i2c/scripts/vc0706_camera.lua" />
+
+    <sensor
         interface="rs485"
         key="2002-1"
         id="2002"

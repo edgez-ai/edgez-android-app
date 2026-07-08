@@ -126,6 +126,15 @@ data class VoiceChunk(
     val audio: ByteArray,
 )
 
+data class ConversationChunk(
+    val groupId: Long,
+    val durationMs: Long,
+    val totalChunks: Int,
+    val index: Int,
+    val marker: Int,
+    val bytes: ByteArray,
+)
+
 private val VOICE_CHUNK_MAGIC = byteArrayOf('E'.code.toByte(), 'V'.code.toByte(), '2'.code.toByte())
 const val VOICE_CHUNK_AUDIO_BYTES = 290
 
@@ -143,19 +152,38 @@ fun encodeVoiceChunk(chunk: VoiceChunk): ByteArray {
 }
 
 fun decodeVoiceChunk(payload: ByteArray): VoiceChunk? {
+    val chunk = decodeConversationChunk(payload) ?: return null
+    return VoiceChunk(
+        groupId = chunk.groupId,
+        durationMs = chunk.durationMs,
+        totalChunks = chunk.totalChunks,
+        index = chunk.index,
+        codec = chunk.marker,
+        audio = chunk.bytes,
+    )
+}
+
+fun decodeConversationChunk(payload: ByteArray): ConversationChunk? {
     if (payload.size < VOICE_CHUNK_MAGIC.size + 8 + 4 + 2 + 2 + 1) return null
     if (!payload.take(VOICE_CHUNK_MAGIC.size).toByteArray().contentEquals(VOICE_CHUNK_MAGIC)) return null
     val buffer = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
     buffer.position(VOICE_CHUNK_MAGIC.size)
     val groupId = buffer.long
-    val durationMs = buffer.int.toLong().coerceAtLeast(0L)
+    val durationOrReserved = buffer.int.toLong().coerceAtLeast(0L)
     val totalChunks = buffer.short.toInt() and 0xffff
     val index = buffer.short.toInt() and 0xffff
-    val codec = buffer.get().toInt() and 0xff
-    val audio = ByteArray(buffer.remaining())
-    buffer.get(audio)
-    if (totalChunks <= 0 || index >= totalChunks || audio.isEmpty()) return null
-    return VoiceChunk(groupId, durationMs, totalChunks, index, codec, audio)
+    val marker = buffer.get().toInt() and 0xff
+    val bytes = ByteArray(buffer.remaining())
+    buffer.get(bytes)
+    if (totalChunks <= 0 || index >= totalChunks || bytes.isEmpty()) return null
+    return ConversationChunk(
+        groupId = groupId,
+        durationMs = durationOrReserved,
+        totalChunks = totalChunks,
+        index = index,
+        marker = marker,
+        bytes = bytes,
+    )
 }
 
 private fun conversationKey(

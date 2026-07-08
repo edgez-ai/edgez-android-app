@@ -169,11 +169,15 @@ private fun isUserNode(user: HaLowUser): Boolean {
     return user.deviceType == EdgeZDeviceType.USER || user.deviceType == EdgeZDeviceType.UNSPECIFIED
 }
 
-private fun isConversationNode(user: HaLowUser): Boolean {
-    return isUserNode(user) || user.deviceType == EdgeZDeviceType.GROUP
+    private fun isConversationNode(user: HaLowUser): Boolean {
+        return isUserNode(user) || user.deviceType == EdgeZDeviceType.GROUP
+    }
+
+private fun isUserConversationCrypto(user: HaLowUser): Boolean {
+    return user.deviceType == EdgeZDeviceType.USER
 }
 
-private fun newGroupPsk(): ByteArray = ByteArray(32).also(GROUP_RANDOM::nextBytes)
+    private fun newGroupPsk(): ByteArray = ByteArray(32).also(GROUP_RANDOM::nextBytes)
 
 private fun newGroupNodeNum(existingNodeNums: Set<Long>): Long {
     while (true) {
@@ -246,6 +250,24 @@ private data class PendingVoiceMessage(
     }
 }
 
+private data class PendingConversationChunk(
+    val chunks: Array<ByteArray?>,
+) {
+    fun put(index: Int, bytes: ByteArray) {
+        if (index in chunks.indices) {
+            chunks[index] = bytes
+        }
+    }
+
+    fun complete(): Boolean = chunks.all { it != null }
+
+    fun bytes(): ByteArray {
+        val out = ByteArrayOutputStream()
+        chunks.forEach { out.write(it ?: ByteArray(0)) }
+        return out.toByteArray()
+    }
+}
+
 @PreviewScreenSizes
 @Composable
 fun EdgeZApp() {
@@ -264,6 +286,7 @@ fun EdgeZApp() {
     val libp2pExecutor = remember { Executors.newSingleThreadExecutor() }
     val pendingHaLowInitKey = remember { AtomicReference<String?>(null) }
     val pendingVoiceMessages = remember { mutableMapOf<String, PendingVoiceMessage>() }
+    val pendingBinaryMessages = remember { mutableMapOf<String, PendingConversationChunk>() }
     val forwardPacketCache = remember { LinkedHashMap<ForwardPacketKey, Int>(FORWARD_CACHE_SIZE * 2) }
     var libp2pBridgeHolder by remember { mutableStateOf<Libp2pMeshBridge?>(null) }
     var libp2pMeshConnected by remember { mutableStateOf(false) }
@@ -943,7 +966,7 @@ fun EdgeZApp() {
                     if (message != null && conversationAck) {
                         markConversationDelivered(message)
                     }
-                    if (message != null && conversationMessage != null) {
+                    if (message != null && message.mime != PacketMime.UNSPECIFIED) {
                         val identity = lastConnectionPreferences.getOrCreateUserIdentity()
                         val senderUserUuid = packetUserUuid(message.userHigh, message.userLow)
                         val packetGroupId = if (message.groupIdHigh != 0L || message.groupIdLow != 0L) {
@@ -968,70 +991,221 @@ fun EdgeZApp() {
                                     .format(message.from, message.to),
                             )
                         } else {
+                            val shouldUseConversationCrypto = isUserConversationCrypto(senderUser)
                             val senderNodeNum = if (senderUser.deviceType == EdgeZDeviceType.GROUP) message.from else senderUser.nodeNum
                             val groupMessageId = packetGroupId ?: conversationGroupId(senderUser)
                             val entry = runCatching {
-                                when (message.mime) {
-                                    PacketMime.VOICE -> {
-                                        val payload = decryptConversationPayload(
-                                            identity,
-                                            senderUser,
-                                            message,
-                                            groupIdHigh = groupMessageId?.high ?: 0L,
-                                            groupIdLow = groupMessageId?.low ?: 0L,
-                                        )
-                                        val chunk = requireNotNull(decodeVoiceChunk(payload)) { "Voice chunk is malformed" }
-                                        val key = "${senderNodeNum}:${chunk.groupId}"
-                                        val pending = pendingVoiceMessages.getOrPut(key) {
-                                            PendingVoiceMessage(
-                                                durationMs = chunk.durationMs,
-                                                codec = chunk.codec,
-                                                chunks = arrayOfNulls(chunk.totalChunks),
+                                if (shouldUseConversationCrypto) {
+                                    when (message.mime) {
+                                        PacketMime.VOICE -> {
+                                            val payload = decryptConversationPayload(
+                                                identity,
+                                                senderUser,
+                                                message,
+                                                groupIdHigh = groupMessageId?.high ?: 0L,
+                                                groupIdLow = groupMessageId?.low ?: 0L,
                                             )
+                                            val chunk = requireNotNull(decodeVoiceChunk(payload)) { "Voice chunk is malformed" }
+                                            val key = "${senderNodeNum}:${chunk.groupId}"
+                                            val pending = pendingVoiceMessages.getOrPut(key) {
+                                                PendingVoiceMessage(
+                                                    durationMs = chunk.durationMs,
+                                                    codec = chunk.codec,
+                                                    chunks = arrayOfNulls(chunk.totalChunks),
+                                                )
+                                            }
+                                            pending.put(chunk.index, chunk.audio)
+                                            if (!pending.complete()) {
+                                                null
+                                            } else {
+                                                pendingVoiceMessages.remove(key)
+                                                val path = saveVoiceMessage(context.applicationContext, pending.bytes(), pending.codec)
+                                                if (lastConnectionPreferences.getAutoReplayReceivedVoice()) {
+                                                    VoiceMessagePlayer.play(path).onFailure {
+                                                        Log.w(TAG_USERS, "auto replay received voice failed path=$path", it)
+                                                    }
+                                                }
+                                                ConversationEntry(
+                                                    text = "Voice message",
+                                                    mine = false,
+                                                    timestampMs = System.currentTimeMillis(),
+                                                    mime = PacketMime.VOICE,
+                                                    audioPath = path,
+                                                    durationMs = pending.durationMs,
+                                                    messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow),
+                                                )
+                                            }
                                         }
-                                        pending.put(chunk.index, chunk.audio)
-                                        if (!pending.complete()) {
-                                            null
-                                        } else {
-                                            pendingVoiceMessages.remove(key)
-                                            val path = saveVoiceMessage(context.applicationContext, pending.bytes(), pending.codec)
-                                            if (lastConnectionPreferences.getAutoReplayReceivedVoice()) {
-                                                VoiceMessagePlayer.play(path).onFailure {
-                                                    Log.w(TAG_USERS, "auto replay received voice failed path=$path", it)
+
+                                        PacketMime.BINARY -> {
+                                            val payload = decryptConversationPayload(
+                                                identity,
+                                                senderUser,
+                                                message,
+                                                groupIdHigh = groupMessageId?.high ?: 0L,
+                                                groupIdLow = groupMessageId?.low ?: 0L,
+                                            )
+                                            val chunk = decodeConversationChunk(payload)
+                                            if (chunk == null) {
+                                                val path = saveBinaryMessage(context.applicationContext, payload)
+                                                ConversationEntry(
+                                                    text = summarizeBinaryPayload(payload),
+                                                    mine = false,
+                                                    timestampMs = System.currentTimeMillis(),
+                                                    mime = PacketMime.BINARY,
+                                                    audioPath = path,
+                                                    messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow),
+                                                )
+                                            } else {
+                                                val key = "${senderNodeNum}:${chunk.groupId}"
+                                                val pending = pendingBinaryMessages.getOrPut(key) {
+                                                    PendingConversationChunk(chunks = arrayOfNulls(chunk.totalChunks))
+                                                }
+                                                pending.put(chunk.index, chunk.bytes)
+                                                if (!pending.complete()) {
+                                                    null
+                                                } else {
+                                                    pendingBinaryMessages.remove(key)
+                                                    val assembled = pending.bytes()
+                                                    val path = saveBinaryMessage(context.applicationContext, assembled)
+                                                    ConversationEntry(
+                                                        text = summarizeBinaryPayload(assembled),
+                                                        mine = false,
+                                                        timestampMs = System.currentTimeMillis(),
+                                                        mime = PacketMime.BINARY,
+                                                        audioPath = path,
+                                                        messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow),
+                                                    )
                                                 }
                                             }
+                                        }
+                                        else -> ConversationEntry(
+                                            text = decryptConversationText(
+                                                identity,
+                                                senderUser,
+                                                message,
+                                                groupIdHigh = groupMessageId?.high ?: 0L,
+                                                groupIdLow = groupMessageId?.low ?: 0L,
+                                            ),
+                                            mine = false,
+                                            timestampMs = System.currentTimeMillis(),
+                                            messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow),
+                                        )
+                                    }
+                                } else {
+                                    when (message.mime) {
+                                        PacketMime.BINARY -> {
+                                            val payload = message.payload
+                                            val chunk = decodeConversationChunk(payload)
+                                            if (chunk == null) {
+                                                val path = saveBinaryMessage(context.applicationContext, payload)
+                                                ConversationEntry(
+                                                    text = summarizeBinaryPayload(payload),
+                                                    mine = false,
+                                                    timestampMs = System.currentTimeMillis(),
+                                                    mime = PacketMime.BINARY,
+                                                    audioPath = path,
+                                                    messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow),
+                                                )
+                                            } else {
+                                                val key = "${senderNodeNum}:${chunk.groupId}"
+                                                val pending = pendingBinaryMessages.getOrPut(key) {
+                                                    PendingConversationChunk(chunks = arrayOfNulls(chunk.totalChunks))
+                                                }
+                                                pending.put(chunk.index, chunk.bytes)
+                                                if (!pending.complete()) {
+                                                    null
+                                                } else {
+                                                    pendingBinaryMessages.remove(key)
+                                                    val assembled = pending.bytes()
+                                                    val path = saveBinaryMessage(context.applicationContext, assembled)
+                                                    ConversationEntry(
+                                                        text = summarizeBinaryPayload(assembled),
+                                                        mine = false,
+                                                        timestampMs = System.currentTimeMillis(),
+                                                        mime = PacketMime.BINARY,
+                                                        audioPath = path,
+                                                        messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow),
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        PacketMime.VOICE -> {
+                                            val chunk = decodeConversationChunk(message.payload)
+                                            if (chunk == null) {
+                                                val path = saveBinaryMessage(context.applicationContext, message.payload)
+                                                ConversationEntry(
+                                                    text = summarizeBinaryPayload(message.payload),
+                                                    mine = false,
+                                                    timestampMs = System.currentTimeMillis(),
+                                                    mime = PacketMime.BINARY,
+                                                    audioPath = path,
+                                                    messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow),
+                                                )
+                                            } else {
+                                                val key = "${senderNodeNum}:${chunk.groupId}"
+                                                val pending = pendingVoiceMessages.getOrPut(key) {
+                                                    PendingVoiceMessage(
+                                                        durationMs = 0L,
+                                                        codec = chunk.marker,
+                                                        chunks = arrayOfNulls(chunk.totalChunks),
+                                                    )
+                                                }
+                                                pending.put(chunk.index, chunk.bytes)
+                                                if (!pending.complete()) {
+                                                    null
+                                                } else {
+                                                    pendingVoiceMessages.remove(key)
+                                                    val path = saveVoiceMessage(context.applicationContext, pending.bytes(), pending.codec)
+                                                    ConversationEntry(
+                                                        text = "Voice message",
+                                                        mine = false,
+                                                    timestampMs = System.currentTimeMillis(),
+                                                        mime = PacketMime.VOICE,
+                                                        audioPath = path,
+                                                        durationMs = pending.durationMs,
+                                                        messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow),
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        PacketMime.TEXT -> {
                                             ConversationEntry(
-                                                text = "Voice message",
+                                                text = message.payload.toString(Charsets.UTF_8),
                                                 mine = false,
                                                 timestampMs = System.currentTimeMillis(),
-                                                mime = PacketMime.VOICE,
-                                                audioPath = path,
-                                                durationMs = pending.durationMs,
+                                                messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow),
+                                            )
+                                        }
+                                        else -> {
+                                            ConversationEntry(
+                                                text = summarizeBinaryPayload(message.payload),
+                                                mine = false,
+                                                timestampMs = System.currentTimeMillis(),
+                                                mime = PacketMime.TEXT,
+                                                audioPath = "",
                                                 messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow),
                                             )
                                         }
                                     }
-                                    else -> ConversationEntry(
-                                        text = decryptConversationText(
-                                            identity,
-                                            senderUser,
-                                            message,
-                                            groupIdHigh = groupMessageId?.high ?: 0L,
-                                            groupIdLow = groupMessageId?.low ?: 0L,
-                                        ),
-                                        mine = false,
-                                        timestampMs = System.currentTimeMillis(),
-                                        messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow),
-                                    )
                                 }
                             }.getOrElse {
                                 Log.w(
                                     TAG_USERS,
-                                    "conversation decrypt failed mime=${message.mime} from=0x%012x to=0x%012x seq=${message.sequence} payload=${message.payload.size} nonce=${conversationMessage.nonce.size} cipher=${conversationMessage.ciphertext.size}",
+                                    if (shouldUseConversationCrypto) {
+                                        "conversation decrypt failed mime=${message.mime} from=0x%012x to=0x%012x seq=${message.sequence} payload=${message.payload.size} " +
+                                            "nonce=${conversationMessage.nonce.size} cipher=${conversationMessage.ciphertext.size}"
+                                    } else {
+                                        "conversation decode failed for device traffic mime=${message.mime} from=0x%012x to=0x%012x seq=${message.sequence} payload=${message.payload.size}"
+                                    },
                                     it,
                                 )
                                 ConversationEntry(
-                                    text = "Unable to decrypt message",
+                                    text = if (shouldUseConversationCrypto) {
+                                        "Unable to decrypt message"
+                                    } else {
+                                        "Unable to decode message"
+                                    },
                                     mine = false,
                                     timestampMs = System.currentTimeMillis(),
                                     status = it.message.orEmpty(),

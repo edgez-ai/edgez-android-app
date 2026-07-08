@@ -30,6 +30,15 @@ enum Mime {
   MIME_BINARY = 5;
 }
 
+enum BinaryMime {
+  BINARY_MIME_UNSPECIFIED = 0;
+  BINARY_MIME_RAW = 1;
+  BINARY_MIME_IMAGE_JPEG = 2;
+  BINARY_MIME_IMAGE_PNG = 3;
+  BINARY_MIME_IMAGE_BMP = 4;
+  BINARY_MIME_RAW_GRAY8 = 5;
+}
+
 enum MarkerColor {
   MARKER_DEFAULT = 0;
   MARKER_RED = 1;
@@ -126,6 +135,7 @@ message SensorData {
   float humidity = 8;
   float pressure = 9;
   float vibration_average = 10;
+  BinaryMime binary_mime = 11;
 }
 
 message Beacon {

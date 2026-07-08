@@ -332,6 +332,7 @@ private fun ConversationBubble(
     onResendVoiceMessage: () -> Unit,
 ) {
     val isVoice = message.mime == PacketMime.VOICE
+    val isBinary = message.mime == PacketMime.BINARY
     val canResend = message.mine && isVoice && message.status.startsWith("Voice failed")
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -369,8 +370,17 @@ private fun ConversationBubble(
             ) {
                 if (isVoice) {
                     Text("Voice message ${formatDuration(message.durationMs)}", style = MaterialTheme.typography.bodyMedium)
+                } else if (isBinary) {
+                    Text(message.text, style = MaterialTheme.typography.bodyMedium)
                 } else {
                     Text(message.text, style = MaterialTheme.typography.bodyMedium)
+                }
+                if (isBinary && message.audioPath.isNotBlank()) {
+                    Text(
+                        "Saved: ${message.audioPath.substringAfterLast('/')}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 if (message.status.isNotBlank()) {
                     Text(
