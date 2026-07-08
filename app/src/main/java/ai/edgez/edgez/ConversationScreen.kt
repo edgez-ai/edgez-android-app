@@ -53,6 +53,7 @@ import ai.edgez.edgez.usb.PacketMime
 @Composable
 fun ConversationScreen(
     activeConnection: ActiveConnection,
+    canSendOverMesh: Boolean,
     user: HaLowUser,
     messages: List<ConversationEntry>,
     onBack: () -> Unit,
@@ -73,8 +74,8 @@ fun ConversationScreen(
         status = if (granted) "Hold voice to record" else "Microphone permission denied"
     }
     val hasConversationKey = user.publicKey.size == 32
-    val canSend = activeConnection != ActiveConnection.NONE && hasConversationKey && draft.isNotBlank()
-    val canSendVoice = activeConnection != ActiveConnection.NONE && hasConversationKey
+    val canSend = canSendOverMesh && hasConversationKey && draft.isNotBlank()
+    val canSendVoice = canSendOverMesh && hasConversationKey
     val listState = rememberLazyListState()
     var lastAutoScrolledMessageKey by rememberSaveable(userKey) { mutableStateOf("") }
     var lastOlderLoadMessageKey by rememberSaveable(userKey) { mutableStateOf("") }
@@ -293,7 +294,7 @@ fun ConversationScreen(
                     text = when {
                         recording -> "Recording"
                         canSendVoice -> "Hold to Talk"
-                        activeConnection == ActiveConnection.NONE -> "Connect to send voice"
+                        !canSendOverMesh -> "Connect to send voice"
                         else -> "Missing encryption key"
                     },
                     modifier = Modifier
@@ -403,6 +404,7 @@ private fun ConversationPreview() {
     EdgeZTheme {
         ConversationScreen(
             activeConnection = ActiveConnection.USB,
+            canSendOverMesh = true,
             user = HaLowUser(
                 nodeNum = 0x1f7e6325,
                 shortName = "Sams",

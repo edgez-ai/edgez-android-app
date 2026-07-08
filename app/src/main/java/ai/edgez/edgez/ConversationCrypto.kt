@@ -30,17 +30,17 @@ fun encryptConversationText(
     identity: UserIdentity,
     recipient: HaLowUser,
     text: String,
-    senderNode: Long,
+    _senderNode: Long,
 ): ConversationMessage {
     val plaintext = text.toByteArray(Charsets.UTF_8)
-    return encryptConversationPayload(identity, recipient, plaintext, senderNode)
+    return encryptConversationPayload(identity, recipient, plaintext, _senderNode)
 }
 
 fun encryptConversationPayload(
     identity: UserIdentity,
     recipient: HaLowUser,
     plaintext: ByteArray,
-    senderNode: Long,
+    _senderNode: Long,
     groupIdHigh: Long = 0,
     groupIdLow: Long = 0,
 ): ConversationMessage {
@@ -49,19 +49,13 @@ fun encryptConversationPayload(
     }
     val nonce = ByteArray(CONVERSATION_NONCE_SIZE)
     CONVERSATION_RANDOM.nextBytes(nonce)
-    val aad = conversationAad(
-        senderNode = senderNode,
-        recipientNode = recipient.nodeNum,
-        nonce = nonce,
-    )
+    val aad = conversationAad(nonce)
 
     val cipher = Cipher.getInstance("AES/GCM/NoPadding")
     cipher.init(
         Cipher.ENCRYPT_MODE,
         conversationKey(
             identity,
-            senderNode,
-            recipient.nodeNum,
             recipient.publicKey,
             recipient.deviceType,
             groupIdHigh = groupIdHigh,
@@ -106,18 +100,12 @@ fun decryptConversationPayload(
     require(sender.publicKey.size == 32) {
         if (sender.deviceType == EdgeZDeviceType.GROUP) "Group PSK is missing" else "Sender public key is missing"
     }
-    val aad = conversationAad(
-        senderNode = packet.from,
-        recipientNode = packet.to,
-        nonce = message.nonce,
-    )
+    val aad = conversationAad(message.nonce)
     val cipher = Cipher.getInstance("AES/GCM/NoPadding")
     cipher.init(
         Cipher.DECRYPT_MODE,
         conversationKey(
             identity,
-            packet.to,
-            sender.nodeNum,
             sender.publicKey,
             sender.deviceType,
             groupIdHigh = groupIdHigh,
@@ -172,8 +160,6 @@ fun decodeVoiceChunk(payload: ByteArray): VoiceChunk? {
 
 private fun conversationKey(
     identity: UserIdentity,
-    localUserId: Long,
-    peerUserId: Long,
     peerPublicKey: ByteArray,
     peerDeviceType: EdgeZDeviceType,
     groupIdHigh: Long = 0,
@@ -182,7 +168,7 @@ private fun conversationKey(
     if (peerDeviceType == EdgeZDeviceType.GROUP) {
         return groupConversationKey(
             groupIdHigh = if (groupIdHigh != 0L || groupIdLow != 0L) groupIdHigh else 0L,
-            groupIdLow = if (groupIdHigh != 0L || groupIdLow != 0L) groupIdLow else peerUserId,
+            groupIdLow = groupIdLow,
             psk = peerPublicKey,
         )
     }
@@ -190,13 +176,13 @@ private fun conversationKey(
     val digest = MessageDigest.getInstance("SHA-256")
     digest.update("EdgeZ conversation v1".toByteArray(Charsets.UTF_8))
     digest.update(sharedSecret)
-    val firstIsLocal = compareIdentityKeys(localUserId, identity.publicKey, peerUserId, peerPublicKey) <= 0
+    val firstIsLocal = comparePublicKeys(identity.publicKey, peerPublicKey) <= 0
     if (firstIsLocal) {
-        digest.update(identityKeyBytes(localUserId, identity.publicKey))
-        digest.update(identityKeyBytes(peerUserId, peerPublicKey))
+        digest.update(identity.publicKey)
+        digest.update(peerPublicKey)
     } else {
-        digest.update(identityKeyBytes(peerUserId, peerPublicKey))
-        digest.update(identityKeyBytes(localUserId, identity.publicKey))
+        digest.update(peerPublicKey)
+        digest.update(identity.publicKey)
     }
     return SecretKeySpec(digest.digest(), "AES")
 }
@@ -218,36 +204,18 @@ private fun groupConversationKey(
     return SecretKeySpec(digest.digest(), "AES")
 }
 
-private fun conversationAad(
-    senderNode: Long,
-    recipientNode: Long,
-    nonce: ByteArray,
-): ByteArray {
-    return ByteBuffer.allocate(8 + 8 + 2 + nonce.size)
+private fun conversationAad(nonce: ByteArray): ByteArray {
+    return ByteBuffer.allocate(2 + nonce.size)
         .order(ByteOrder.LITTLE_ENDIAN)
-        .putLong(senderNode)
-        .putLong(recipientNode)
         .putShort(nonce.size.toShort())
         .put(nonce)
         .array()
 }
 
-private fun identityKeyBytes(userId: Long, publicKey: ByteArray): ByteArray {
-    return ByteBuffer.allocate(8 + publicKey.size)
-        .order(ByteOrder.LITTLE_ENDIAN)
-        .putLong(userId)
-        .put(publicKey)
-        .array()
-}
-
-private fun compareIdentityKeys(
-    leftUserId: Long,
+private fun comparePublicKeys(
     leftPublicKey: ByteArray,
-    rightUserId: Long,
     rightPublicKey: ByteArray,
 ): Int {
-    val userCompare = leftUserId.compareTo(rightUserId)
-    if (userCompare != 0) return userCompare
     val maxSize = maxOf(leftPublicKey.size, rightPublicKey.size)
     for (i in 0 until maxSize) {
         val left = leftPublicKey.getOrNull(i)?.toInt()?.and(0xff) ?: -1

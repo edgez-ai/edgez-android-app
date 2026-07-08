@@ -77,6 +77,7 @@ private const val RECONNECT_DELAY_MS = 2_000L
 private const val TAG_USERS = "EdgeZUsers"
 private const val HALOW_BROADCAST_NODE_48 = 0xffffffffffffL
 private const val HALOW_BROADCAST_NODE_32 = 0xffffffffL
+private const val LIBP2P_PSEUDO_NODE = 1L
 private const val VOICE_CHUNK_SEND_SPACING_MS = 120L
 private val GROUP_RANDOM = SecureRandom()
 
@@ -248,6 +249,7 @@ fun EdgeZApp() {
     val pendingHaLowInitKey = remember { AtomicReference<String?>(null) }
     val pendingVoiceMessages = remember { mutableMapOf<String, PendingVoiceMessage>() }
     var libp2pBridgeHolder by remember { mutableStateOf<Libp2pMeshBridge?>(null) }
+    var libp2pMeshConnected by remember { mutableStateOf(false) }
     val reconnectRequested = remember { AtomicReference<ActiveConnection?>(null) }
     val reconnectAttemptRunning = remember { AtomicBoolean(false) }
     val shuttingDown = remember { AtomicBoolean(false) }
@@ -256,6 +258,7 @@ fun EdgeZApp() {
     var mapCameraLongitude by rememberSaveable { mutableStateOf<Double?>(null) }
     var mapCameraZoom by rememberSaveable { mutableStateOf<Int?>(null) }
     var activeConnection by rememberSaveable { mutableStateOf(ActiveConnection.NONE) }
+    val canSendOverMesh = activeConnection != ActiveConnection.NONE || libp2pMeshConnected
     var haLowStatus by remember { mutableStateOf<HaLowInterfaceStatus?>(null) }
     var haLowUsers by remember { mutableStateOf(edgeZDatabase.getUsers()) }
     var selectedConversationUser by remember { mutableStateOf<HaLowUser?>(null) }
@@ -443,10 +446,14 @@ fun EdgeZApp() {
                     libp2pExecutor.execute {
                         if (lastConnectionPreferences.getLibp2pMeshEnabled()) {
                             bridge.start(bridge.configFromPreferences(lastConnectionPreferences)).onFailure {
+                                mainHandler.post { libp2pMeshConnected = false }
                                 Log.w(TAG_USERS, "libp2p mesh restart failed", it)
+                            }.onSuccess {
+                                mainHandler.post { libp2pMeshConnected = true }
                             }
                         } else {
                             bridge.stop()
+                            mainHandler.post { libp2pMeshConnected = false }
                         }
                     }
                 }
@@ -479,7 +486,31 @@ fun EdgeZApp() {
     ): Result<String> {
         val result = sendAction()
         publishLibp2pFrame(packet)
-        return result
+        return if (result.isFailure && activeConnection == ActiveConnection.NONE && libp2pMeshConnected) {
+            Result.success("Queued via libp2p")
+        } else {
+            result
+        }
+    }
+
+    fun sendRouteLabel(): String = when {
+        activeConnection != ActiveConnection.NONE && libp2pMeshConnected -> "${activeConnection.name}+LIBP2P"
+        activeConnection != ActiveConnection.NONE -> activeConnection.name
+        libp2pMeshConnected -> "LIBP2P"
+        else -> activeConnection.name
+    }
+
+    fun outgoingFromNode(): Long? {
+        return haLowStatus?.macAddress?.takeIf { it != 0L }
+            ?: LIBP2P_PSEUDO_NODE.takeIf { activeConnection == ActiveConnection.NONE && libp2pMeshConnected }
+    }
+
+    fun outgoingToNode(conversationUser: HaLowUser): Long {
+        return if (activeConnection == ActiveConnection.NONE && libp2pMeshConnected) {
+            LIBP2P_PSEUDO_NODE
+        } else {
+            conversationUser.nodeNum
+        }
     }
 
     DisposableEffect(Unit) {
@@ -670,8 +701,14 @@ fun EdgeZApp() {
                     if (message != null && conversationMessage != null) {
                         val identity = lastConnectionPreferences.getOrCreateUserIdentity()
                         val senderUserUuid = packetUserUuid(message.userHigh, message.userLow)
+                        val packetGroupId = if (message.groupIdHigh != 0L || message.groupIdLow != 0L) {
+                            MessageUuidPair(message.groupIdHigh, message.groupIdLow)
+                        } else {
+                            null
+                        }
                         val groupUser = haLowUsers.values.firstOrNull {
-                            it.deviceType == EdgeZDeviceType.GROUP && it.nodeNum == message.to
+                            it.deviceType == EdgeZDeviceType.GROUP &&
+                                ((packetGroupId != null && conversationGroupId(it) == packetGroupId) || it.nodeNum == message.to)
                         }
                         val senderUser = groupUser ?: if (senderUserUuid.isNotBlank()) {
                             haLowUsers.values.firstOrNull { it.userUuid == senderUserUuid }
@@ -687,11 +724,7 @@ fun EdgeZApp() {
                             )
                         } else {
                             val senderNodeNum = if (senderUser.deviceType == EdgeZDeviceType.GROUP) message.from else senderUser.nodeNum
-                            val groupMessageId = if (message.groupIdHigh != 0L || message.groupIdLow != 0L) {
-                                MessageUuidPair(message.groupIdHigh, message.groupIdLow)
-                            } else {
-                                conversationGroupId(senderUser)
-                            }
+                            val groupMessageId = packetGroupId ?: conversationGroupId(senderUser)
                             val entry = runCatching {
                                 when (message.mime) {
                                     PacketMime.VOICE -> {
@@ -796,13 +829,16 @@ fun EdgeZApp() {
             libp2pExecutor.execute {
                 if (lastConnectionPreferences.getLibp2pMeshEnabled()) {
                     libp2pBridge.start(libp2pBridge.configFromPreferences(lastConnectionPreferences)).onFailure {
+                        mainHandler.post { libp2pMeshConnected = false }
                         Log.w(TAG_USERS, "libp2p mesh start failed", it)
                     }
                         .onSuccess {
+                            mainHandler.post { libp2pMeshConnected = true }
                             EdgeZBeaconRunner.publishSelfBeaconToLibp2p(context.applicationContext)
                         }
                 } else {
                     libp2pBridge.stop()
+                    mainHandler.post { libp2pMeshConnected = false }
                 }
             }
         }
@@ -828,6 +864,7 @@ fun EdgeZApp() {
             connectionPrefs.unregisterOnSharedPreferenceChangeListener(preferenceListener)
             libp2pExecutor.execute {
                 libp2pBridge.stop()
+                mainHandler.post { libp2pMeshConnected = false }
             }
             libp2pBridgeHolder = null
             removeUsbFrameListener()
@@ -878,7 +915,7 @@ fun EdgeZApp() {
         val conversationUserKey = conversationKey(conversationUser)
         val groupId = conversationGroupId(conversationUser)
         val identity = lastConnectionPreferences.getOrCreateUserIdentity()
-        val fromNode = haLowStatus?.macAddress?.takeIf { it != 0L }
+        val fromNode = outgoingFromNode()
         val timestampMs = System.currentTimeMillis()
         val messageUuid = newMessageUuid()
         val entry = ConversationEntry(
@@ -916,7 +953,7 @@ fun EdgeZApp() {
         }
 
         val result = runCatching {
-            val toNode = conversationUser.nodeNum
+            val toNode = outgoingToNode(conversationUser)
             val maxHop = lastConnectionPreferences.getMeshMaxHop()
             val voiceChunkGroupId = timestampMs
             val chunks = voiceBytes.asList().chunked(VOICE_CHUNK_AUDIO_BYTES)
@@ -994,7 +1031,7 @@ fun EdgeZApp() {
         }
         return result.fold(
             onSuccess = {
-                updateVoiceStatus("Voice sent via ${activeConnection.name}")
+                updateVoiceStatus("Voice sent via ${sendRouteLabel()}")
                 Result.success("Voice sent")
             },
             onFailure = {
@@ -1089,17 +1126,18 @@ fun EdgeZApp() {
                     } else {
                         ConversationScreen(
                             activeConnection = activeConnection,
+                            canSendOverMesh = canSendOverMesh,
                             user = conversationUser,
                             messages = conversations[conversationUserKey] ?: emptyList(),
                             onBack = { selectedConversationUser = null },
                             onLoadOlderMessages = { loadOlderMessages(conversationUser) },
                         onSendMessage = onSend@{ text ->
                             val identity = lastConnectionPreferences.getOrCreateUserIdentity()
-                            val fromNode = haLowStatus?.macAddress?.takeIf { it != 0L }
+                            val fromNode = outgoingFromNode()
                             if (fromNode == null) {
                                 return@onSend Result.failure(IllegalStateException("No local node id"))
                             }
-                            val toNode = conversationUser.nodeNum
+                            val toNode = outgoingToNode(conversationUser)
                             val groupId = conversationGroupId(conversationUser)
                             val maxHop = lastConnectionPreferences.getMeshMaxHop()
                             val messageUuid = newMessageUuid()
@@ -1169,7 +1207,7 @@ fun EdgeZApp() {
                                     text = text,
                                     mine = true,
                                     timestampMs = System.currentTimeMillis(),
-                                    status = "Sent via ${activeConnection.name}",
+                                    status = "Sent via ${sendRouteLabel()}",
                                     messageUuid = messageUuid.text,
                                 )
                                 edgeZDatabase.insertMessage(conversationUserKey, entry)
@@ -1177,14 +1215,14 @@ fun EdgeZApp() {
                                     conversationUserKey to ((conversations[conversationUserKey] ?: emptyList()) + entry)
                                     )
                             }
-                            return@onSend replicatedResult.map { "Sent via ${activeConnection.name}" }
+                            return@onSend replicatedResult.map { "Sent via ${sendRouteLabel()}" }
                         },
                             onSendVoiceMessage = { voiceBytes, durationMs, localPath, codec ->
                             sendVoiceMessageToUser(conversationUser, voiceBytes, durationMs, localPath, codec)
                         },
                             onResendVoiceMessage = { entry ->
                             val identity = lastConnectionPreferences.getOrCreateUserIdentity()
-                            val fromNode = haLowStatus?.macAddress?.takeIf { it != 0L }
+                            val fromNode = outgoingFromNode()
 
                             fun updateVoiceStatus(nextStatus: String) {
                                 edgeZDatabase.updateMessageStatus(conversationUserKey, entry.timestampMs, entry.audioPath, nextStatus)
@@ -1211,7 +1249,7 @@ fun EdgeZApp() {
                             } else {
                                 updateVoiceStatus("Resending voice...")
                                 val result = runCatching {
-                                    val toNode = conversationUser.nodeNum
+                                    val toNode = outgoingToNode(conversationUser)
                                     val groupId = conversationGroupId(conversationUser)
                                     val maxHop = lastConnectionPreferences.getMeshMaxHop()
                                     val voiceBytes = voiceFile.readBytes()
@@ -1292,7 +1330,7 @@ fun EdgeZApp() {
                                 }
                                 result.fold(
                                     onSuccess = {
-                                        updateVoiceStatus("Voice sent via ${activeConnection.name}")
+                                        updateVoiceStatus("Voice sent via ${sendRouteLabel()}")
                                         Result.success("Voice resent")
                                     },
                                     onFailure = {
@@ -1354,7 +1392,7 @@ fun EdgeZApp() {
             }
             AppDestination.PROFILE -> DashboardScreen(
                 users = haLowUsers.values.sortedByDescending { it.lastSeenMs },
-                activeConnection = activeConnection,
+                canSendOverMesh = canSendOverMesh,
                 sensorSamples = dashboardDeviceDisplays
                     .filterValues { it.showOnDashboard }
                     .mapValues { (_, display) -> edgeZDatabase.getSensorData(display.deviceKey) },
@@ -1426,7 +1464,7 @@ private enum class AppDestination(
 @Composable
 private fun DashboardScreen(
     users: List<HaLowUser>,
-    activeConnection: ActiveConnection,
+    canSendOverMesh: Boolean,
     sensorSamples: Map<String, List<SensorSample>>,
     dashboardDeviceDisplays: Map<String, DashboardDeviceDisplay>,
     dashboardWidgetOrder: List<String>,
@@ -1521,7 +1559,7 @@ private fun DashboardScreen(
                         ) {
                             DashboardWidgetCard(
                                 item = dashboardItem,
-                                activeConnection = activeConnection,
+                                canSendOverMesh = canSendOverMesh,
                                 editLayoutMode = editLayoutMode,
                                 modifier = Modifier.weight(1f),
                                 onOpenConversation = onOpenConversation,
@@ -1532,7 +1570,7 @@ private fun DashboardScreen(
                             if (nextItem != null) {
                                 DashboardWidgetCard(
                                     item = nextItem,
-                                    activeConnection = activeConnection,
+                                    canSendOverMesh = canSendOverMesh,
                                     editLayoutMode = editLayoutMode,
                                     modifier = Modifier.weight(1f),
                                     onOpenConversation = onOpenConversation,
@@ -1550,7 +1588,7 @@ private fun DashboardScreen(
                     item(key = dashboardItem.display.deviceKey) {
                         DashboardWidgetCard(
                             item = dashboardItem,
-                            activeConnection = activeConnection,
+                            canSendOverMesh = canSendOverMesh,
                             editLayoutMode = editLayoutMode,
                             onOpenConversation = onOpenConversation,
                             onOpenSensorDetail = onOpenSensorDetail,
@@ -1577,7 +1615,7 @@ private data class DashboardDeviceItem(
 @Composable
 private fun DashboardWidgetCard(
     item: DashboardDeviceItem,
-    activeConnection: ActiveConnection,
+    canSendOverMesh: Boolean,
     editLayoutMode: Boolean,
     modifier: Modifier = Modifier.fillMaxWidth(),
     onOpenConversation: (HaLowUser) -> Unit,
@@ -1588,7 +1626,7 @@ private fun DashboardWidgetCard(
     if (isUserNode(item.user)) {
         DashboardUserCard(
             item = item,
-            activeConnection = activeConnection,
+            canSendOverMesh = canSendOverMesh,
             editLayoutMode = editLayoutMode,
             modifier = modifier,
             onOpenConversation = onOpenConversation,
@@ -1654,7 +1692,7 @@ private fun Modifier.dashboardWidgetReorderInput(
 @Composable
 private fun DashboardUserCard(
     item: DashboardDeviceItem,
-    activeConnection: ActiveConnection,
+    canSendOverMesh: Boolean,
     editLayoutMode: Boolean,
     modifier: Modifier = Modifier.fillMaxWidth(),
     onOpenConversation: (HaLowUser) -> Unit,
@@ -1671,7 +1709,7 @@ private fun DashboardUserCard(
     ) { granted ->
         status = if (granted) "Hold to talk" else "Microphone permission denied"
     }
-    val canSendVoice = activeConnection != ActiveConnection.NONE
+    val canSendVoice = canSendOverMesh
     val markerBackground = item.user.markerTintColor()?.let { markerColor ->
         lerp(MaterialTheme.colorScheme.surfaceVariant, markerColor, 0.40f)
     } ?: MaterialTheme.colorScheme.surfaceVariant
