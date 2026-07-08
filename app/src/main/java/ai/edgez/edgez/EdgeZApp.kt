@@ -561,7 +561,7 @@ fun EdgeZApp() {
         }
 
     fun sendAndReplicate(
-        _source: ActiveConnection,
+        source: ActiveConnection,
         packet: ByteArray,
         sendAction: () -> Result<String>,
     ): Result<String> {
@@ -570,8 +570,16 @@ fun EdgeZApp() {
         val decodedPacket = decodeHaLowSyncFrame(packet, meshPassphrase)
             ?: EdgezUsbControlProto.decodeNetworkPacket(packet, meshPassphrase)
         decodedPacket?.let {
+            Log.d(
+                TAG_USERS,
+                "libp2p forward tx decode source=$source msg=${formatMessageUuid(it.messageIdHigh, it.messageIdLow)} " +
+                    "hop=${it.hop} seq=${it.sequence} from=0x${it.from.toString(16)} to=0x${it.to.toString(16)}",
+            )
             rememberForwardedPacket(it, 0)
+        } ?: run {
+            Log.w(TAG_USERS, "libp2p forward tx decode failed source=$source bytes=${summarizeLibp2pPayload(packet)}")
         }
+        Log.d(TAG_USERS, "libp2p publish request source=$source ${summarizeLibp2pPayload(packet)}")
         publishLibp2pFrame(packet)
         return if (result.isFailure && activeConnection == ActiveConnection.NONE && libp2pMeshConnected) {
             Result.success("Queued via libp2p")
@@ -739,6 +747,15 @@ fun EdgeZApp() {
             val meshPassphrase = lastConnectionPreferences.getMeshPassphrase()
             val inferredHop = if (route == ROUTE_LIBP2P || route == ROUTE_BLE_FORWARD) 1 else 0
             val parsed = decodeHaLowSyncFrame(frame, meshPassphrase) ?: EdgezUsbControlProto.decodeNetworkPacket(frame, meshPassphrase)
+            if (route == ROUTE_LIBP2P) {
+                parsed?.let {
+                    Log.d(
+                        TAG_USERS,
+                        "libp2p rx parsed route=$route msg=${formatMessageUuid(it.messageIdHigh, it.messageIdLow)} " +
+                            "hop=${it.hop} seq=${it.sequence} from=0x${it.from.toString(16)} to=0x${it.to.toString(16)}",
+                    )
+                } ?: Log.w(TAG_USERS, "libp2p rx parse failed route=$route ${summarizeLibp2pPayload(frame)}")
+            }
             val message = parsed?.copy(hop = inferredHop.coerceAtLeast(parsed.hop))
             val status = message?.halowStatus ?: decodeHaLowStatusFrame(frame, meshPassphrase)
             val user = message?.toHaLowUser(route)
@@ -752,7 +769,7 @@ fun EdgeZApp() {
             } == true
 
             if (status == null && user == null && conversationMessage == null && !conversationAck) return
-            if (message != null && (conversationMessage != null || conversationAck)) {
+            if (message != null && (conversationMessage != null || conversationAck || user != null)) {
                 if (!shouldProcessForwardedPacket(message, message.hop)) {
                     Log.d(TAG_USERS, "drop duplicate frame route=$route messageId=${formatMessageUuid(message.messageIdHigh, message.messageIdLow)}")
                     return
@@ -760,17 +777,23 @@ fun EdgeZApp() {
                 when (route) {
                     ROUTE_BLE, ROUTE_BLE_FORWARD -> {
                         if (libp2pMeshConnected) {
+                            Log.d(TAG_USERS, "libp2p forward tx route=$route msg=${formatMessageUuid(message.messageIdHigh, message.messageIdLow)} hop=${message.hop}")
                             rememberForwardedPacket(message.copy(hop = message.hop + 1), message.hop + 1)
                             publishLibp2pFrame(frame)
+                        } else {
+                            Log.w(TAG_USERS, "libp2p forward skip: libp2p disconnected route=$route msg=${formatMessageUuid(message.messageIdHigh, message.messageIdLow)}")
                         }
                     }
                     ROUTE_LIBP2P -> {
                         if (activeConnection == ActiveConnection.BLE) {
+                            Log.d(TAG_USERS, "ble forward tx route=$route msg=${formatMessageUuid(message.messageIdHigh, message.messageIdLow)} hop=${message.hop}")
                             rememberForwardedPacket(message.copy(hop = message.hop + 1), message.hop + 1)
                             val result = bleClient.sendForwardPayload(frame)
                             result.onFailure {
                                 Log.w(TAG_USERS, "BLE forward send failed: ${it.message}")
                             }
+                        } else {
+                            Log.w(TAG_USERS, "libp2p forward rx not relayed: no active BLE route=$route msg=${formatMessageUuid(message.messageIdHigh, message.messageIdLow)}")
                         }
                     }
                 }
