@@ -326,6 +326,7 @@ func startMesh(configJSON string) string {
 	}
 
 	meshBootstrapPeers := parseBootstrapPeers(publicDHTBootstrapPeerAddrs)
+	meshBootstrapPeers = append(meshBootstrapPeers, parseBootstrapPeers(cfg.BootstrapPeers)...)
 	logDebug("start", fmt.Sprintf("mesh config mesh_id=%s topic=%s listen=%s public_dht=%t custom_bootstraps=%d dht_bootstraps=%d", cfg.MeshID, cfg.Topic, cfg.Listen, cfg.PublicDHT, len(cfg.BootstrapPeers), len(meshBootstrapPeers)))
 	meshBootstrapPeers = dedupePeerInfo(meshBootstrapPeers)
 	dhtOptions := []dht.Option{dht.Mode(dht.ModeClient)}
