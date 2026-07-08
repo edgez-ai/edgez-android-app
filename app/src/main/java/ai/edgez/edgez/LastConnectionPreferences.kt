@@ -30,6 +30,7 @@ private const val DEFAULT_MESH_ID = "edgez"
 private const val DEFAULT_MESH_MAX_HOP = 2
 val EDGEZ_LIBP2P_BOOTSTRAP_PEER: String =
     "/ip4/65.20.115.199/tcp/4001/p2p/12D3KooWSMXRqi2rd7p4UPErgVS6zFeYpYuddo8qayYxkSR2WT7Q"
+const val EDGEZ_LIBP2P_SWARM_KEY = "dde06cad2512343bcb572f3b9a6f7f3d7165492aa9d257b80958108848cdcf22"
 val DEFAULT_LIBP2P_BOOTSTRAP_PEERS = """
     /dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN
     /dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa

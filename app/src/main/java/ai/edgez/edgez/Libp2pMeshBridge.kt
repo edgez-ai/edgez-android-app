@@ -82,6 +82,11 @@ class Libp2pMeshBridge(
         Log.d(TAG_LIBP2P, "libp2p listen=$listen")
         val bootstrapPeers = preferences.getLibp2pBootstrapPeers()
         Log.d(TAG_LIBP2P, "libp2p bootstrap peers=${bootstrapPeers.size}")
+        val swarmKey = if (bootstrapPeers == listOf(EDGEZ_LIBP2P_BOOTSTRAP_PEER)) {
+            EDGEZ_LIBP2P_SWARM_KEY
+        } else {
+            ""
+        }
         return Libp2pMeshConfig(
             meshId = meshId,
             passphrase = preferences.getMeshPassphrase(),
@@ -90,6 +95,7 @@ class Libp2pMeshBridge(
             listen = listen,
             bootstrapPeers = bootstrapPeers,
             publicDht = false,
+            swarmKey = swarmKey,
         )
     }
 
