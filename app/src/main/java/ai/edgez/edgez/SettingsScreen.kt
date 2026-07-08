@@ -125,6 +125,7 @@ fun SettingsScreen(
     activeConnection: ActiveConnection,
     edgeZDatabase: EdgeZDatabase,
     shareLocation: Boolean,
+    onLibp2pMeshSettingsSaved: () -> Unit = {},
     onShareLocationChange: (Boolean) -> Unit,
     onTransportConnectionChange: (ActiveConnection, Boolean) -> Unit,
     onTransportDisconnect: (ActiveConnection) -> Unit,
@@ -136,6 +137,7 @@ fun SettingsScreen(
         edgeZDatabase = edgeZDatabase,
         shareLocation = shareLocation,
         provisionMode = false,
+        onLibp2pMeshSettingsSaved = onLibp2pMeshSettingsSaved,
         onShareLocationChange = onShareLocationChange,
         onTransportConnectionChange = onTransportConnectionChange,
         onTransportDisconnect = onTransportDisconnect,
@@ -152,6 +154,7 @@ private fun SettingsContent(
     edgeZDatabase: EdgeZDatabase,
     shareLocation: Boolean,
     provisionMode: Boolean,
+    onLibp2pMeshSettingsSaved: () -> Unit = {},
     onShareLocationChange: (Boolean) -> Unit,
     onTransportConnectionChange: (ActiveConnection, Boolean) -> Unit,
     onTransportDisconnect: (ActiveConnection) -> Unit,
@@ -781,6 +784,7 @@ private fun SettingsContent(
         connectionPreferences.setLibp2pBootstrapPeers(libp2pBootstrapPeers)
         userIdentity = connectionPreferences.getOrCreateUserIdentity()
         status = "Settings saved"
+        onLibp2pMeshSettingsSaved()
     }
 
     DisposableEffect(Unit) {
