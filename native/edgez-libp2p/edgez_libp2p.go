@@ -147,6 +147,7 @@ import (
 	"github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	"github.com/multiformats/go-multiaddr"
@@ -164,14 +165,18 @@ type meshConfig struct {
 }
 
 type meshState struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	host   host.Host
-	dht    *dht.IpfsDHT
-	pubsub *pubsub.PubSub
-	topic  *pubsub.Topic
-	sub    *pubsub.Subscription
-	peerID peer.ID
+	ctx            context.Context
+	cancel         context.CancelFunc
+	host           host.Host
+	dht            *dht.IpfsDHT
+	pubsub         *pubsub.PubSub
+	topic          *pubsub.Topic
+	sub            *pubsub.Subscription
+	peerID         peer.ID
+	bootstrapPeers []peer.AddrInfo
+	topicName      string
+	subMu          sync.Mutex
+	connectMu      sync.Mutex
 }
 
 var (
@@ -375,9 +380,21 @@ func startMesh(configJSON string) string {
 		return errorJSON(fmt.Sprintf("subscribe topic: %v", err))
 	}
 
-	state = &meshState{ctx: ctx, cancel: cancel, host: h, dht: kad, pubsub: ps, topic: topic, sub: sub, peerID: h.ID()}
+	state = &meshState{
+		ctx:            ctx,
+		cancel:         cancel,
+		host:           h,
+		dht:            kad,
+		pubsub:         ps,
+		topic:          topic,
+		sub:            sub,
+		peerID:         h.ID(),
+		bootstrapPeers: bootstrapPeers,
+		topicName:      topicName,
+	}
 	logInfo("start", fmt.Sprintf("running mesh_id=%s peer=%s topic=%s", cfg.MeshID, h.ID().String(), topicName))
 	go readLoop(state)
+	go reconnectLoop(state)
 	return okJSON(map[string]any{
 		"state":        "running",
 		"peer_id":      h.ID().String(),
@@ -422,9 +439,14 @@ func publishMesh(payload []byte) string {
 		logWarn("publish", "publish failed: libp2p mesh is not running")
 		return errorJSON("libp2p mesh is not running")
 	}
+	if len(local.topic.ListPeers()) == 0 {
+		logWarn("publish", "no pubsub peers before publish; nudging bootstrap reconnect")
+		go local.ensureBootstrapConnected("publish")
+	}
 	logDebug("publish", fmt.Sprintf("sending pubsub message bytes=%d", len(payload)))
 	if err := local.topic.Publish(local.ctx, payload); err != nil {
 		logWarn("publish", fmt.Sprintf("publish failed bytes=%d err=%v", len(payload), err))
+		go local.ensureBootstrapConnected("publish-failed")
 		return errorJSON(fmt.Sprintf("publish: %v", err))
 	}
 	logDebug("publish", fmt.Sprintf("publish success bytes=%d", len(payload)))
@@ -433,10 +455,23 @@ func publishMesh(payload []byte) string {
 
 func readLoop(local *meshState) {
 	for {
-		msg, err := local.sub.Next(local.ctx)
+		sub := local.currentSubscription()
+		if sub == nil {
+			if !local.resubscribe("missing-subscription") {
+				return
+			}
+			continue
+		}
+		msg, err := sub.Next(local.ctx)
 		if err != nil {
 			logWarn("readLoop", fmt.Sprintf("subscription end: %v", err))
-			return
+			if local.ctx.Err() != nil {
+				return
+			}
+			if !local.resubscribe("subscription-ended") {
+				return
+			}
+			continue
 		}
 		logDebug("readLoop", fmt.Sprintf("received pubsub message from=%s bytes=%d", msg.ReceivedFrom.String(), len(msg.Data)))
 		if msg.ReceivedFrom == local.peerID {
@@ -445,6 +480,99 @@ func readLoop(local *meshState) {
 		}
 		invokeCallback(msg.Data)
 	}
+}
+
+func (local *meshState) currentSubscription() *pubsub.Subscription {
+	local.subMu.Lock()
+	defer local.subMu.Unlock()
+	return local.sub
+}
+
+func (local *meshState) resubscribe(reason string) bool {
+	if local.ctx.Err() != nil || local.topic == nil {
+		return false
+	}
+	local.subMu.Lock()
+	defer local.subMu.Unlock()
+	if local.sub != nil {
+		local.sub.Cancel()
+		local.sub = nil
+	}
+	for attempt := 1; attempt <= 3; attempt++ {
+		sub, err := local.topic.Subscribe()
+		if err == nil {
+			local.sub = sub
+			logInfo("readLoop", fmt.Sprintf("resubscribed topic=%s reason=%s attempt=%d", local.topicName, reason, attempt))
+			return true
+		}
+		logWarn("readLoop", fmt.Sprintf("resubscribe failed topic=%s reason=%s attempt=%d err=%v", local.topicName, reason, attempt, err))
+		select {
+		case <-local.ctx.Done():
+			return false
+		case <-time.After(time.Duration(attempt) * time.Second):
+		}
+	}
+	return false
+}
+
+func reconnectLoop(local *meshState) {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-local.ctx.Done():
+			return
+		case <-ticker.C:
+			local.ensureBootstrapConnected("periodic")
+		}
+	}
+}
+
+func (local *meshState) ensureBootstrapConnected(reason string) {
+	if local == nil || local.ctx.Err() != nil || local.host == nil {
+		return
+	}
+	local.connectMu.Lock()
+	defer local.connectMu.Unlock()
+
+	topicPeers := 0
+	if local.topic != nil {
+		topicPeers = len(local.topic.ListPeers())
+	}
+	networkPeers := len(local.host.Network().Peers())
+	connectedBootstrapPeers := 0
+	for _, info := range local.bootstrapPeers {
+		if local.host.Network().Connectedness(info.ID) == network.Connected {
+			connectedBootstrapPeers++
+		}
+	}
+
+	logDebug(
+		"reconnect",
+		fmt.Sprintf(
+			"check reason=%s topic_peers=%d network_peers=%d bootstrap_connected=%d bootstrap_total=%d",
+			reason,
+			topicPeers,
+			networkPeers,
+			connectedBootstrapPeers,
+			len(local.bootstrapPeers),
+		),
+	)
+
+	if len(local.bootstrapPeers) == 0 {
+		return
+	}
+	if connectedBootstrapPeers > 0 && topicPeers > 0 {
+		return
+	}
+
+	logInfo("reconnect", fmt.Sprintf("refresh bootstrap reason=%s", reason))
+	if local.dht != nil {
+		if err := local.dht.Bootstrap(local.ctx); err != nil && local.ctx.Err() == nil {
+			logWarn("reconnect", fmt.Sprintf("dht bootstrap failed reason=%s err=%v", reason, err))
+		}
+	}
+	connectBootstrapAddrInfos(local.ctx, local.host, local.bootstrapPeers)
 }
 
 func invokeCallback(payload []byte) {
