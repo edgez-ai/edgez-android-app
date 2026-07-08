@@ -19,6 +19,8 @@ data class Libp2pMeshConfig(
     val topic: String,
     val listen: String = "/ip4/0.0.0.0/tcp/0",
     val bootstrapPeers: List<String> = emptyList(),
+    val publicDht: Boolean = false,
+    val swarmKey: String = "",
 )
 
 class Libp2pMeshBridge(
@@ -78,12 +80,16 @@ class Libp2pMeshBridge(
         val meshId = preferences.getMeshId().ifBlank { "edgez" }
         val listen = localListenAddr()
         Log.d(TAG_LIBP2P, "libp2p listen=$listen")
+        val bootstrapPeers = preferences.getLibp2pBootstrapPeers()
+        Log.d(TAG_LIBP2P, "libp2p bootstrap peers=${bootstrapPeers.size}")
         return Libp2pMeshConfig(
             meshId = meshId,
             passphrase = preferences.getMeshPassphrase(),
             privateKey = Libp2pIdentity.getOrCreatePrivateKeySeed(appContext),
             topic = topicFor(meshId),
             listen = listen,
+            bootstrapPeers = bootstrapPeers,
+            publicDht = false,
         )
     }
 
@@ -106,6 +112,8 @@ class Libp2pMeshBridge(
             .put("topic", topic)
             .put("listen", listen)
             .put("bootstrap_peers", JSONArray(bootstrapPeers))
+            .put("public_dht", publicDht)
+            .put("swarm_key", swarmKey)
             .toString()
     }
 

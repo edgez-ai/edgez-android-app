@@ -182,6 +182,9 @@ private fun SettingsContent(
     var passphraseVisible by rememberSaveable { mutableStateOf(false) }
     var maxHop by rememberSaveable { mutableStateOf(connectionPreferences.getMeshMaxHop().toString()) }
     var libp2pMeshEnabled by rememberSaveable { mutableStateOf(connectionPreferences.getLibp2pMeshEnabled()) }
+    var libp2pBootstrapPeers by rememberSaveable {
+        mutableStateOf(connectionPreferences.getLibp2pBootstrapPeers().joinToString("\n"))
+    }
     var beaconIntervalSeconds by rememberSaveable {
         mutableStateOf(connectionPreferences.getBeaconIntervalSeconds().toString())
     }
@@ -271,6 +274,7 @@ private fun SettingsContent(
         passphrase = connectionPreferences.getMeshPassphrase()
         maxHop = connectionPreferences.getMeshMaxHop().toString()
         libp2pMeshEnabled = connectionPreferences.getLibp2pMeshEnabled()
+        libp2pBootstrapPeers = connectionPreferences.getLibp2pBootstrapPeers().joinToString("\n")
         beaconIntervalSeconds = connectionPreferences.getBeaconIntervalSeconds().toString()
         userIdentity = connectionPreferences.getOrCreateUserIdentity()
         userName = userIdentity.name
@@ -740,6 +744,7 @@ private fun SettingsContent(
         connectionPreferences.setUserMarker(userMarker)
         connectionPreferences.setShareLocation(shareLocation)
         connectionPreferences.setLibp2pMeshEnabled(libp2pMeshEnabled)
+        connectionPreferences.setLibp2pBootstrapPeers(libp2pBootstrapPeers)
         userIdentity = connectionPreferences.getOrCreateUserIdentity()
         status = "Settings saved"
     }
@@ -1315,6 +1320,20 @@ private fun SettingsContent(
                                 },
                             )
                         }
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = libp2pBootstrapPeers,
+                            onValueChange = { value ->
+                                libp2pBootstrapPeers = value
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Libp2p private DHT peers") },
+                            singleLine = false,
+                            maxLines = 4,
+                            supportingText = {
+                                Text("Enter relay/DHT server multiaddrs, one per line or separated by commas")
+                            },
+                        )
                     }
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(

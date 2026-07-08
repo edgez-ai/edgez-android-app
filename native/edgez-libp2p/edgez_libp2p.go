@@ -134,6 +134,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -147,6 +148,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	"github.com/multiformats/go-multiaddr"
 )
 
@@ -157,6 +159,8 @@ type meshConfig struct {
 	Topic          string   `json:"topic"`
 	Listen         string   `json:"listen"`
 	BootstrapPeers []string `json:"bootstrap_peers"`
+	PublicDHT      bool     `json:"public_dht"`
+	SwarmKey       string   `json:"swarm_key"`
 }
 
 type meshState struct {
@@ -289,25 +293,48 @@ func startMesh(configJSON string) string {
 	if listen == "" {
 		listen = "/ip4/0.0.0.0/tcp/0"
 	}
-	h, err := libp2p.New(
+	bootstrapPeers := parseBootstrapPeers(cfg.BootstrapPeers)
+	hostOptions := []libp2p.Option{
 		libp2p.Identity(priv),
 		libp2p.ListenAddrStrings(listen),
 		libp2p.EnableRelay(),
 		libp2p.EnableHolePunching(),
-	)
+	}
+	if len(bootstrapPeers) > 0 {
+		hostOptions = append(hostOptions,
+			libp2p.NATPortMap(),
+			libp2p.EnableAutoNATv2(),
+			libp2p.EnableAutoRelayWithStaticRelays(bootstrapPeers),
+		)
+	}
+	if swarmKey, err := readOptionalSwarmKey(cfg.SwarmKey); err != nil {
+		cancel()
+		return errorJSON(err.Error())
+	} else if swarmKey != nil {
+		hostOptions = append(hostOptions, libp2p.PrivateNetwork(swarmKey))
+		logInfo("start", "libp2p private network enabled")
+	}
+	h, err := libp2p.New(hostOptions...)
 	if err != nil {
 		cancel()
 		return errorJSON(fmt.Sprintf("start libp2p host: %v", err))
 	}
 
-	defaultBootstrapPeers := dht.GetDefaultBootstrapPeerAddrInfos()
-	meshBootstrapPeers := append(defaultBootstrapPeers, parseBootstrapPeers(cfg.BootstrapPeers)...)
-	logDebug("start", fmt.Sprintf("mesh config mesh_id=%s topic=%s listen=%s custom_bootstraps=%d dht_bootstraps=%d", cfg.MeshID, cfg.Topic, cfg.Listen, len(cfg.BootstrapPeers), len(defaultBootstrapPeers)))
+	meshBootstrapPeers := make([]peer.AddrInfo, 0, len(bootstrapPeers))
+	if cfg.PublicDHT {
+		meshBootstrapPeers = append(meshBootstrapPeers, dht.GetDefaultBootstrapPeerAddrInfos()...)
+	}
+	meshBootstrapPeers = append(meshBootstrapPeers, bootstrapPeers...)
+	logDebug("start", fmt.Sprintf("mesh config mesh_id=%s topic=%s listen=%s public_dht=%t custom_bootstraps=%d dht_bootstraps=%d", cfg.MeshID, cfg.Topic, cfg.Listen, cfg.PublicDHT, len(cfg.BootstrapPeers), len(meshBootstrapPeers)))
 	if len(cfg.BootstrapPeers) > 0 {
-		logInfo("bootstrap", fmt.Sprintf("using custom bootstrap peers=%d", len(cfg.BootstrapPeers)))
+		logInfo("bootstrap", fmt.Sprintf("using private bootstrap peers=%d", len(cfg.BootstrapPeers)))
 	}
 	meshBootstrapPeers = dedupePeerInfo(meshBootstrapPeers)
-	kad, err := dht.New(ctx, h, dht.Mode(dht.ModeAuto), dht.BootstrapPeers(meshBootstrapPeers...))
+	dhtOptions := []dht.Option{dht.Mode(dht.ModeServer)}
+	if len(meshBootstrapPeers) > 0 {
+		dhtOptions = append(dhtOptions, dht.BootstrapPeers(meshBootstrapPeers...))
+	}
+	kad, err := dht.New(ctx, h, dhtOptions...)
 	if err != nil {
 		_ = h.Close()
 		cancel()
@@ -319,8 +346,9 @@ func startMesh(configJSON string) string {
 		cancel()
 		return errorJSON(fmt.Sprintf("bootstrap dht: %v", err))
 	}
-	connectBootstrapPeers(ctx, h, cfg.BootstrapPeers)
-	ps, err := pubsub.NewGossipSub(ctx, h)
+	connectBootstrapAddrInfos(ctx, h, bootstrapPeers)
+	rd := routing.NewRoutingDiscovery(kad)
+	ps, err := pubsub.NewGossipSub(ctx, h, pubsub.WithDiscovery(rd))
 	if err != nil {
 		_ = kad.Close()
 		_ = h.Close()
@@ -445,6 +473,21 @@ func parseConfig(raw string) (meshConfig, error) {
 	return cfg, nil
 }
 
+func readOptionalSwarmKey(key string) ([]byte, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return nil, nil
+	}
+	decoded, err := hex.DecodeString(key)
+	if err != nil {
+		return nil, fmt.Errorf("invalid swarm key: %w", err)
+	}
+	if len(decoded) != 32 {
+		return nil, fmt.Errorf("invalid swarm key: expected 32 bytes, got %d", len(decoded))
+	}
+	return decoded, nil
+}
+
 func privateKeyFromConfig(cfg meshConfig) (crypto.PrivKey, error) {
 	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(cfg.PrivateKey))
 	if err != nil || len(raw) == 0 {
@@ -470,7 +513,11 @@ func seedForConfig(cfg meshConfig) []byte {
 }
 
 func connectBootstrapPeers(ctx context.Context, h host.Host, peers []string) {
-	for _, info := range parseBootstrapPeers(peers) {
+	connectBootstrapAddrInfos(ctx, h, parseBootstrapPeers(peers))
+}
+
+func connectBootstrapAddrInfos(ctx context.Context, h host.Host, peers []peer.AddrInfo) {
+	for _, info := range peers {
 		logInfo("bootstrap", fmt.Sprintf("connect bootstrap=%s", info.String()))
 		go func(info peer.AddrInfo) {
 			connectCtx, cancel := context.WithTimeout(ctx, 10*time.Second)

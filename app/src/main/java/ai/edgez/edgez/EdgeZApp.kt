@@ -433,6 +433,7 @@ fun EdgeZApp() {
                 mapCursorMarker = lastConnectionPreferences.getUserMarker()
             } else if (
                 key == "libp2p_mesh_enabled" ||
+                key == "libp2p_bootstrap_peers" ||
                 key == "mesh_id" ||
                 key == "mesh_passphrase" ||
                 key == "user_private_key" ||

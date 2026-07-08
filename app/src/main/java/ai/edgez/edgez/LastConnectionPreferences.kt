@@ -11,6 +11,7 @@ private const val KEY_MESH_ID = "mesh_id"
 private const val KEY_MESH_PASSPHRASE = "mesh_passphrase"
 private const val KEY_MESH_MAX_HOP = "mesh_max_hop"
 private const val KEY_LIBP2P_MESH_ENABLED = "libp2p_mesh_enabled"
+private const val KEY_LIBP2P_BOOTSTRAP_PEERS = "libp2p_bootstrap_peers"
 private const val KEY_BEACON_INTERVAL_SECONDS = "beacon_interval_seconds"
 private const val KEY_USER_UUID = "user_uuid"
 private const val KEY_USER_NAME = "user_name"
@@ -27,6 +28,8 @@ private const val KEY_SELECTED_DEVICE_GEOFENCE = "selected_device_geofence"
 private const val KEY_DASHBOARD_WIDGET_ORDER = "dashboard_widget_order"
 private const val DEFAULT_MESH_ID = "edgez"
 private const val DEFAULT_MESH_MAX_HOP = 2
+private const val DEFAULT_LIBP2P_BOOTSTRAP_PEER =
+    "/ip4/65.20.115.199/tcp/4001/p2p/12D3KooWSMXRqi2rd7p4UPErgVS6zFeYpYuddo8qayYxkSR2WT7Q"
 const val DEFAULT_BEACON_INTERVAL_SECONDS = 30
 private const val DEFAULT_USER_NAME = "EdgeZ User"
 private val SUPPORTED_MESH_COUNTRIES = setOf("US", "JP", "EU")
@@ -61,9 +64,19 @@ class LastConnectionPreferences(context: Context) {
 
     fun getLibp2pMeshEnabled(): Boolean = prefs.getBoolean(KEY_LIBP2P_MESH_ENABLED, false)
 
+    fun getLibp2pBootstrapPeers(): List<String> =
+        (parseMultiaddrList(prefs.getString(KEY_LIBP2P_BOOTSTRAP_PEERS, null)) +
+            DEFAULT_LIBP2P_BOOTSTRAP_PEER).distinct()
+
     fun setLibp2pMeshEnabled(enabled: Boolean) {
         prefs.edit()
             .putBoolean(KEY_LIBP2P_MESH_ENABLED, enabled)
+            .apply()
+    }
+
+    fun setLibp2pBootstrapPeers(input: String) {
+        prefs.edit()
+            .putString(KEY_LIBP2P_BOOTSTRAP_PEERS, input.trim())
             .apply()
     }
 
@@ -294,4 +307,12 @@ class LastConnectionPreferences(context: Context) {
         val decoded = runCatching { Base64.decode(encoded, Base64.NO_WRAP) }.getOrNull() ?: return null
         return decoded.takeIf { it.size == expectedSize }
     }
+}
+
+private fun parseMultiaddrList(input: String?): List<String> {
+    return input.orEmpty()
+        .split(',', '\n', ';')
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .distinct()
 }
