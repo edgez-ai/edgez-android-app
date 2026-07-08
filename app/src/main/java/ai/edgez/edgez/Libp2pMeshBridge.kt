@@ -23,6 +23,15 @@ data class Libp2pMeshConfig(
     val swarmKey: String = "",
 )
 
+data class Libp2pMeshHealth(
+    val topicPeers: Int,
+    val networkPeers: Int,
+    val connectedPeerIds: List<String>,
+    val bootstrapPeers: Int,
+) {
+    val hasTopics: Boolean get() = topicPeers > 0
+}
+
 class Libp2pMeshBridge(
     context: Context,
     private val onGossipPayload: (ByteArray) -> Unit,
@@ -69,6 +78,33 @@ class Libp2pMeshBridge(
         }
     }
 
+    fun getHealth(): Libp2pMeshHealth? {
+        return runCatching {
+            val raw = Libp2pNative.health()
+            val json = JSONObject(raw)
+            if (!json.optBoolean("ok", false)) {
+                val error = json.optString("error", "unknown")
+                throw IllegalStateException(error)
+            }
+
+            val connectedPeers = json.optJSONArray("connected_peer_ids")
+            val connectedPeerIds = buildList {
+                if (connectedPeers != null) {
+                    for (idx in 0 until connectedPeers.length()) {
+                        add(connectedPeers.optString(idx))
+                    }
+                }
+            }
+
+            Libp2pMeshHealth(
+                topicPeers = json.optInt("topic_peers", 0),
+                networkPeers = json.optInt("network_peers", 0),
+                connectedPeerIds = connectedPeerIds,
+                bootstrapPeers = json.optInt("bootstrap_peers", 0),
+            )
+        }.getOrNull()
+    }
+
     private fun ensureOk(result: String, operation: String = "publish") {
         val json = JSONObject(result)
         check(json.optBoolean("ok", false)) {
@@ -95,7 +131,7 @@ class Libp2pMeshBridge(
             topic = topicFor(meshId),
             listen = listen,
             bootstrapPeers = bootstrapPeers,
-            publicDht = false,
+            publicDht = preferences.getLibp2pPublicDht(),
             swarmKey = swarmKey,
         )
     }
@@ -165,5 +201,6 @@ object Libp2pNative {
     external fun start(configJson: String): String
     external fun stop(): String
     external fun publish(payload: ByteArray): String
+    external fun health(): String
     external fun setCallback(callback: Callback?)
 }

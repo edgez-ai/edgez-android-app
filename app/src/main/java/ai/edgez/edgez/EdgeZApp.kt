@@ -65,10 +65,13 @@ import ai.edgez.halow.UsbControl
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.security.SecureRandom
+import java.util.ArrayDeque
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.min
@@ -83,6 +86,9 @@ private const val ROUTE_BLE = "BLE"
 private const val ROUTE_BLE_FORWARD = "BLE_FORWARD"
 private const val ROUTE_LIBP2P = "LIBP2P"
 private const val FORWARD_CACHE_SIZE = 1024
+private const val LIBP2P_NO_TOPIC_PEER_QUEUE_DELAY_MS = 10_000L
+private const val LIBP2P_QUEUE_FLUSH_INTERVAL_MS = 3_000L
+private const val LIBP2P_PUBLISH_QUEUE_MAX = 128
 private val GROUP_RANDOM = SecureRandom()
 
 private fun paceVoiceChunkSend(index: Int, totalChunks: Int) {
@@ -261,6 +267,9 @@ fun EdgeZApp() {
     val forwardPacketCache = remember { LinkedHashMap<ForwardPacketKey, Int>(FORWARD_CACHE_SIZE * 2) }
     var libp2pBridgeHolder by remember { mutableStateOf<Libp2pMeshBridge?>(null) }
     var libp2pMeshConnected by remember { mutableStateOf(false) }
+    val libp2pPublishQueue = remember { ArrayDeque<ByteArray>() }
+    val libp2pQueueLock = remember { Any() }
+    val libp2pNoTopicPeerSince = remember { AtomicLong(0L) }
     val reconnectRequested = remember { AtomicReference<ActiveConnection?>(null) }
     val reconnectAttemptRunning = remember { AtomicBoolean(false) }
     val shuttingDown = remember { AtomicBoolean(false) }
@@ -472,11 +481,19 @@ fun EdgeZApp() {
                 }.onSuccess {
                     mainHandler.post {
                         libp2pMeshConnected = true
+                        synchronized(libp2pQueueLock) {
+                            libp2pPublishQueue.clear()
+                            libp2pNoTopicPeerSince.set(0L)
+                        }
                         startMeshBeaconRunner()
                         EdgeZBeaconRunner.publishSelfBeaconToLibp2p(context.applicationContext)
                     }
                 }
             } else {
+                synchronized(libp2pQueueLock) {
+                    libp2pPublishQueue.clear()
+                    libp2pNoTopicPeerSince.set(0L)
+                }
                 bridge.stop()
                 mainHandler.post {
                     libp2pMeshConnected = false
@@ -493,6 +510,7 @@ fun EdgeZApp() {
             } else if (
                 key == "libp2p_mesh_enabled" ||
                 key == "libp2p_bootstrap_peers" ||
+                key == "libp2p_public_dht" ||
                 key == "mesh_id" ||
                 key == "mesh_passphrase" ||
                 key == "user_private_key" ||
@@ -508,16 +526,92 @@ fun EdgeZApp() {
     }
     val currentActiveConnection by rememberUpdatedState(activeConnection)
 
+    fun queueLibp2pPublish(frame: ByteArray) {
+        synchronized(libp2pQueueLock) {
+            while (libp2pPublishQueue.size >= LIBP2P_PUBLISH_QUEUE_MAX) {
+                libp2pPublishQueue.removeFirst()
+            }
+            libp2pPublishQueue.addLast(frame.copyOf())
+            Log.d(
+                TAG_USERS,
+                "libp2p queue +1 now=${libp2pPublishQueue.size} frame=${summarizeLibp2pPayload(frame)}",
+            )
+        }
+    }
+
+    fun flushLibp2pPublishQueue() {
+        if (shuttingDown.get() || !lastConnectionPreferences.getLibp2pMeshEnabled()) return
+        val bridge = libp2pBridgeHolder ?: return
+        val health = bridge.getHealth() ?: return
+        if (health.topicPeers <= 0) return
+
+        val queued = mutableListOf<ByteArray>()
+        synchronized(libp2pQueueLock) {
+            while (libp2pPublishQueue.isNotEmpty()) {
+                queued += libp2pPublishQueue.removeFirst()
+            }
+        }
+        if (queued.isEmpty()) return
+
+        for (i in queued.indices) {
+            val frame = queued[i]
+            val result = bridge.publish(frame)
+            result.onSuccess {
+                Log.d(
+                    TAG_USERS,
+                    "libp2p retry publish success topic_peers=${health.topicPeers} " +
+                        "conn=${health.connectedPeerIds.size} frame=${summarizeLibp2pPayload(frame)}",
+                )
+            }.onFailure {
+                synchronized(libp2pQueueLock) {
+                    for (retryIndex in i until queued.size) {
+                        libp2pPublishQueue.addFirst(queued[retryIndex])
+                    }
+                }
+                Log.w(
+                    TAG_USERS,
+                    "libp2p retry publish failed queue_size=${queued.size - i} " +
+                        "frame=${summarizeLibp2pPayload(frame)}",
+                    it,
+                )
+                return
+            }
+        }
+        synchronized(libp2pQueueLock) {
+            libp2pNoTopicPeerSince.set(0L)
+        }
+        Log.d(TAG_USERS, "libp2p retry queue flushed size=${queued.size}")
+    }
+
         fun publishLibp2pFrame(frame: ByteArray) {
             if (frame.isEmpty() || !lastConnectionPreferences.getLibp2pMeshEnabled()) return
             val bridge = libp2pBridgeHolder ?: return
-            Log.d(TAG_USERS, "libp2p publish start: ${summarizeLibp2pPayload(frame)}")
             libp2pExecutor.execute {
-            bridge.publish(frame).onSuccess {
-                Log.d(TAG_USERS, "libp2p publish success: ${summarizeLibp2pPayload(frame)}")
-            }.onFailure {
-                Log.w(TAG_USERS, "libp2p publish failed: ${summarizeLibp2pPayload(frame)}", it)
-            }
+                val health = bridge.getHealth()
+                if (health != null && health.topicPeers <= 0) {
+                    val now = System.currentTimeMillis()
+                    val currentNoPeerSince = libp2pNoTopicPeerSince.updateAndGet { previous ->
+                        if (previous == 0L) now else previous
+                    }
+                    if (now - currentNoPeerSince >= LIBP2P_NO_TOPIC_PEER_QUEUE_DELAY_MS) {
+                        queueLibp2pPublish(frame)
+                        Log.d(
+                            TAG_USERS,
+                            "libp2p queue publish due no topic peers for=${now - currentNoPeerSince}ms " +
+                                "topic_peers=${health.topicPeers} frame=${summarizeLibp2pPayload(frame)}",
+                        )
+                        return@execute
+                    }
+                } else {
+                    libp2pNoTopicPeerSince.set(0L)
+                }
+
+                Log.d(TAG_USERS, "libp2p publish start: ${summarizeLibp2pPayload(frame)}")
+                bridge.publish(frame).onSuccess {
+                    Log.d(TAG_USERS, "libp2p publish success: ${summarizeLibp2pPayload(frame)}")
+                }.onFailure {
+                    Log.w(TAG_USERS, "libp2p publish failed: ${summarizeLibp2pPayload(frame)}", it)
+                }
             }
         }
 
@@ -1002,6 +1096,10 @@ fun EdgeZApp() {
         onDispose {
             shuttingDown.set(true)
             clearReconnect()
+            synchronized(libp2pQueueLock) {
+                libp2pPublishQueue.clear()
+                libp2pNoTopicPeerSince.set(0L)
+            }
             connectionPrefs.unregisterOnSharedPreferenceChangeListener(preferenceListener)
             libp2pExecutor.execute {
                 libp2pBridge.stop()
@@ -1029,6 +1127,14 @@ fun EdgeZApp() {
     LaunchedEffect(Unit) {
         if (lastConnectionPreferences.getBleAutoConnect()) {
             connectSelectedBleFromPreferences()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(LIBP2P_QUEUE_FLUSH_INTERVAL_MS)
+            if (shuttingDown.get()) continue
+            libp2pExecutor.execute(::flushLibp2pPublishQueue)
         }
     }
 

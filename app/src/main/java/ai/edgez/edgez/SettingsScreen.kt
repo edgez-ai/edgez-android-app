@@ -202,6 +202,7 @@ private fun SettingsContent(
     var passphraseVisible by rememberSaveable { mutableStateOf(false) }
     var maxHop by rememberSaveable { mutableStateOf(connectionPreferences.getMeshMaxHop().toString()) }
     var libp2pMeshEnabled by rememberSaveable { mutableStateOf(connectionPreferences.getLibp2pMeshEnabled()) }
+    var libp2pPublicDht by rememberSaveable { mutableStateOf(connectionPreferences.getLibp2pPublicDht()) }
     var libp2pBootstrapPeers by rememberSaveable {
         mutableStateOf(connectionPreferences.getLibp2pBootstrapPeers().joinToString("\n"))
     }
@@ -300,6 +301,7 @@ private fun SettingsContent(
         passphrase = connectionPreferences.getMeshPassphrase()
         maxHop = connectionPreferences.getMeshMaxHop().toString()
         libp2pMeshEnabled = connectionPreferences.getLibp2pMeshEnabled()
+        libp2pPublicDht = connectionPreferences.getLibp2pPublicDht()
         libp2pBootstrapPeers = connectionPreferences.getLibp2pBootstrapPeers().joinToString("\n")
         libp2pExtraServerOption = libp2pExtraServerOptionFor(libp2pBootstrapPeers)
         beaconIntervalSeconds = connectionPreferences.getBeaconIntervalSeconds().toString()
@@ -775,6 +777,7 @@ private fun SettingsContent(
         connectionPreferences.setUserMarker(userMarker)
         connectionPreferences.setShareLocation(shareLocation)
         connectionPreferences.setLibp2pMeshEnabled(libp2pMeshEnabled)
+        connectionPreferences.setLibp2pPublicDht(libp2pPublicDht)
         connectionPreferences.setLibp2pBootstrapPeers(libp2pBootstrapPeers)
         userIdentity = connectionPreferences.getOrCreateUserIdentity()
         status = "Settings saved"
@@ -1353,6 +1356,28 @@ private fun SettingsContent(
                                     libp2pMeshEnabled = enabled
                                     connectionPreferences.setLibp2pMeshEnabled(enabled)
                                     status = if (enabled) "Libp2p mesh enabled" else "Libp2p mesh disabled"
+                                },
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Public DHT", style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    "Use public bootstrap peers in addition to custom bootstrap",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                            Switch(
+                                checked = libp2pPublicDht,
+                                onCheckedChange = { enabled ->
+                                    libp2pPublicDht = enabled
+                                    connectionPreferences.setLibp2pPublicDht(enabled)
+                                    status = if (enabled) "Libp2p public DHT enabled" else "Libp2p public DHT disabled"
                                 },
                             )
                         }

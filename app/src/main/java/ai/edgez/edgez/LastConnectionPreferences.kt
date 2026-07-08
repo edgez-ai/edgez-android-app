@@ -12,6 +12,7 @@ private const val KEY_MESH_PASSPHRASE = "mesh_passphrase"
 private const val KEY_MESH_MAX_HOP = "mesh_max_hop"
 private const val KEY_LIBP2P_MESH_ENABLED = "libp2p_mesh_enabled"
 private const val KEY_LIBP2P_BOOTSTRAP_PEERS = "libp2p_bootstrap_peers"
+private const val KEY_LIBP2P_PUBLIC_DHT = "libp2p_public_dht"
 private const val KEY_BEACON_INTERVAL_SECONDS = "beacon_interval_seconds"
 private const val KEY_USER_UUID = "user_uuid"
 private const val KEY_USER_NAME = "user_name"
@@ -77,6 +78,8 @@ class LastConnectionPreferences(context: Context) {
 
     fun getLibp2pMeshEnabled(): Boolean = prefs.getBoolean(KEY_LIBP2P_MESH_ENABLED, false)
 
+    fun getLibp2pPublicDht(): Boolean = prefs.getBoolean(KEY_LIBP2P_PUBLIC_DHT, true)
+
     fun getLibp2pBootstrapPeers(): List<String> =
         parseMultiaddrList(
             prefs.getString(KEY_LIBP2P_BOOTSTRAP_PEERS, null)?.trim()?.ifBlank {
@@ -87,6 +90,12 @@ class LastConnectionPreferences(context: Context) {
     fun setLibp2pMeshEnabled(enabled: Boolean) {
         prefs.edit()
             .putBoolean(KEY_LIBP2P_MESH_ENABLED, enabled)
+            .apply()
+    }
+
+    fun setLibp2pPublicDht(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(KEY_LIBP2P_PUBLIC_DHT, enabled)
             .apply()
     }
 

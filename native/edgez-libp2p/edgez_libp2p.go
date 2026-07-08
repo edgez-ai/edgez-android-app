@@ -137,6 +137,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -255,6 +256,16 @@ func Java_ai_edgez_edgez_Libp2pNative_publish(env *C.JNIEnv, thiz C.jobject, pay
 		data = C.GoBytes(unsafe.Pointer(raw), length)
 	}
 	result := publishMesh(data)
+	cResult := C.CString(result)
+	defer C.free(unsafe.Pointer(cResult))
+	return C.edgez_c_to_jstring(env, cResult)
+}
+
+//export Java_ai_edgez_edgez_Libp2pNative_health
+func Java_ai_edgez_edgez_Libp2pNative_health(env *C.JNIEnv, thiz C.jobject) C.jstring {
+	_ = thiz
+	_ = env
+	result := healthMesh()
 	cResult := C.CString(result)
 	defer C.free(unsafe.Pointer(cResult))
 	return C.edgez_c_to_jstring(env, cResult)
@@ -452,6 +463,24 @@ func publishMesh(payload []byte) string {
 	return okJSON(map[string]any{"state": "published", "bytes": len(payload)})
 }
 
+func healthMesh() string {
+	stateMu.Lock()
+	local := state
+	stateMu.Unlock()
+	if local == nil || local.topic == nil || local.host == nil {
+		return errorJSON("libp2p mesh is not running")
+	}
+	connectedPeers := local.connectedPeerIDs()
+	return okJSON(map[string]any{
+		"peer_id":         local.peerID.String(),
+		"topic":           local.topicName,
+		"topic_peers":     len(local.topic.ListPeers()),
+		"network_peers":   len(local.host.Network().Peers()),
+		"bootstrap_peers": len(local.bootstrapPeers),
+		"connected_peer_ids": connectedPeers,
+	})
+}
+
 func readLoop(local *meshState) {
 	for {
 		sub := local.currentSubscription()
@@ -539,6 +568,7 @@ func (local *meshState) ensureBootstrapConnected(reason string) {
 		topicPeers = len(local.topic.ListPeers())
 	}
 	networkPeers := len(local.host.Network().Peers())
+	connectedPeerIds := local.connectedPeerIDs()
 	connectedBootstrapPeers := 0
 	for _, info := range local.bootstrapPeers {
 		if local.host.Network().Connectedness(info.ID) == network.Connected {
@@ -549,10 +579,11 @@ func (local *meshState) ensureBootstrapConnected(reason string) {
 	logDebug(
 		"reconnect",
 		fmt.Sprintf(
-			"check reason=%s topic_peers=%d network_peers=%d bootstrap_connected=%d bootstrap_total=%d",
+			"health reason=%s topic_peers=%d network_peers=%d connected_peer_ids=%s bootstrap_connected=%d bootstrap_total=%d",
 			reason,
 			topicPeers,
 			networkPeers,
+			formatPeerIds(connectedPeerIds, 12),
 			connectedBootstrapPeers,
 			len(local.bootstrapPeers),
 		),
@@ -572,6 +603,31 @@ func (local *meshState) ensureBootstrapConnected(reason string) {
 		}
 	}
 	connectBootstrapAddrInfos(local.ctx, local.host, local.bootstrapPeers)
+}
+
+func (local *meshState) connectedPeerIDs() []string {
+	if local == nil || local.host == nil {
+		return nil
+	}
+	out := make([]string, 0)
+	for _, peerID := range local.host.Network().Peers() {
+		if local.host.Network().Connectedness(peerID) == network.Connected {
+			out = append(out, peerID.String())
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func formatPeerIds(peers []string, max int) string {
+	if len(peers) == 0 {
+		return "[]"
+	}
+	if max <= 0 || len(peers) <= max {
+		return "[" + strings.Join(peers, ",") + "]"
+	}
+	visible := strings.Join(peers[:max], ",")
+	return "[" + visible + ",...(" + fmt.Sprintf("%d", len(peers)-max) + " more)]"
 }
 
 func invokeCallback(payload []byte) {
