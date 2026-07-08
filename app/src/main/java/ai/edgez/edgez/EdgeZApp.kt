@@ -478,7 +478,7 @@ fun EdgeZApp() {
         sendAction: () -> Result<String>,
     ): Result<String> {
         val result = sendAction()
-        result.onSuccess { publishLibp2pFrame(packet) }
+        publishLibp2pFrame(packet)
         return result
     }
 

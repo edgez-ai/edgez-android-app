@@ -74,9 +74,6 @@ object EdgeZBeaconRunner {
         val status = haLowStatus
         if (DeviceModeState.enabled) return
         val source = activeConnection
-        if (source == ActiveConnection.NONE) {
-            return
-        }
         val publishToLibp2p = status == null || (status.supported && status.stackInitialized && status.meshMode)
 
         val contextRef = context.applicationContext
@@ -163,12 +160,14 @@ object EdgeZBeaconRunner {
     private fun sendBeaconIfReady(context: Context) {
         val source = activeConnection
         val status = haLowStatus
-        if (source == ActiveConnection.NONE ||
-            status == null ||
-            !status.supported ||
-            !status.stackInitialized ||
-            !status.meshMode
-        ) {
+        val canSendTransportBeacon = source != ActiveConnection.NONE &&
+            status != null &&
+            status.supported &&
+            status.stackInitialized &&
+            status.meshMode
+        val canPublishLibp2pBeacon = LastConnectionPreferences(context).getLibp2pMeshEnabled() &&
+            (status == null || (status.supported && status.stackInitialized && status.meshMode))
+        if (!canSendTransportBeacon && !canPublishLibp2pBeacon) {
             return
         }
 
@@ -199,7 +198,7 @@ object EdgeZBeaconRunner {
                     marker,
                 )
             }.getOrNull() ?: return@execute
-            when (source) {
+            val transportResult = when (source) {
                 ActiveConnection.USB -> usbClient?.sendHaLowBeacon(
                     userIdentity.userIdHigh,
                     userIdentity.userIdLow,
@@ -210,7 +209,7 @@ object EdgeZBeaconRunner {
                     location?.longitude,
                     location?.time ?: 0L,
                     marker,
-                )?.onSuccess { onFramePublished?.invoke(beaconFrame) }
+                )
                 ActiveConnection.BLE -> bleClient?.sendHaLowBeacon(
                     userIdentity.userIdHigh,
                     userIdentity.userIdLow,
@@ -221,8 +220,12 @@ object EdgeZBeaconRunner {
                     location?.longitude,
                     location?.time ?: 0L,
                     marker,
-                )?.onSuccess { onFramePublished?.invoke(beaconFrame) }
-                ActiveConnection.NONE -> Unit
+                )
+                ActiveConnection.NONE -> null
+            }
+            if (canPublishLibp2pBeacon || transportResult?.isSuccess == true) {
+                Log.d(TAG_BEACON, "queue beacon for libp2p source=$source direct=$canPublishLibp2pBeacon")
+                onFramePublished?.invoke(beaconFrame)
             }
         }
     }
