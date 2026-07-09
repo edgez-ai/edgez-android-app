@@ -65,7 +65,6 @@ private enum class ProvisionStep {
     SELECT_BLE,
     IDENTITY,
     NETWORK,
-    UPSTREAM,
     LOCATION,
     GEO_FENCE,
     SENSOR,
@@ -245,11 +244,10 @@ private fun ProvisioningContent(
         ProvisionStep.SELECT_BLE -> 1
         ProvisionStep.IDENTITY -> 2
         ProvisionStep.NETWORK -> 3
-        ProvisionStep.UPSTREAM -> 4
-        ProvisionStep.LOCATION -> 5
-        ProvisionStep.GEO_FENCE -> 6
-        ProvisionStep.SENSOR -> 7
-        ProvisionStep.SLEEP_MODE -> 8
+        ProvisionStep.LOCATION -> 4
+        ProvisionStep.GEO_FENCE -> 5
+        ProvisionStep.SENSOR -> 6
+        ProvisionStep.SLEEP_MODE -> 7
     }
     val provisionStepTitle = when (provisionStep) {
         ProvisionStep.SELECT_BLE -> "Select BLE device"
@@ -258,7 +256,6 @@ private fun ProvisioningContent(
         ProvisionStep.GEO_FENCE -> "Geo fence"
         ProvisionStep.SENSOR -> "Sensor"
         ProvisionStep.NETWORK -> "Network"
-        ProvisionStep.UPSTREAM -> "Upstream Wi-Fi"
         ProvisionStep.SLEEP_MODE -> "Sleep mode"
     }
     if (showGeoFencePage) {
@@ -588,6 +585,7 @@ private fun ProvisioningContent(
         settings: DeviceSettings = currentDeviceSettings(),
         connection: ActiveConnection = activeConnection,
         label: String = "Device settings",
+        forceSaveScript: Boolean = false,
         onSuccessAction: (() -> Unit)? = null,
     ) {
         if (connection == ActiveConnection.NONE) {
@@ -600,7 +598,7 @@ private fun ProvisioningContent(
             val rs485SensorType = settings.rs485SensorType.take(32)
             val sensorSelectionChanged = uartI2cSensorType != lastSavedDeviceUartI2cSensorType ||
                 rs485SensorType != lastSavedDeviceRs485SensorType
-            val scriptConfigs = if (sensorSelectionChanged) {
+            val scriptConfigs = if (sensorSelectionChanged || forceSaveScript) {
                 DeviceSensorCatalog.scriptConfigsFor(
                     context = context,
                     uartI2cSensorType = uartI2cSensorType,
@@ -700,8 +698,7 @@ private fun ProvisioningContent(
             }
             ProvisionStep.IDENTITY -> ProvisionStep.SELECT_BLE
             ProvisionStep.NETWORK -> ProvisionStep.IDENTITY
-            ProvisionStep.UPSTREAM -> ProvisionStep.NETWORK
-            ProvisionStep.LOCATION -> ProvisionStep.UPSTREAM
+            ProvisionStep.LOCATION -> ProvisionStep.NETWORK
             ProvisionStep.GEO_FENCE -> ProvisionStep.LOCATION
             ProvisionStep.SENSOR -> ProvisionStep.GEO_FENCE
             ProvisionStep.SLEEP_MODE -> ProvisionStep.SENSOR
@@ -727,12 +724,12 @@ private fun ProvisioningContent(
                 requestDeviceSettings(ActiveConnection.BLE)
             }
             ProvisionStep.IDENTITY -> provisionStep = ProvisionStep.NETWORK
-            ProvisionStep.NETWORK -> provisionStep = ProvisionStep.UPSTREAM
-            ProvisionStep.UPSTREAM -> provisionStep = ProvisionStep.LOCATION
+            ProvisionStep.NETWORK -> provisionStep = ProvisionStep.LOCATION
             ProvisionStep.LOCATION -> provisionStep = ProvisionStep.GEO_FENCE
             ProvisionStep.GEO_FENCE -> provisionStep = ProvisionStep.SENSOR
             ProvisionStep.SENSOR -> provisionStep = ProvisionStep.SLEEP_MODE
             ProvisionStep.SLEEP_MODE -> sendDeviceSettingsToDevice(
+                forceSaveScript = true,
                 onSuccessAction = {
                     disconnectProvisionTransport()
                     onProvisionComplete()
@@ -893,9 +890,9 @@ private fun ProvisioningContent(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                if (provisionMode) {
-                    Text(
-                        "Step $provisionStepNumber of 8: $provisionStepTitle",
+            if (provisionMode) {
+                Text(
+                        "Step $provisionStepNumber of 7: $provisionStepTitle",
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Spacer(Modifier.height(6.dp))
@@ -1359,83 +1356,6 @@ private fun ProvisioningContent(
                         Spacer(Modifier.height(10.dp))
                         Button(onClick = { saveMeshPreferences() }) {
                             Text(if (deviceMode) "Save to device" else "Save settings")
-                        }
-                    }
-                }
-            }
-
-            if (showDeviceSettingsOnly && provisionStep == ProvisionStep.UPSTREAM) item {
-                SettingsCard(title = "Upstream Wi-Fi") {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Enable upstream", style = MaterialTheme.typography.titleSmall)
-                            Text("Configure Wi-Fi and UDP unicast upload", style = MaterialTheme.typography.bodySmall)
-                        }
-                        Switch(
-                            checked = deviceUpstreamEnabled,
-                            onCheckedChange = { enabled ->
-                                deviceUpstreamEnabled = enabled
-                                status = if (enabled) "Upstream enabled" else "Upstream disabled"
-                            },
-                        )
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = deviceUpstreamWifiSsid,
-                        onValueChange = { value ->
-                            deviceUpstreamWifiSsid = value.take(32)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("SSID") },
-                        enabled = deviceUpstreamEnabled,
-                        singleLine = true,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = deviceUpstreamWifiPassphrase,
-                        onValueChange = { value ->
-                            deviceUpstreamWifiPassphrase = value.take(64)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Passphrase") },
-                        enabled = deviceUpstreamEnabled,
-                        singleLine = true,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        val selectedMulticast = beaconMulticastOptions.firstOrNull { it.address == deviceBeaconMulticast }
-                        OutlinedButton(
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = deviceUpstreamEnabled,
-                            onClick = { beaconMulticastDropdownExpanded = true },
-                        ) {
-                            Text(
-                                selectedMulticast?.let { "Beacon UDP multicast: ${it.label}" }
-                                    ?: "Beacon UDP multicast: $deviceBeaconMulticast",
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = beaconMulticastDropdownExpanded,
-                            onDismissRequest = { beaconMulticastDropdownExpanded = false },
-                        ) {
-                            beaconMulticastOptions.forEach { option ->
-                                DropdownMenuItem(
-                                    text = { Text(option.label) },
-                                    onClick = {
-                                        deviceBeaconMulticast = option.address
-                                        beaconMulticastDropdownExpanded = false
-                                        status = if (option.address.isBlank()) {
-                                            "Beacon UDP multicast cleared"
-                                        } else {
-                                            "Beacon UDP multicast set to ${option.address}"
-                                        }
-                                    },
-                                )
-                            }
                         }
                     }
                 }
