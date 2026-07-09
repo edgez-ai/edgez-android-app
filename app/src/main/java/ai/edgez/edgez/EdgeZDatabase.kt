@@ -9,7 +9,7 @@ import ai.edgez.edgez.usb.PacketMime
 import java.util.UUID
 
 private const val DATABASE_NAME = "edgez_local.db"
-private const val DATABASE_VERSION = 10
+private const val DATABASE_VERSION = 12
 private const val TABLE_USERS = "halow_users"
 private const val TABLE_MESSAGES = "conversation_messages"
 private const val TABLE_SENSOR_DATA = "sensor_data"
@@ -127,6 +127,12 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 END
                 """.trimIndent(),
             )
+        }
+        if (oldVersion < 11) {
+            addColumnIfMissing(db, TABLE_SENSOR_DATA, "sensor_data_length", "INTEGER")
+        }
+        if (oldVersion < 12) {
+            addColumnIfMissing(db, TABLE_SENSOR_DATA, "binary_image_path", "TEXT")
         }
     }
 
@@ -532,6 +538,12 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 putNullableDouble("humidity", sensorData.humidity)
                 putNullableDouble("pressure", sensorData.pressure)
                 putNullableDouble("vibration_average", sensorData.vibrationAverage)
+                if (sensorData.binaryLengthBytes == null) {
+                    putNull("sensor_data_length")
+                } else {
+                    put("sensor_data_length", sensorData.binaryLengthBytes)
+                }
+                put("binary_image_path", sensorData.binaryImagePath?.takeIf { it.isNotBlank() })
             },
         )
         Log.d(
@@ -554,6 +566,8 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 "humidity",
                 "pressure",
                 "vibration_average",
+                "sensor_data_length",
+                "binary_image_path",
             ),
             "peer_user_uuid = ?",
             arrayOf(peerUserUuid),
@@ -570,6 +584,8 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
             val humidityIndex = cursor.getColumnIndexOrThrow("humidity")
             val pressureIndex = cursor.getColumnIndexOrThrow("pressure")
             val vibrationAverageIndex = cursor.getColumnIndexOrThrow("vibration_average")
+            val sensorDataLengthIndex = cursor.getColumnIndexOrThrow("sensor_data_length")
+            val binaryImagePathIndex = cursor.getColumnIndexOrThrow("binary_image_path")
             while (cursor.moveToNext()) {
                 val data = EdgeZSensorData(
                     latitude = cursor.getNullableDouble(latitudeIndex),
@@ -579,6 +595,8 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                     humidity = cursor.getNullableDouble(humidityIndex),
                     pressure = cursor.getNullableDouble(pressureIndex),
                     vibrationAverage = cursor.getNullableDouble(vibrationAverageIndex),
+                    binaryLengthBytes = cursor.getInt(sensorDataLengthIndex).takeIf { !cursor.isNull(sensorDataLengthIndex) },
+                    binaryImagePath = cursor.getString(binaryImagePathIndex).orEmpty().ifBlank { null },
                 )
                 samples += SensorSample(
                     timestampMs = cursor.getLong(timestampIndex),
@@ -658,6 +676,8 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 humidity REAL,
                 pressure REAL,
                 vibration_average REAL,
+                sensor_data_length INTEGER,
+                binary_image_path TEXT,
                 FOREIGN KEY(peer_user_uuid) REFERENCES $TABLE_USERS(user_uuid) ON DELETE CASCADE
             )
             """.trimIndent(),

@@ -268,6 +268,8 @@ data class EdgeZSensorData(
     val humidity: Double? = null,
     val pressure: Double? = null,
     val vibrationAverage: Double? = null,
+    val binaryLengthBytes: Int? = null,
+    val binaryImagePath: String? = null,
 ) {
     val hasAnyValue: Boolean
         get() = latitude != null ||
@@ -276,5 +278,7 @@ data class EdgeZSensorData(
             temperature != null ||
             humidity != null ||
             pressure != null ||
-            vibrationAverage != null
+            vibrationAverage != null ||
+            binaryLengthBytes != null ||
+            binaryImagePath != null
 }

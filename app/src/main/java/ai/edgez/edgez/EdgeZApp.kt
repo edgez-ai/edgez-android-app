@@ -1,6 +1,7 @@
 package ai.edgez.edgez
 
 import android.Manifest
+import android.graphics.BitmapFactory
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
@@ -9,6 +10,7 @@ import android.content.Context
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -47,8 +49,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.PreviewScreenSizes
@@ -86,6 +90,7 @@ private const val ROUTE_BLE = "BLE"
 private const val ROUTE_BLE_FORWARD = "BLE_FORWARD"
 private const val ROUTE_LIBP2P = "LIBP2P"
 private const val FORWARD_CACHE_SIZE = 1024
+private const val EDGEZ_NETWORK_PACKET_MAX_PAYLOAD = 350
 private const val LIBP2P_NO_TOPIC_PEER_QUEUE_DELAY_MS = 10_000L
 private const val LIBP2P_QUEUE_FLUSH_INTERVAL_MS = 3_000L
 private const val LIBP2P_PUBLISH_QUEUE_MAX = 128
@@ -228,7 +233,8 @@ private fun isSameConversationUser(first: HaLowUser, second: HaLowUser): Boolean
         (first.userUuid.isNotBlank() && first.userUuid == second.userUuid)
 }
 
-private fun packetUserUuid(high: Long, low: Long): String = formatMessageUuid(high, low)
+private fun packetUserUuid(high: Long, low: Long): String =
+    if (high == 0L && low == 0L) "" else formatMessageUuid(high, low)
 
 private data class PendingVoiceMessage(
     val durationMs: Long,
@@ -268,6 +274,27 @@ private data class PendingConversationChunk(
     }
 }
 
+private data class PendingRawBinarySequenceMessage(
+    val chunks: MutableMap<Int, ByteArray> = LinkedHashMap(),
+) {
+    fun put(sequence: Int, bytes: ByteArray) {
+        chunks[sequence] = bytes
+    }
+
+    fun completeBySequence(): Boolean {
+        if (chunks.isEmpty()) return false
+        val sorted = chunks.keys.sorted()
+        val start = sorted.first()
+        return (start..sorted.last()).all { it in chunks }
+    }
+
+    fun bytes(): ByteArray {
+        val out = ByteArrayOutputStream()
+        chunks.toSortedMap().values.forEach { out.write(it) }
+        return out.toByteArray()
+    }
+}
+
 @PreviewScreenSizes
 @Composable
 fun EdgeZApp() {
@@ -287,6 +314,8 @@ fun EdgeZApp() {
     val pendingHaLowInitKey = remember { AtomicReference<String?>(null) }
     val pendingVoiceMessages = remember { mutableMapOf<String, PendingVoiceMessage>() }
     val pendingBinaryMessages = remember { mutableMapOf<String, PendingConversationChunk>() }
+    val pendingRawBinaryChunks = remember { mutableMapOf<String, PendingConversationChunk>() }
+    val pendingRawBinarySequenceMessages = remember { mutableMapOf<String, PendingRawBinarySequenceMessage>() }
     val forwardPacketCache = remember { LinkedHashMap<ForwardPacketKey, Int>(FORWARD_CACHE_SIZE * 2) }
     var libp2pBridgeHolder by remember { mutableStateOf<Libp2pMeshBridge?>(null) }
     var libp2pMeshConnected by remember { mutableStateOf(false) }
@@ -884,9 +913,12 @@ fun EdgeZApp() {
                     it.sequence == 0 &&
                     (localNode == null || it.from != localNode)
             } == true
+            val rawBinaryPacket = message != null &&
+                conversationMessage == null &&
+                message.payload.isNotEmpty()
 
-            if (status == null && user == null && conversationMessage == null && !conversationAck) return
-            if (message != null && (conversationMessage != null || conversationAck || user != null)) {
+            if (status == null && user == null && !rawBinaryPacket && !conversationAck) return
+            if (message != null && (conversationMessage != null || conversationAck || user != null || rawBinaryPacket)) {
                 if (!shouldProcessForwardedPacket(message, message.hop)) {
                     Log.d(TAG_USERS, "drop duplicate frame route=$route messageId=${formatMessageUuid(message.messageIdHigh, message.messageIdLow)}")
                     return
@@ -966,7 +998,7 @@ fun EdgeZApp() {
                     if (message != null && conversationAck) {
                         markConversationDelivered(message)
                     }
-                    if (message != null && message.mime != PacketMime.UNSPECIFIED) {
+                    if (message != null && (message.mime != PacketMime.UNSPECIFIED || rawBinaryPacket)) {
                         val identity = lastConnectionPreferences.getOrCreateUserIdentity()
                         val senderUserUuid = packetUserUuid(message.userHigh, message.userLow)
                         val packetGroupId = if (message.groupIdHigh != 0L || message.groupIdLow != 0L) {
@@ -978,11 +1010,12 @@ fun EdgeZApp() {
                             it.deviceType == EdgeZDeviceType.GROUP &&
                                 ((packetGroupId != null && conversationGroupId(it) == packetGroupId) || it.nodeNum == message.to)
                         }
+                        val senderUserByNode = haLowUsers[message.from] ?: user?.takeIf { it.nodeNum == message.from }
                         val senderUser = groupUser ?: if (senderUserUuid.isNotBlank()) {
                             haLowUsers.values.firstOrNull { it.userUuid == senderUserUuid }
-                                ?: user?.takeIf { it.userUuid == senderUserUuid }
+                                ?: senderUserByNode
                         } else {
-                            haLowUsers[message.from] ?: user?.takeIf { it.nodeNum == message.from }
+                            senderUserByNode
                         }
                         if (senderUser == null) {
                             Log.w(
@@ -990,11 +1023,62 @@ fun EdgeZApp() {
                                 "conversation sender missing user=$senderUserUuid from=0x%012x to=0x%012x known=${haLowUsers.size}"
                                     .format(message.from, message.to),
                             )
+                            if (rawBinaryPacket && (route != ROUTE_LIBP2P || currentActiveConnection != ActiveConnection.NONE)) {
+                                sendConversationAck(currentActiveConnection, route, message)
+                            }
                         } else {
-                            val shouldUseConversationCrypto = isUserConversationCrypto(senderUser)
                             val senderNodeNum = if (senderUser.deviceType == EdgeZDeviceType.GROUP) message.from else senderUser.nodeNum
+                            if (rawBinaryPacket) {
+                                val rawConversationChunk = decodeConversationChunk(message.payload)
+                                val rawBinaryPayload = if (rawConversationChunk != null) {
+                                    val key = "${senderNodeNum}:${rawConversationChunk.groupId}"
+                                    val pending = pendingRawBinaryChunks.getOrPut(key) {
+                                        PendingConversationChunk(chunks = arrayOfNulls(rawConversationChunk.totalChunks))
+                                    }
+                                    pending.put(rawConversationChunk.index, rawConversationChunk.bytes)
+                                    if (pending.complete()) {
+                                        pendingRawBinaryChunks.remove(key)
+                                        pending.bytes()
+                                    } else {
+                                        null
+                                    }
+                                } else {
+                                    val key = "${senderNodeNum}:${message.messageIdHigh}:${message.messageIdLow}"
+                                    val pending = pendingRawBinarySequenceMessages.getOrPut(key) {
+                                        PendingRawBinarySequenceMessage()
+                                    }
+                                    pending.put(message.sequence, message.payload)
+                                    if (pending.completeBySequence()) {
+                                        pendingRawBinarySequenceMessages.remove(key)
+                                        pending.bytes()
+                                    } else {
+                                        null
+                                    }
+                                }
+
+                                rawBinaryPayload?.let {
+                                    val binaryImagePath = if (detectBinaryMime(it).startsWith("image/")) {
+                                        saveBinaryMessage(context.applicationContext, it)
+                                    } else {
+                                        null
+                                    }
+                                    edgeZDatabase.insertSensorData(
+                                        conversationKey(senderUser),
+                                        senderUser.nodeNum,
+                                        System.currentTimeMillis(),
+                                        EdgeZSensorData(
+                                            binaryLengthBytes = it.size,
+                                            binaryImagePath = binaryImagePath,
+                                        ),
+                                    )
+                                }
+                            }
+                            val shouldUseConversationCrypto = isUserConversationCrypto(senderUser)
                             val groupMessageId = packetGroupId ?: conversationGroupId(senderUser)
-                            val entry = runCatching {
+                            val entry = if (rawBinaryPacket) {
+                                null
+                            } else {
+                                runCatching {
                                 if (shouldUseConversationCrypto) {
                                     when (message.mime) {
                                         PacketMime.VOICE -> {
@@ -1214,12 +1298,17 @@ fun EdgeZApp() {
                                     messageUuid = formatMessageUuid(message.messageIdHigh, message.messageIdLow),
                                 )
                             }
+                            }
                             if (entry != null) {
                                 val senderKey = conversationKey(senderUser)
                                 edgeZDatabase.insertMessage(senderKey, entry)
                                 conversations = conversations + (
                                     senderKey to ((conversations[senderKey] ?: emptyList()) + entry)
                                     )
+                                if (route != ROUTE_LIBP2P || currentActiveConnection != ActiveConnection.NONE) {
+                                    sendConversationAck(currentActiveConnection, route, message)
+                                }
+                            } else if (rawBinaryPacket) {
                                 if (route != ROUTE_LIBP2P || currentActiveConnection != ActiveConnection.NONE) {
                                     sendConversationAck(currentActiveConnection, route, message)
                                 }
@@ -2245,7 +2334,11 @@ private fun DashboardSensorCard(
     onOpenSensorDetail: (HaLowUser) -> Unit,
     onMoveWidget: (String, Int) -> Unit,
 ) {
-    val sample = dashboardSampleForRange(item.samples, item.display.range)
+    val sample = if (item.display.widget == DashboardDeviceWidget.BINARY_IMAGE) {
+        item.samples.lastOrNull()
+    } else {
+        dashboardSampleForRange(item.samples, item.display.range)
+    }
     val compact = item.display.widget != DashboardDeviceWidget.TIME_SERIES
     val markerBackground = item.user.markerTintColor()?.let { markerColor ->
         lerp(MaterialTheme.colorScheme.surfaceVariant, markerColor, if (compact) 0.58f else 0.46f)
@@ -2331,6 +2424,13 @@ private fun DashboardSensorCard(
                     DashboardSensorValueRow("Temp", sample.data.temperature, "°C")
                     DashboardSensorValueRow("Humidity", sample.data.humidity, "%")
                 }
+            } else if (item.display.widget == DashboardDeviceWidget.BINARY_IMAGE) {
+                DashboardBinaryImageRow(
+                    binaryImagePath = sample.data.binaryImagePath,
+                    binaryLengthBytes = sample.data.binaryLengthBytes,
+                    timestampMs = sample.timestampMs,
+                    compact = compact,
+                )
             } else {
                 DashboardSensorValueRows(sample.data)
                 Text(
@@ -2355,6 +2455,37 @@ private fun DashboardSensorValueRows(data: EdgeZSensorData) {
         DashboardSensorValueRow("Pass-by score", data.vibrationAverage, "")
         DashboardSensorValueRow("Altitude", data.altitude, "m")
     }
+}
+
+@Composable
+private fun DashboardBinaryImageRow(
+    binaryImagePath: String?,
+    binaryLengthBytes: Int?,
+    timestampMs: Long,
+    compact: Boolean,
+) {
+    val normalizedPath = binaryImagePath?.takeIf { it.isNotBlank() }
+    val bitmap = remember(normalizedPath) {
+        normalizedPath?.let { BitmapFactory.decodeFile(it) }
+    }
+    if (bitmap == null) {
+        if (binaryLengthBytes != null) {
+            Text("Binary length: $binaryLengthBytes bytes", style = MaterialTheme.typography.bodySmall)
+        } else {
+            Text("No binary image", style = MaterialTheme.typography.bodySmall)
+        }
+        return
+    }
+    Image(
+        bitmap = bitmap.asImageBitmap(),
+        contentDescription = "Latest binary image",
+        contentScale = ContentScale.Fit,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(if (compact) 130.dp else 170.dp),
+    )
+    Text("Image size: ${bitmap.width}x${bitmap.height}", style = MaterialTheme.typography.bodySmall)
+    Text("Updated ${formatDashboardSensorAge(timestampMs)}", style = MaterialTheme.typography.bodySmall)
 }
 
 @Composable

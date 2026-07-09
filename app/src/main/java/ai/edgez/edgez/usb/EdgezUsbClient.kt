@@ -1107,6 +1107,7 @@ object EdgezUsbControlProto {
     }
 
     private fun UsbControl.SensorData.toAppSensorData(): EdgeZSensorData? {
+        val binaryLengthBytes = toByteArray().size
         val hasNumericValues = latitude != 0f ||
             longitude != 0f ||
             altitude != 0f ||
@@ -1123,6 +1124,7 @@ object EdgezUsbControlProto {
             humidity = humidity.toDouble().takeIf { humidity != 0f },
             pressure = pressure.toDouble().takeIf { pressure != 0f },
             vibrationAverage = vibrationAverage.toDouble().takeIf { vibrationAverage != 0f },
+            binaryLengthBytes = binaryLengthBytes,
         )
     }
 

@@ -58,6 +58,7 @@ enum class DashboardDeviceWidget(
 ) {
     TEMP_HUMIDITY("Temp & Humidity"),
     LATEST_VALUE("Latest value"),
+    BINARY_IMAGE("Binary image"),
     TIME_SERIES("Time series");
 
     companion object {
@@ -319,6 +320,9 @@ private fun SensorValueRows(data: EdgeZSensorData) {
         SensorValueRow("Pressure", data.pressure, "hPa")
         SensorValueRow("Pass-by score", data.vibrationAverage, "")
         SensorValueRow("Altitude", data.altitude, "m")
+        data.binaryLengthBytes?.let {
+            SensorTextRow("Binary length", "${it} bytes")
+        }
         if (data.latitude != null && data.longitude != null) {
             Text(
                 "Position ${formatCoordinate(data.latitude)}, ${formatCoordinate(data.longitude)}",
@@ -337,6 +341,14 @@ private fun SensorValueRow(label: String, value: Double?, unit: String) {
             if (unit.isBlank()) formatSensorValue(value) else "${formatSensorValue(value)} $unit",
             style = MaterialTheme.typography.bodyMedium,
         )
+    }
+}
+
+@Composable
+private fun SensorTextRow(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+        Text(value, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
