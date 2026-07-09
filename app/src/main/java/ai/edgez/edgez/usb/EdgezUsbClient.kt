@@ -15,6 +15,7 @@ import ai.edgez.halow.UsbControl
 import ai.edgez.edgez.DeviceGeoFence
 import ai.edgez.edgez.DeviceSensorScriptConfig
 import ai.edgez.edgez.DeviceSensorScriptAction
+import ai.edgez.edgez.EdgeZBinaryMime
 import ai.edgez.edgez.EdgeZDeviceType
 import ai.edgez.edgez.EdgeZSensorData
 import ai.edgez.edgez.GeoFenceAlertCondition
@@ -1107,7 +1108,7 @@ object EdgezUsbControlProto {
     }
 
     private fun UsbControl.SensorData.toAppSensorData(): EdgeZSensorData? {
-        val mappedMime = EdgeZBinaryMime.fromProtoValue(binaryMimeValue)
+        val mappedMime = EdgeZBinaryMime.UNSPECIFIED
         val hasNumericValues = latitude != 0f ||
             longitude != 0f ||
             altitude != 0f ||

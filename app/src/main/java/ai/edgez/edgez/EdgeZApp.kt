@@ -1190,11 +1190,13 @@ fun EdgeZApp() {
                                     }
                                 }
                             }.getOrElse {
+                                val nonceSize = conversationMessage?.nonce?.size
+                                val cipherSize = conversationMessage?.ciphertext?.size
                                 Log.w(
                                     TAG_USERS,
                                     if (shouldUseConversationCrypto) {
                                         "conversation decrypt failed mime=${message.mime} from=0x%012x to=0x%012x seq=${message.sequence} payload=${message.payload.size} " +
-                                            "nonce=${conversationMessage.nonce.size} cipher=${conversationMessage.ciphertext.size}"
+                                            "nonce=${nonceSize ?: -1} cipher=${cipherSize ?: -1}"
                                     } else {
                                         "conversation decode failed for device traffic mime=${message.mime} from=0x%012x to=0x%012x seq=${message.sequence} payload=${message.payload.size}"
                                     },
