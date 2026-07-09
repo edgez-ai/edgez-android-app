@@ -244,15 +244,18 @@ class EdgezBleClient(private val context: Context) {
     }
 
     fun sendDeviceSettings(settings: DeviceSettings): Result<String> {
-        return sendFrame(EdgezUsbControlProto.encodeDeviceSettingsSet(settings))
+        val result = sendFrame(EdgezUsbControlProto.encodeDeviceSettingsSet(settings))
+        if (result.isFailure) return result
+        return waitForControlTxDrain(3000)
     }
 
     fun sendDeviceSensorScript(config: DeviceSensorScriptConfig): Result<String> {
-        for (packet in EdgezUsbControlProto.encodeScriptConfigUpload(config)) {
+        val packets = EdgezUsbControlProto.encodeScriptConfigUpload(config)
+        for (packet in packets) {
             val result = sendFrame(packet)
             if (result.isFailure) return result
         }
-        return Result.success("BLE queued sensor script")
+        return waitForControlTxDrain((packets.size * 220).coerceIn(2000, 20000))
     }
 
     fun sendConversationMessage(
@@ -406,6 +409,19 @@ class EdgezBleClient(private val context: Context) {
             }
             Result.failure(IllegalStateException("BLE write failed"))
         }
+    }
+
+    private fun waitForControlTxDrain(timeoutMs: Int): Result<String> {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            synchronized(this) {
+                if (!txWriteInFlight && txQueue.isEmpty()) {
+                    return Result.success("BLE control TX complete")
+                }
+            }
+            Thread.sleep(10)
+        }
+        return Result.failure(IllegalStateException("BLE control TX not complete after ${timeoutMs}ms"))
     }
 
     @SuppressLint("MissingPermission")
