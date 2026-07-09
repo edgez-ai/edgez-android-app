@@ -238,11 +238,20 @@ private fun isUserConversationCrypto(user: HaLowUser): Boolean {
 private fun packetUserUuid(high: Long, low: Long): String =
     if (high == 0L && low == 0L) "" else formatMessageUuid(high, low)
 
-private fun isLikelySensorBinaryPacket(message: ai.edgez.edgez.usb.NetworkPacket): Boolean {
+private fun isLikelySensorBinaryPacket(
+    message: ai.edgez.edgez.usb.NetworkPacket,
+    senderDeviceType: EdgeZDeviceType?,
+): Boolean {
     return message.conversationMessage == null &&
         message.payload.isNotEmpty() &&
-        message.mime == PacketMime.UNSPECIFIED &&
-        message.payload.size > EDGEZ_NETWORK_PACKET_MAX_PAYLOAD
+        message.mime in setOf(PacketMime.UNSPECIFIED, PacketMime.BINARY) &&
+        (senderDeviceType == null ||
+            message.payload.size > EDGEZ_NETWORK_PACKET_MAX_PAYLOAD ||
+            senderDeviceType !in setOf(
+                EdgeZDeviceType.USER,
+                EdgeZDeviceType.GROUP,
+                EdgeZDeviceType.UNSPECIFIED,
+            ))
 }
 
 private data class PendingVoiceMessage(
@@ -922,7 +931,19 @@ fun EdgeZApp() {
                     it.sequence == 0 &&
                     (localNode == null || it.from != localNode)
             } == true
-            val rawBinaryPacket = message?.let { isLikelySensorBinaryPacket(it) } == true
+            val senderHint = message?.let {
+                haLowUsers[it.from] ?: user?.takeIf { userNode -> userNode.nodeNum == it.from }
+            }
+            val rawBinaryPacket = message?.let {
+                isLikelySensorBinaryPacket(
+                    it,
+                    when {
+                        senderHint?.deviceType != null -> senderHint.deviceType
+                        it.beacon != null -> it.beacon.deviceType
+                        else -> null
+                    },
+                )
+            } == true
 
             if (status == null && user == null && !rawBinaryPacket && !conversationAck) return
             if (message != null && (conversationMessage != null || conversationAck || user != null || rawBinaryPacket)) {
@@ -1024,7 +1045,23 @@ fun EdgeZApp() {
                         } else {
                             senderUserByNode
                         }
-                        if (senderUser == null) {
+                        val resolvedSenderUser = senderUser ?: if (rawBinaryPacket) {
+                            HaLowUser(
+                                nodeNum = message.from,
+                                userId = message.userLow,
+                                userUuid = senderUserUuid,
+                                shortName = "",
+                                longName = "",
+                                route = route,
+                                lastSeenMs = System.currentTimeMillis(),
+                                deviceType = senderHint?.deviceType
+                                    ?: message.beacon?.deviceType
+                                    ?: EdgeZDeviceType.SENSOR,
+                            )
+                        } else {
+                            null
+                        }
+                        if (resolvedSenderUser == null) {
                             Log.w(
                                 TAG_USERS,
                                 "conversation sender missing user=$senderUserUuid from=0x%012x to=0x%012x known=${haLowUsers.size}"
@@ -1034,7 +1071,7 @@ fun EdgeZApp() {
                                 sendConversationAck(currentActiveConnection, route, message)
                             }
                         } else {
-                            val senderNodeNum = if (senderUser.deviceType == EdgeZDeviceType.GROUP) message.from else senderUser.nodeNum
+                            val senderNodeNum = if (resolvedSenderUser.deviceType == EdgeZDeviceType.GROUP) message.from else resolvedSenderUser.nodeNum
                             if (rawBinaryPacket) {
                                 val rawConversationChunk = decodeConversationChunk(message.payload)
                                 val rawBinaryPayload = if (rawConversationChunk != null) {
@@ -1070,8 +1107,8 @@ fun EdgeZApp() {
                                         null
                                     }
                                     edgeZDatabase.insertSensorData(
-                                        conversationKey(senderUser),
-                                        senderUser.nodeNum,
+                                        conversationKey(resolvedSenderUser),
+                                        resolvedSenderUser.nodeNum,
                                         System.currentTimeMillis(),
                                         EdgeZSensorData(
                                             binaryLengthBytes = it.size,
@@ -1080,8 +1117,8 @@ fun EdgeZApp() {
                                     )
                                 }
                             }
-                            val shouldUseConversationCrypto = isUserConversationCrypto(senderUser)
-                            val groupMessageId = packetGroupId ?: conversationGroupId(senderUser)
+                            val shouldUseConversationCrypto = isUserConversationCrypto(resolvedSenderUser)
+                            val groupMessageId = packetGroupId ?: conversationGroupId(resolvedSenderUser)
                             val entry: ConversationEntry? = if (rawBinaryPacket) {
                                 null
                             } else {
@@ -1091,7 +1128,7 @@ fun EdgeZApp() {
                                             PacketMime.VOICE -> {
                                                 val payload = decryptConversationPayload(
                                                     identity,
-                                                    senderUser,
+                                                    resolvedSenderUser,
                                                     message,
                                                     groupIdHigh = groupMessageId?.high ?: 0L,
                                                     groupIdLow = groupMessageId?.low ?: 0L,
@@ -1131,7 +1168,7 @@ fun EdgeZApp() {
                                             PacketMime.BINARY -> {
                                                 val payload = decryptConversationPayload(
                                                     identity,
-                                                    senderUser,
+                                                    resolvedSenderUser,
                                                     message,
                                                     groupIdHigh = groupMessageId?.high ?: 0L,
                                                     groupIdLow = groupMessageId?.low ?: 0L,
@@ -1173,7 +1210,7 @@ fun EdgeZApp() {
                                             else -> ConversationEntry(
                                                 text = decryptConversationText(
                                                     identity,
-                                                    senderUser,
+                                                    resolvedSenderUser,
                                                     message,
                                                     groupIdHigh = groupMessageId?.high ?: 0L,
                                                     groupIdLow = groupMessageId?.low ?: 0L,
@@ -1314,7 +1351,7 @@ fun EdgeZApp() {
                                 }
                             }
                             if (entry != null) {
-                                val senderKey = conversationKey(senderUser)
+                                val senderKey = conversationKey(resolvedSenderUser)
                                 edgeZDatabase.insertMessage(senderKey, entry)
                                 conversations = conversations + (
                                     senderKey to ((conversations[senderKey] ?: emptyList()) + entry)
