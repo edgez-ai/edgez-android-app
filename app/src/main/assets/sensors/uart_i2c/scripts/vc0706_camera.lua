@@ -15,7 +15,7 @@ local FBUF_RESUME_FRAME = 0x02
 local READ_CHUNK_SIZE = 250
 local MAX_FRAME_SIZE = 500000
 
-local cam_baud = 921600
+local cam_baud = 115200
 local cam_action = "capture"
 local cam_output =  "capture.jpg"
 local cam_reset = false
@@ -112,6 +112,19 @@ local function verify_response(response, cmd)
     and string.byte(response, 2) == SERIAL_NUM
     and string.byte(response, 3) == (cmd & 0xFF)
     and string.byte(response, 4) == 0x00
+end
+
+local function find_vc0706_ack_offset(response, cmd)
+  local need_len = 5
+  local max_start = #response - (need_len - 1)
+  for i = 1, max_start do
+    if string.byte(response, i) == 0x76 and
+       string.byte(response, i + 1) == SERIAL_NUM and
+       string.byte(response, i + 2) == (cmd & 0xFF) then
+      return i
+    end
+  end
+  return nil
 end
 
 local function get_version()
@@ -295,8 +308,25 @@ local function set_resolution()
   if not ok then
     return false, err
   end
-  local response = read_response(2.0, 64)
-  if #response >= 5 and verify_response(response, CMD_SET_DOWNSIZE) then
+  local response = read_response(2.0, 256)
+  if #response == 0 then
+    return false, "no response to set-resolution"
+  end
+
+  local ack_offset = find_vc0706_ack_offset(response, CMD_SET_DOWNSIZE)
+  if not ack_offset then
+    return false, "invalid set-resolution response"
+  end
+
+  local status_len = string.byte(response, ack_offset + 3)
+  if #response < (ack_offset + 3) then
+    return false, "truncated set-resolution response"
+  end
+
+  if status_len == 0x00 then
+    return true
+  end
+  if status_len == 0x01 and string.byte(response, ack_offset + 4) == 0x00 then
     return true
   end
   return false, "failed to apply 160x120 resolution"
