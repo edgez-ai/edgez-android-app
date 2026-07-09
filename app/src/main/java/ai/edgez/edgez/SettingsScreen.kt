@@ -602,19 +602,21 @@ private fun SettingsContent(
                 emptyList()
             }
             var result: Result<String> = Result.success("No sensor scripts")
-            for (scriptConfig in scriptConfigs) {
-                result = when (connection) {
-                    ActiveConnection.USB -> client.sendDeviceSensorScript(scriptConfig)
-                    ActiveConnection.BLE -> bleClient.sendDeviceSensorScript(scriptConfig)
-                    ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
-                }
-                if (result.isFailure) break
-            }
             if (result.isSuccess) {
                 result = when (connection) {
                     ActiveConnection.USB -> client.sendDeviceSettings(settings)
                     ActiveConnection.BLE -> bleClient.sendDeviceSettings(settings)
                     ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+                }
+            }
+            if (result.isSuccess) {
+                for (scriptConfig in scriptConfigs) {
+                    result = when (connection) {
+                        ActiveConnection.USB -> client.sendDeviceSensorScript(scriptConfig)
+                        ActiveConnection.BLE -> bleClient.sendDeviceSensorScript(scriptConfig)
+                        ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+                    }
+                    if (result.isFailure) break
                 }
             }
             activity?.runOnUiThread {
