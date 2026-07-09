@@ -128,9 +128,6 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 """.trimIndent(),
             )
         }
-        if (oldVersion < 10) {
-            addColumnIfMissing(db, TABLE_SENSOR_DATA, "sensor_mime", "INTEGER NOT NULL DEFAULT 0")
-        }
     }
 
     override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -535,12 +532,11 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 putNullableDouble("humidity", sensorData.humidity)
                 putNullableDouble("pressure", sensorData.pressure)
                 putNullableDouble("vibration_average", sensorData.vibrationAverage)
-                put("sensor_mime", sensorData.binaryMime.protoValue)
             },
         )
         Log.d(
             TAG_USERS,
-            "insert sensor rowId=$rowId peer=$peerUserUuid node=0x%012x ts=$timestampMs temp=${sensorData.temperature} humidity=${sensorData.humidity} pressure=${sensorData.pressure} vibration=${sensorData.vibrationAverage} lat=${sensorData.latitude} lon=${sensorData.longitude} alt=${sensorData.altitude} mime=${sensorData.binaryMime}"
+            "insert sensor rowId=$rowId peer=$peerUserUuid node=0x%012x ts=$timestampMs temp=${sensorData.temperature} humidity=${sensorData.humidity} pressure=${sensorData.pressure} vibration=${sensorData.vibrationAverage} lat=${sensorData.latitude} lon=${sensorData.longitude} alt=${sensorData.altitude}"
                 .format(nodeNum),
         )
     }
@@ -558,7 +554,6 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 "humidity",
                 "pressure",
                 "vibration_average",
-                "sensor_mime",
             ),
             "peer_user_uuid = ?",
             arrayOf(peerUserUuid),
@@ -575,7 +570,6 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
             val humidityIndex = cursor.getColumnIndexOrThrow("humidity")
             val pressureIndex = cursor.getColumnIndexOrThrow("pressure")
             val vibrationAverageIndex = cursor.getColumnIndexOrThrow("vibration_average")
-            val sensorMimeIndex = cursor.getColumnIndexOrThrow("sensor_mime")
             while (cursor.moveToNext()) {
                 val data = EdgeZSensorData(
                     latitude = cursor.getNullableDouble(latitudeIndex),
@@ -585,7 +579,6 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                     humidity = cursor.getNullableDouble(humidityIndex),
                     pressure = cursor.getNullableDouble(pressureIndex),
                     vibrationAverage = cursor.getNullableDouble(vibrationAverageIndex),
-                    binaryMime = EdgeZBinaryMime.fromProtoValue(cursor.getInt(sensorMimeIndex)),
                 )
                 samples += SensorSample(
                     timestampMs = cursor.getLong(timestampIndex),
@@ -665,7 +658,6 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 humidity REAL,
                 pressure REAL,
                 vibration_average REAL,
-                sensor_mime INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY(peer_user_uuid) REFERENCES $TABLE_USERS(user_uuid) ON DELETE CASCADE
             )
             """.trimIndent(),
