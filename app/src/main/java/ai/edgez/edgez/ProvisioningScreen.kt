@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Switch
@@ -234,6 +235,7 @@ private fun ProvisioningContent(
     var status by remember { mutableStateOf("Connect the ESP32-S3 USB port, then scan.") }
     var provisionStep by rememberSaveable { mutableStateOf(ProvisionStep.SELECT_BLE) }
     var pendingProvisionNext by rememberSaveable { mutableStateOf(false) }
+    var isSavingProvisionSettings by rememberSaveable { mutableStateOf(false) }
     val activity = context as? ComponentActivity
     val currentOnTransportConnectionChange by rememberUpdatedState(onTransportConnectionChange)
     val provisionBleReady = provisionMode && activeConnection == ActiveConnection.BLE && bleReady
@@ -587,9 +589,11 @@ private fun ProvisioningContent(
         label: String = "Device settings",
         forceSaveScript: Boolean = false,
         onSuccessAction: (() -> Unit)? = null,
+        onFailureAction: (() -> Unit)? = null,
     ) {
         if (connection == ActiveConnection.NONE) {
             status = "$label saved locally; connect USB or BLE to sync"
+            onFailureAction?.invoke()
             return
         }
         status = "Saving $label..."
@@ -627,7 +631,7 @@ private fun ProvisioningContent(
                     if (result.isFailure) break
                 }
             }
-            activity?.runOnUiThread {
+                activity?.runOnUiThread {
                 status = result.fold(
                     onSuccess = {
                         lastSavedDeviceUartI2cSensorType = uartI2cSensorType
@@ -640,7 +644,10 @@ private fun ProvisioningContent(
                         onSuccessAction?.invoke()
                         message
                     },
-                    onFailure = { it.message ?: "$label save failed" },
+                    onFailure = {
+                        onFailureAction?.invoke()
+                        it.message ?: "$label save failed"
+                    },
                 )
             }
         }
@@ -733,8 +740,12 @@ private fun ProvisioningContent(
             ProvisionStep.SLEEP_MODE -> sendDeviceSettingsToDevice(
                 forceSaveScript = true,
                 onSuccessAction = {
+                    isSavingProvisionSettings = false
                     disconnectProvisionTransport()
                     onProvisionComplete()
+                },
+                onFailureAction = {
+                    isSavingProvisionSettings = false
                 },
             )
         }
@@ -873,12 +884,34 @@ private fun ProvisioningContent(
                     }
                     Button(
                         modifier = Modifier.weight(1f),
-                        enabled = if (provisionStep == ProvisionStep.SELECT_BLE) selectedBle != null else showDeviceSettingsOnly,
+                        enabled = if (provisionStep == ProvisionStep.SELECT_BLE) {
+                            selectedBle != null
+                        } else if (provisionStep == ProvisionStep.SLEEP_MODE) {
+                            showDeviceSettingsOnly && !isSavingProvisionSettings
+                        } else {
+                            showDeviceSettingsOnly
+                        },
                         onClick = {
-                            goNextProvisionStep()
+                            if (!isSavingProvisionSettings) {
+                                isSavingProvisionSettings = provisionStep == ProvisionStep.SLEEP_MODE
+                                goNextProvisionStep()
+                            }
                         },
                     ) {
-                        Text(if (provisionStep == ProvisionStep.SLEEP_MODE) "Save" else "Next")
+                        if (provisionStep == ProvisionStep.SLEEP_MODE && isSavingProvisionSettings) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                androidx.compose.material3.CircularProgressIndicator(
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                                Text("Saving")
+                            }
+                        } else {
+                            Text(if (provisionStep == ProvisionStep.SLEEP_MODE) "Save" else "Next")
+                        }
                     }
                 }
             }
