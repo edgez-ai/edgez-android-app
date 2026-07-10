@@ -586,6 +586,9 @@ fun EdgeZApp() {
                 key == "user_private_key" ||
                 key == "user_public_key"
             ) {
+                if (key == "libp2p_mesh_enabled") {
+                    bleClient.setForwardingEnabled(lastConnectionPreferences.getLibp2pMeshEnabled())
+                }
                 syncLibp2pMesh()
             }
         }
@@ -908,6 +911,10 @@ fun EdgeZApp() {
         }
 
         fun handleMeshFrame(route: String, frame: ByteArray) {
+            if (route == ROUTE_BLE_FORWARD && !lastConnectionPreferences.getLibp2pMeshEnabled()) {
+                Log.d(TAG_USERS, "ignore BLE forward frame while libp2p disabled route=$route bytes=${frame.size}")
+                return
+            }
             val meshPassphrase = lastConnectionPreferences.getMeshPassphrase()
             val inferredHop = if (route == ROUTE_LIBP2P || route == ROUTE_BLE_FORWARD) 1 else 0
             val parsed = decodeHaLowSyncFrame(frame, meshPassphrase) ?: EdgezUsbControlProto.decodeNetworkPacket(frame, meshPassphrase)
@@ -1384,7 +1391,7 @@ fun EdgeZApp() {
             }
         }
         val removeBleForwardFrameListener = bleClient.addForwardFrameListener { frame ->
-            if (currentActiveConnection == ActiveConnection.BLE) {
+            if (currentActiveConnection == ActiveConnection.BLE && lastConnectionPreferences.getLibp2pMeshEnabled()) {
                 handleMeshFrame(ROUTE_BLE_FORWARD, frame)
             }
         }
@@ -1441,6 +1448,7 @@ fun EdgeZApp() {
     }
 
     LaunchedEffect(Unit) {
+        bleClient.setForwardingEnabled(lastConnectionPreferences.getLibp2pMeshEnabled())
         if (lastConnectionPreferences.getBleAutoConnect()) {
             connectSelectedBleFromPreferences()
         }

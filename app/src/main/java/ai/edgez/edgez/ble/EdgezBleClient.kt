@@ -74,6 +74,7 @@ class EdgezBleClient(private val context: Context) {
     private val forwardTxQueue = ArrayDeque<ByteArray>()
     private var txWriteInFlight = false
     private var forwardTxWriteInFlight = false
+    private var forwardEnabled = false
 
     fun requiredPermissions(): Array<String> {
         return if (Build.VERSION.SDK_INT >= 31) {
@@ -90,6 +91,19 @@ class EdgezBleClient(private val context: Context) {
     }
 
     fun isReady(): Boolean = gatt != null && rxCharacteristic != null
+
+    fun setForwardingEnabled(enabled: Boolean) {
+        synchronized(this) {
+            forwardEnabled = enabled
+            if (!enabled) {
+                clearForwardState(log = true)
+            }
+        }
+        val currentGatt = gatt
+        if (enabled && currentGatt != null) {
+            currentGatt.discoverServices()
+        }
+    }
 
     fun addFrameListener(listener: (ByteArray) -> Unit): () -> Unit {
         frameListeners.add(listener)
@@ -168,8 +182,7 @@ class EdgezBleClient(private val context: Context) {
         stopScan()
         rxCharacteristic = null
         txCharacteristic = null
-        forwardRxCharacteristic = null
-        forwardTxCharacteristic = null
+        setForwardingEnabled(false)
         clearTxQueue()
         gatt?.close()
         gatt = null
@@ -426,6 +439,9 @@ class EdgezBleClient(private val context: Context) {
 
     @SuppressLint("MissingPermission")
     private fun sendForwardFrame(payload: ByteArray): Result<String> {
+        if (!forwardEnabled) {
+            return Result.failure(IllegalStateException("BLE forward is disabled"))
+        }
         val gatt = gatt ?: return Result.failure(IllegalStateException("BLE is not connected"))
         val rx = forwardRxCharacteristic ?: return Result.failure(IllegalStateException("BLE forward service is not ready"))
         if (payload.size > EDGEZ_MAX_PAYLOAD) {
@@ -460,6 +476,7 @@ class EdgezBleClient(private val context: Context) {
         isForward: Boolean,
     ): Boolean {
         val gatt = activeGatt ?: return false
+        if (isForward && !forwardEnabled) return false
         val rx = writeCharacteristic ?: return false
         val frame = synchronized(this) {
             if (isForward) {
@@ -506,6 +523,18 @@ class EdgezBleClient(private val context: Context) {
         forwardTxWriteInFlight = false
     }
 
+    private fun clearForwardState(log: Boolean) {
+        val hadState = forwardRxCharacteristic != null || forwardTxCharacteristic != null
+        forwardRxCharacteristic = null
+        forwardTxCharacteristic = null
+        forwardRxLen = 0
+        forwardTxQueue.clear()
+        forwardTxWriteInFlight = false
+        if (log && hadState) {
+            emitDebug("BLE forward disabled; forward state cleared")
+        }
+    }
+
     @SuppressLint("MissingPermission")
     private fun writeNextFrame(activeGatt: BluetoothGatt?): Boolean {
         val gatt = activeGatt ?: return false
@@ -513,6 +542,7 @@ class EdgezBleClient(private val context: Context) {
         if (controlRx != null && synchronized(this) { !txWriteInFlight && txQueue.isNotEmpty() }) {
             return writeNextFrame(gatt, controlRx, isForward = false)
         }
+        if (!forwardEnabled) return false
         val forwardRx = forwardRxCharacteristic
         if (forwardRx != null && synchronized(this) { !forwardTxWriteInFlight && forwardTxQueue.isNotEmpty() }) {
             return writeNextFrame(gatt, forwardRx, isForward = true)
@@ -529,8 +559,7 @@ class EdgezBleClient(private val context: Context) {
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 rxCharacteristic = null
                 txCharacteristic = null
-                forwardRxCharacteristic = null
-                forwardTxCharacteristic = null
+                setForwardingEnabled(false)
                 rxLen = 0
                 forwardRxLen = 0
                 clearTxQueue()
@@ -549,8 +578,6 @@ class EdgezBleClient(private val context: Context) {
             val service: BluetoothGattService? = gatt.getService(EDGEZ_SERVICE_UUID)
             val rx = service?.getCharacteristic(EDGEZ_RX_UUID)
             val tx = service?.getCharacteristic(EDGEZ_TX_UUID)
-            val forwardRx = service?.getCharacteristic(EDGEZ_FORWARD_RX_UUID)
-            val forwardTx = service?.getCharacteristic(EDGEZ_FORWARD_TX_UUID)
             if (rx == null || tx == null) {
                 emitDebug("SERVICE missing rx=${rx != null} tx=${tx != null}")
                 return
@@ -558,8 +585,6 @@ class EdgezBleClient(private val context: Context) {
 
             rxCharacteristic = rx
             txCharacteristic = tx
-            forwardRxCharacteristic = forwardRx
-            forwardTxCharacteristic = forwardTx
             gatt.setCharacteristicNotification(tx, true)
             val descriptor = tx.getDescriptor(CCCD_UUID)
             if (descriptor != null) {
@@ -570,19 +595,29 @@ class EdgezBleClient(private val context: Context) {
                     gatt.writeDescriptor(descriptor)
                 }
             }
-            if (forwardRx != null && forwardTx != null) {
-                gatt.setCharacteristicNotification(forwardTx, true)
-                val forwardDescriptor = forwardTx.getDescriptor(CCCD_UUID)
-                if (forwardDescriptor != null) {
-                    if (Build.VERSION.SDK_INT >= 33) {
-                        gatt.writeDescriptor(forwardDescriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
-                    } else {
-                        forwardDescriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                        gatt.writeDescriptor(forwardDescriptor)
+            if (forwardEnabled) {
+                val forwardRx = service?.getCharacteristic(EDGEZ_FORWARD_RX_UUID)
+                val forwardTx = service?.getCharacteristic(EDGEZ_FORWARD_TX_UUID)
+                forwardRxCharacteristic = forwardRx
+                forwardTxCharacteristic = forwardTx
+                if (forwardRx != null && forwardTx != null) {
+                    gatt.setCharacteristicNotification(forwardTx, true)
+                    val forwardDescriptor = forwardTx.getDescriptor(CCCD_UUID)
+                    if (forwardDescriptor != null) {
+                        if (Build.VERSION.SDK_INT >= 33) {
+                            gatt.writeDescriptor(forwardDescriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+                        } else {
+                            forwardDescriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                            gatt.writeDescriptor(forwardDescriptor)
+                        }
                     }
+                } else {
+                    emitDebug("SERVICE forward missing rx=${forwardRx != null} tx=${forwardTx != null}")
+                    clearForwardState(log = false)
                 }
             } else {
-                emitDebug("SERVICE forward missing rx=${forwardRx != null} tx=${forwardTx != null}")
+                clearForwardState(log = false)
+                emitDebug("SERVICE forward disabled by settings")
             }
             emitDebug("SERVICE ready")
         }
@@ -594,7 +629,7 @@ class EdgezBleClient(private val context: Context) {
         ) {
             when (characteristic.uuid) {
                 txCharacteristic?.uuid -> handleBytes(value)
-                forwardTxCharacteristic?.uuid -> handleForwardBytes(value)
+                if (forwardEnabled) forwardTxCharacteristic?.uuid else null -> handleForwardBytes(value)
                 else -> emitDebug("RX unknown char=${characteristic.uuid}")
             }
         }
@@ -607,7 +642,7 @@ class EdgezBleClient(private val context: Context) {
             val value = characteristic.value ?: return
             when (characteristic.uuid) {
                 txCharacteristic?.uuid -> handleBytes(value)
-                forwardTxCharacteristic?.uuid -> handleForwardBytes(value)
+                if (forwardEnabled) forwardTxCharacteristic?.uuid else null -> handleForwardBytes(value)
                 else -> emitDebug("RX unknown char=${characteristic.uuid}")
             }
         }
@@ -617,7 +652,7 @@ class EdgezBleClient(private val context: Context) {
             characteristic: BluetoothGattCharacteristic,
             status: Int,
         ) {
-            val isForwardWrite = characteristic.uuid == forwardTxCharacteristic?.uuid
+            val isForwardWrite = characteristic.uuid == forwardTxCharacteristic?.uuid && forwardEnabled
             synchronized(this@EdgezBleClient) {
                 if (isForwardWrite) {
                     forwardTxWriteInFlight = false
