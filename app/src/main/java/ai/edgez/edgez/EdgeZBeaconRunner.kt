@@ -138,13 +138,8 @@ object EdgeZBeaconRunner {
     fun start(context: Context) {
         appContext = context.applicationContext
         synchronized(lock) {
-            if (executor == null) {
-                executor = Executors.newSingleThreadExecutor()
-            }
-            if (running) return
-            running = true
+            running = false
             handler.removeCallbacks(beaconRunnable)
-            handler.post(beaconRunnable)
         }
     }
 
