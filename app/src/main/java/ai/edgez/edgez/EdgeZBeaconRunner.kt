@@ -226,7 +226,7 @@ object EdgeZBeaconRunner {
     }
 }
 
-private fun Context.getBestKnownLocation(): Location? {
+internal fun Context.getBestKnownLocation(): Location? {
     val hasFine = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
     val hasCoarse = checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
     if (!hasFine && !hasCoarse) return null

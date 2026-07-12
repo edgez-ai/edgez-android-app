@@ -489,6 +489,9 @@ object EdgezUsbControlProto {
         userName: String,
         userPublicKey: ByteArray,
         maxHop: Int,
+        marker: String,
+        latitude: Double?,
+        longitude: Double?,
     ): ByteArray {
         val init = UsbControl.HaLowInitConfig.newBuilder()
             .setCountryCode(countryCode.take(2).uppercase())
@@ -499,6 +502,10 @@ object EdgezUsbControlProto {
             .setUserIdLow(userIdLow)
             .setUserName(userName.take(64))
             .setUserPublicKey(ByteString.copyFrom(userPublicKey.copyOf(minOf(userPublicKey.size, 32))))
+            .setMarker(marker)
+            .setHasLocation(latitude != null && longitude != null)
+            .setLatitude(latitude?.toFloat() ?: 0f)
+            .setLongitude(longitude?.toFloat() ?: 0f)
             .build()
 
         return encodeNetworkPacketBuilder(
@@ -1385,10 +1392,13 @@ class EdgezUsbClient(private val context: Context) {
         userName: String,
         userPublicKey: ByteArray,
         maxHop: Int,
+        marker: String,
+        latitude: Double?,
+        longitude: Double?,
         timeoutMs: Int = 1500,
     ): Result<String> {
         return sendFrame(
-            EdgezUsbControlProto.encodeHaLowInit(countryCode, meshId, passphrase, userIdHigh, userIdLow, userName, userPublicKey, maxHop),
+            EdgezUsbControlProto.encodeHaLowInit(countryCode, meshId, passphrase, userIdHigh, userIdLow, userName, userPublicKey, maxHop, marker, latitude, longitude),
             timeoutMs,
         )
     }

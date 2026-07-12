@@ -169,6 +169,10 @@ message HaLowInitConfig {
   uint64 user_id_low = 6;
   string user_name = 7;
   bytes user_public_key = 8;
+  string marker = 9;
+  bool has_location = 10;
+  float latitude = 11;
+  float longitude = 12;
 }
 
 message DeviceSettings {

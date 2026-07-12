@@ -798,7 +798,9 @@ fun EdgeZApp() {
             val passphrase = lastConnectionPreferences.getMeshPassphrase()
             val maxHop = lastConnectionPreferences.getMeshMaxHop()
             val userIdentity = lastConnectionPreferences.getOrCreateUserIdentity()
-            val initKey = "${source.name}|$country|$meshId|$passphrase|$maxHop|${userIdentity.userUuid}|${userIdentity.name}|${userIdentity.publicKey.contentHashCode()}"
+            val marker = lastConnectionPreferences.getUserMarker()
+            val location = if (lastConnectionPreferences.getShareLocation()) context.applicationContext.getBestKnownLocation() else null
+            val initKey = "${source.name}|$country|$meshId|$passphrase|$maxHop|${userIdentity.userUuid}|${userIdentity.name}|${userIdentity.publicKey.contentHashCode()}|$marker|${location?.latitude}|${location?.longitude}"
             while (true) {
                 val previousKey = pendingHaLowInitKey.get()
                 if (previousKey == initKey) return
@@ -816,6 +818,9 @@ fun EdgeZApp() {
                         userIdentity.name,
                         userIdentity.publicKey,
                         maxHop,
+                        marker,
+                        location?.latitude,
+                        location?.longitude,
                     )
                     ActiveConnection.BLE -> bleClient.sendHaLowInit(
                         country,
@@ -826,6 +831,9 @@ fun EdgeZApp() {
                         userIdentity.name,
                         userIdentity.publicKey,
                         maxHop,
+                        marker,
+                        location?.latitude,
+                        location?.longitude,
                     )
                     ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
                 }
