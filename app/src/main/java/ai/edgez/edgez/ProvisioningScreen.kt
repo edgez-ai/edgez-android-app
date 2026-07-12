@@ -142,6 +142,17 @@ private fun provisionHaLowFrequenciesKHz(country: String, bandwidthMHz: Int): Li
 private fun provisionHaLowBandwidthOptions(country: String): List<Int> =
     listOf(1, 2, 4, 8).filter { provisionHaLowFrequenciesKHz(country, it).isNotEmpty() }
 
+private fun provisionHaLowFrequencyLabel(country: String, frequencyKHz: Int): String {
+    val baseKHz = when (country) {
+        "US" -> 902000
+        "JP" -> 920000
+        "EU" -> 863000
+        else -> frequencyKHz
+    }
+    val channel = (frequencyKHz - baseKHz) / 500
+    return "Channel $channel - ${frequencyKHz / 1000.0} MHz"
+}
+
 @Composable
 fun ProvisioningScreen(
     client: EdgezUsbClient,
@@ -1511,7 +1522,7 @@ private fun ProvisioningContent(
                             modifier = Modifier.fillMaxWidth(),
                             onClick = { frequencyDropdownExpanded = true },
                         ) {
-                            Text("Frequency: ${meshFrequencyKHz / 1000.0} MHz")
+                            Text("Frequency: ${provisionHaLowFrequencyLabel(meshCountry, meshFrequencyKHz)}")
                         }
                         DropdownMenu(
                             expanded = frequencyDropdownExpanded,
@@ -1519,7 +1530,7 @@ private fun ProvisioningContent(
                         ) {
                             provisionHaLowFrequenciesKHz(meshCountry, meshBandwidthMHz).forEach { frequency ->
                                 DropdownMenuItem(
-                                    text = { Text("${frequency / 1000.0} MHz") },
+                                    text = { Text(provisionHaLowFrequencyLabel(meshCountry, frequency)) },
                                     onClick = {
                                         meshFrequencyKHz = frequency
                                         frequencyDropdownExpanded = false

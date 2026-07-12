@@ -107,6 +107,17 @@ private fun haLowFrequenciesKHz(country: String, bandwidthMHz: Int): List<Int> =
 private fun haLowBandwidthOptions(country: String): List<Int> =
     listOf(1, 2, 4, 8).filter { haLowFrequenciesKHz(country, it).isNotEmpty() }
 
+private fun haLowFrequencyLabel(country: String, frequencyKHz: Int): String {
+    val baseKHz = when (country) {
+        "US" -> 902000
+        "JP" -> 920000
+        "EU" -> 863000
+        else -> frequencyKHz
+    }
+    val channel = (frequencyKHz - baseKHz) / 500
+    return "Channel $channel - ${frequencyKHz / 1000.0} MHz"
+}
+
 private enum class Libp2pExtraServerOption(val label: String) {
     NONE("IPFS default"),
     EDGEZ("EdgeZ"),
@@ -1372,7 +1383,7 @@ private fun SettingsContent(
                                 modifier = Modifier.fillMaxWidth(),
                                 onClick = { frequencyDropdownExpanded = true },
                             ) {
-                                Text("Frequency: ${meshFrequencyKHz / 1000.0} MHz")
+                                Text("Frequency: ${haLowFrequencyLabel(meshCountry, meshFrequencyKHz)}")
                             }
                             DropdownMenu(
                                 expanded = frequencyDropdownExpanded,
@@ -1380,7 +1391,7 @@ private fun SettingsContent(
                             ) {
                                 haLowFrequenciesKHz(meshCountry, meshBandwidthMHz).forEach { frequency ->
                                     DropdownMenuItem(
-                                        text = { Text("${frequency / 1000.0} MHz") },
+                                        text = { Text(haLowFrequencyLabel(meshCountry, frequency)) },
                                         onClick = {
                                             meshFrequencyKHz = frequency
                                             frequencyDropdownExpanded = false
