@@ -10,6 +10,8 @@ private const val KEY_MESH_COUNTRY = "mesh_country"
 private const val KEY_MESH_ID = "mesh_id"
 private const val KEY_MESH_PASSPHRASE = "mesh_passphrase"
 private const val KEY_MESH_MAX_HOP = "mesh_max_hop"
+private const val KEY_MESH_BANDWIDTH_MHZ = "mesh_bandwidth_mhz"
+private const val KEY_MESH_FREQUENCY_KHZ = "mesh_frequency_khz"
 private const val KEY_LIBP2P_MESH_ENABLED = "libp2p_mesh_enabled"
 private const val KEY_LIBP2P_BOOTSTRAP_PEERS = "libp2p_bootstrap_peers"
 private const val KEY_LIBP2P_PUBLIC_DHT = "libp2p_public_dht"
@@ -29,6 +31,8 @@ private const val KEY_SELECTED_DEVICE_GEOFENCE = "selected_device_geofence"
 private const val KEY_DASHBOARD_WIDGET_ORDER = "dashboard_widget_order"
 private const val DEFAULT_MESH_ID = "edgez"
 private const val DEFAULT_MESH_MAX_HOP = 2
+private const val DEFAULT_MESH_BANDWIDTH_MHZ = 1
+private const val DEFAULT_MESH_FREQUENCY_KHZ = 915500
 val EDGEZ_LIBP2P_BOOTSTRAP_PEERS: String = """
     /ip4/65.20.115.199/tcp/4001/p2p/12D3KooWSMXRqi2rd7p4UPErgVS6zFeYpYuddo8qayYxkSR2WT7Q
     /ip4/207.148.107.129/tcp/4001/p2p/12D3KooWT29aoqxDYCno7ZcGMWjW6j9R6hNrqVFcFQsCcSwih1zx
@@ -76,6 +80,11 @@ class LastConnectionPreferences(context: Context) {
 
     fun getMeshMaxHop(): Int = normalizeMeshMaxHop(prefs.getInt(KEY_MESH_MAX_HOP, DEFAULT_MESH_MAX_HOP))
 
+    fun getMeshBandwidthMHz(): Int = prefs.getInt(KEY_MESH_BANDWIDTH_MHZ, DEFAULT_MESH_BANDWIDTH_MHZ)
+        .takeIf { it == 1 || it == 2 || it == 4 || it == 8 } ?: DEFAULT_MESH_BANDWIDTH_MHZ
+
+    fun getMeshFrequencyKHz(): Int = prefs.getInt(KEY_MESH_FREQUENCY_KHZ, DEFAULT_MESH_FREQUENCY_KHZ)
+
     fun getLibp2pMeshEnabled(): Boolean = prefs.getBoolean(KEY_LIBP2P_MESH_ENABLED, false)
 
     fun getLibp2pPublicDht(): Boolean = prefs.getBoolean(KEY_LIBP2P_PUBLIC_DHT, true)
@@ -120,6 +129,8 @@ class LastConnectionPreferences(context: Context) {
         passphrase: String,
         maxHop: Int = DEFAULT_MESH_MAX_HOP,
         beaconIntervalSeconds: Int = DEFAULT_BEACON_INTERVAL_SECONDS,
+        bandwidthMHz: Int = DEFAULT_MESH_BANDWIDTH_MHZ,
+        frequencyKHz: Int = DEFAULT_MESH_FREQUENCY_KHZ,
     ) {
         prefs.edit()
             .putString(KEY_MESH_COUNTRY, normalizeMeshCountry(country))
@@ -127,6 +138,8 @@ class LastConnectionPreferences(context: Context) {
             .putString(KEY_MESH_PASSPHRASE, passphrase)
             .putInt(KEY_MESH_MAX_HOP, normalizeMeshMaxHop(maxHop))
             .putInt(KEY_BEACON_INTERVAL_SECONDS, normalizeBeaconIntervalSeconds(beaconIntervalSeconds))
+            .putInt(KEY_MESH_BANDWIDTH_MHZ, bandwidthMHz)
+            .putInt(KEY_MESH_FREQUENCY_KHZ, frequencyKHz)
             .apply()
     }
 

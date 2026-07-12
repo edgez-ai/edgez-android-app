@@ -797,10 +797,12 @@ fun EdgeZApp() {
             val country = lastConnectionPreferences.getMeshCountry()
             val passphrase = lastConnectionPreferences.getMeshPassphrase()
             val maxHop = lastConnectionPreferences.getMeshMaxHop()
+            val bandwidthMHz = lastConnectionPreferences.getMeshBandwidthMHz()
+            val frequencyKHz = lastConnectionPreferences.getMeshFrequencyKHz()
             val userIdentity = lastConnectionPreferences.getOrCreateUserIdentity()
             val marker = lastConnectionPreferences.getUserMarker()
             val location = if (lastConnectionPreferences.getShareLocation()) context.applicationContext.getBestKnownLocation() else null
-            val initKey = "${source.name}|$country|$meshId|$passphrase|$maxHop|${userIdentity.userUuid}|${userIdentity.name}|${userIdentity.publicKey.contentHashCode()}|$marker|${location?.latitude}|${location?.longitude}"
+            val initKey = "${source.name}|$country|$meshId|$passphrase|$maxHop|$bandwidthMHz|$frequencyKHz|${userIdentity.userUuid}|${userIdentity.name}|${userIdentity.publicKey.contentHashCode()}|$marker|${location?.latitude}|${location?.longitude}"
             while (true) {
                 val previousKey = pendingHaLowInitKey.get()
                 if (previousKey == initKey) return
@@ -821,6 +823,8 @@ fun EdgeZApp() {
                         marker,
                         location?.latitude,
                         location?.longitude,
+                        bandwidthMHz,
+                        frequencyKHz,
                     )
                     ActiveConnection.BLE -> bleClient.sendHaLowInit(
                         country,
@@ -834,6 +838,8 @@ fun EdgeZApp() {
                         marker,
                         location?.latitude,
                         location?.longitude,
+                        bandwidthMHz,
+                        frequencyKHz,
                     )
                     ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
                 }

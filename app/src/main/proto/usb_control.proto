@@ -173,6 +173,8 @@ message HaLowInitConfig {
   bool has_location = 10;
   float latitude = 11;
   float longitude = 12;
+  uint32 mesh_bandwidth_mhz = 13;
+  uint32 mesh_frequency_khz = 14;
 }
 
 message DeviceSettings {

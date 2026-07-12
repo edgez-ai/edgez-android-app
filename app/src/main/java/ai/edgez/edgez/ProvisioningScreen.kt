@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -64,6 +65,7 @@ import java.util.UUID
 
 private enum class ProvisionStep {
     SELECT_BLE,
+    MODE,
     IDENTITY,
     NETWORK,
     LOCATION,
@@ -71,6 +73,10 @@ private enum class ProvisionStep {
     SENSOR,
     SLEEP_MODE,
 }
+
+private const val DEVICE_MODE_UNSET = -1
+private const val DEVICE_MODE_DEVICE = 0
+private const val DEVICE_MODE_RELAY = 1
 
 private fun parseIpv4Address(input: String): Long {
     val parts = input.trim().split(".")
@@ -108,6 +114,33 @@ private val beaconMulticastOptions = listOf(
     BeaconMulticastOption("239.255.0.1", "239.255.0.1 - site-local"),
     BeaconMulticastOption("239.192.0.1", "239.192.0.1 - organization-local"),
 )
+
+private fun provisionHaLowFrequenciesKHz(country: String, bandwidthMHz: Int): List<Int> = when (country) {
+    "US" -> when (bandwidthMHz) {
+        1 -> (902500..927500 step 1000).toList()
+        2 -> (903000..927000 step 2000).toList()
+        4 -> (904000..926000 step 4000).toList()
+        8 -> (908000..924000 step 8000).toList()
+        else -> emptyList()
+    }
+    "JP" -> when (bandwidthMHz) {
+        1 -> (920500..927500 step 1000).toList()
+        2 -> (921000..927000 step 2000).toList()
+        4 -> listOf(922000, 926000)
+        8 -> listOf(924000)
+        else -> emptyList()
+    }
+    "EU" -> when (bandwidthMHz) {
+        1 -> (863500..867500 step 1000).toList()
+        2 -> listOf(864000, 866000)
+        4 -> listOf(865000)
+        else -> emptyList()
+    }
+    else -> emptyList()
+}
+
+private fun provisionHaLowBandwidthOptions(country: String): List<Int> =
+    listOf(1, 2, 4, 8).filter { provisionHaLowFrequenciesKHz(country, it).isNotEmpty() }
 
 @Composable
 fun ProvisioningScreen(
@@ -191,11 +224,15 @@ private fun ProvisioningContent(
     }
 
     var countryDropdownExpanded by remember { mutableStateOf(false) }
+    var bandwidthDropdownExpanded by remember { mutableStateOf(false) }
+    var frequencyDropdownExpanded by remember { mutableStateOf(false) }
     var markerDropdownExpanded by remember { mutableStateOf(false) }
     var meshCountry by rememberSaveable { mutableStateOf(connectionPreferences.getMeshCountry()) }
     var meshId by rememberSaveable { mutableStateOf(connectionPreferences.getMeshId()) }
     var passphrase by rememberSaveable { mutableStateOf(connectionPreferences.getMeshPassphrase()) }
     var maxHop by rememberSaveable { mutableStateOf(connectionPreferences.getMeshMaxHop().toString()) }
+    var meshBandwidthMHz by rememberSaveable { mutableStateOf(connectionPreferences.getMeshBandwidthMHz()) }
+    var meshFrequencyKHz by rememberSaveable { mutableStateOf(connectionPreferences.getMeshFrequencyKHz()) }
     var beaconIntervalSeconds by rememberSaveable {
         mutableStateOf(connectionPreferences.getBeaconIntervalSeconds().toString())
     }
@@ -235,24 +272,30 @@ private fun ProvisioningContent(
     var status by remember { mutableStateOf("Connect the ESP32-S3 USB port, then scan.") }
     var provisionStep by rememberSaveable { mutableStateOf(ProvisionStep.SELECT_BLE) }
     var pendingProvisionNext by rememberSaveable { mutableStateOf(false) }
+    var showDeviceSettingsRetryDialog by rememberSaveable { mutableStateOf(false) }
+    var provisionDeviceMode by rememberSaveable { mutableStateOf(DEVICE_MODE_UNSET) }
     var isSavingProvisionSettings by rememberSaveable { mutableStateOf(false) }
+    var isLoadingDeviceSettings by rememberSaveable { mutableStateOf(false) }
+    var deviceSettingsLoaded by rememberSaveable { mutableStateOf(false) }
     val activity = context as? ComponentActivity
     val currentOnTransportConnectionChange by rememberUpdatedState(onTransportConnectionChange)
     val provisionBleReady = provisionMode && activeConnection == ActiveConnection.BLE && bleReady
     val showProvisionDeviceSettings = provisionMode && provisionStep != ProvisionStep.SELECT_BLE && provisionBleReady
-    val deviceMode = provisionBleReady
+    val deviceMode = provisionDeviceMode == DEVICE_MODE_DEVICE
     val showDeviceSettingsOnly = showProvisionDeviceSettings
     val provisionStepNumber = when (provisionStep) {
         ProvisionStep.SELECT_BLE -> 1
-        ProvisionStep.IDENTITY -> 2
-        ProvisionStep.NETWORK -> 3
-        ProvisionStep.LOCATION -> 4
-        ProvisionStep.GEO_FENCE -> 5
-        ProvisionStep.SENSOR -> 6
-        ProvisionStep.SLEEP_MODE -> 7
+        ProvisionStep.MODE -> 2
+        ProvisionStep.IDENTITY -> 3
+        ProvisionStep.NETWORK -> 4
+        ProvisionStep.LOCATION -> 5
+        ProvisionStep.GEO_FENCE -> 6
+        ProvisionStep.SENSOR -> 7
+        ProvisionStep.SLEEP_MODE -> 8
     }
     val provisionStepTitle = when (provisionStep) {
         ProvisionStep.SELECT_BLE -> "Select BLE device"
+        ProvisionStep.MODE -> "Device mode"
         ProvisionStep.IDENTITY -> "Name, ID, and keys"
         ProvisionStep.LOCATION -> "Location"
         ProvisionStep.GEO_FENCE -> "Geo fence"
@@ -302,6 +345,8 @@ private fun ProvisioningContent(
         meshId = connectionPreferences.getMeshId()
         passphrase = connectionPreferences.getMeshPassphrase()
         maxHop = connectionPreferences.getMeshMaxHop().toString()
+        meshBandwidthMHz = connectionPreferences.getMeshBandwidthMHz()
+        meshFrequencyKHz = connectionPreferences.getMeshFrequencyKHz()
         beaconIntervalSeconds = connectionPreferences.getBeaconIntervalSeconds().toString()
         userIdentity = connectionPreferences.getOrCreateUserIdentity()
         userName = userIdentity.name
@@ -368,6 +413,9 @@ private fun ProvisioningContent(
             status = "Select an EdgeZ BLE device before continuing"
             return false
         }
+        provisionDeviceMode = DEVICE_MODE_UNSET
+        deviceSettingsLoaded = false
+        isLoadingDeviceSettings = false
         bleClient.stopScan()
         val result = bleClient.connect(candidate)
         result.fold(
@@ -513,6 +561,13 @@ private fun ProvisioningContent(
         } else if (deviceIdentity == null && settings.deviceModeEnabled) {
             ensureDeviceIdentity()
         }
+        provisionDeviceMode = if (settings.deviceModeEnabled) DEVICE_MODE_DEVICE else DEVICE_MODE_RELAY
+        deviceSettingsLoaded = true
+        isLoadingDeviceSettings = false
+        if (pendingProvisionNext && provisionStep == ProvisionStep.SELECT_BLE) {
+            pendingProvisionNext = false
+            provisionStep = ProvisionStep.MODE
+        }
         status = "Device settings loaded"
     }
 
@@ -567,6 +622,7 @@ private fun ProvisioningContent(
             status = "Connect USB or BLE before loading device settings"
             return
         }
+        isLoadingDeviceSettings = true
         status = "Loading device settings..."
         executor.execute {
             val result = when (connection) {
@@ -579,6 +635,9 @@ private fun ProvisioningContent(
                     onSuccess = { "Device settings request sent" },
                     onFailure = { it.message ?: "Device settings unavailable" },
                 )
+                if (result.isFailure) {
+                    isLoadingDeviceSettings = false
+                }
             }
         }
     }
@@ -657,6 +716,9 @@ private fun ProvisioningContent(
         val connection = activeConnection
         DeviceModeState.enabled = false
         reloadAppSettingsFromPreferences()
+        provisionDeviceMode = DEVICE_MODE_UNSET
+        deviceSettingsLoaded = false
+        isLoadingDeviceSettings = false
         if (connection == ActiveConnection.NONE) {
             status = "Disconnected"
             return
@@ -677,6 +739,9 @@ private fun ProvisioningContent(
         val connection = activeConnection
         DeviceModeState.enabled = false
         bleClient.stopScan()
+        provisionDeviceMode = DEVICE_MODE_UNSET
+        deviceSettingsLoaded = false
+        isLoadingDeviceSettings = false
         if (connection == ActiveConnection.NONE) {
             bleReady = false
             status = "Disconnected"
@@ -696,6 +761,10 @@ private fun ProvisioningContent(
             disconnectProvisionTransport()
         }
         provisionStep = ProvisionStep.SELECT_BLE
+        provisionDeviceMode = DEVICE_MODE_UNSET
+        deviceSettingsLoaded = false
+        isLoadingDeviceSettings = false
+        pendingProvisionNext = false
         onProvisionCancel()
     }
 
@@ -705,12 +774,19 @@ private fun ProvisioningContent(
                 cancelProvision()
                 return
             }
-            ProvisionStep.IDENTITY -> ProvisionStep.SELECT_BLE
+            ProvisionStep.MODE -> ProvisionStep.SELECT_BLE
+            ProvisionStep.IDENTITY -> ProvisionStep.MODE
             ProvisionStep.NETWORK -> ProvisionStep.IDENTITY
             ProvisionStep.LOCATION -> ProvisionStep.NETWORK
             ProvisionStep.GEO_FENCE -> ProvisionStep.LOCATION
             ProvisionStep.SENSOR -> ProvisionStep.GEO_FENCE
             ProvisionStep.SLEEP_MODE -> ProvisionStep.SENSOR
+        }
+        if (provisionStep == ProvisionStep.SELECT_BLE) {
+            provisionDeviceMode = DEVICE_MODE_UNSET
+            deviceSettingsLoaded = false
+            isLoadingDeviceSettings = false
+            pendingProvisionNext = false
         }
         status = if (provisionStep == ProvisionStep.SELECT_BLE) {
             "Select an EdgeZ BLE device"
@@ -728,12 +804,37 @@ private fun ProvisioningContent(
                     }
                     return
                 }
+                if (!deviceSettingsLoaded) {
+                    showDeviceSettingsRetryDialog = true
+                    return
+                }
+                if (provisionDeviceMode == DEVICE_MODE_UNSET) {
+                    status = "Select Device or Relay mode"
+                    return
+                }
                 pendingProvisionNext = false
-                provisionStep = ProvisionStep.IDENTITY
-                requestDeviceSettings(ActiveConnection.BLE)
+                provisionStep = ProvisionStep.MODE
+            }
+            ProvisionStep.MODE -> {
+                if (provisionDeviceMode == DEVICE_MODE_UNSET) {
+                    status = "Select Device or Relay mode"
+                    return
+                }
+                provisionStep = ProvisionStep.NETWORK
             }
             ProvisionStep.IDENTITY -> provisionStep = ProvisionStep.NETWORK
-            ProvisionStep.NETWORK -> provisionStep = ProvisionStep.LOCATION
+            ProvisionStep.NETWORK -> {
+                connectionPreferences.setMeshCredentials(
+                    meshCountry,
+                    meshId,
+                    passphrase,
+                    maxHop.toIntOrNull() ?: 2,
+                    beaconIntervalSeconds.toIntOrNull() ?: DEFAULT_BEACON_INTERVAL_SECONDS,
+                    meshBandwidthMHz,
+                    meshFrequencyKHz,
+                )
+                provisionStep = ProvisionStep.LOCATION
+            }
             ProvisionStep.LOCATION -> provisionStep = ProvisionStep.GEO_FENCE
             ProvisionStep.GEO_FENCE -> provisionStep = ProvisionStep.SENSOR
             ProvisionStep.SENSOR -> provisionStep = ProvisionStep.SLEEP_MODE
@@ -806,8 +907,8 @@ private fun ProvisioningContent(
                     bleReady = true
                     if (provisionMode && provisionStep == ProvisionStep.SELECT_BLE) {
                         if (pendingProvisionNext) {
-                            pendingProvisionNext = false
-                            provisionStep = ProvisionStep.IDENTITY
+                            requestDeviceSettings(ActiveConnection.BLE)
+                        } else if (!deviceSettingsLoaded && !isLoadingDeviceSettings) {
                             requestDeviceSettings(ActiveConnection.BLE)
                         } else {
                             status = "BLE ready; tap Next"
@@ -816,6 +917,9 @@ private fun ProvisioningContent(
                     currentOnTransportConnectionChange(ActiveConnection.BLE, true)
                 } else if (line.startsWith("CONN") && line.contains("state=0") || line == "CLOSE") {
                     bleReady = false
+                    provisionDeviceMode = DEVICE_MODE_UNSET
+                    deviceSettingsLoaded = false
+                    isLoadingDeviceSettings = false
                     currentOnTransportConnectionChange(ActiveConnection.BLE, false)
                 }
             }
@@ -844,6 +948,10 @@ private fun ProvisioningContent(
     LaunchedEffect(activeConnection, bleReady, provisionMode) {
         if (provisionMode && !provisionBleReady && provisionStep != ProvisionStep.SELECT_BLE) {
             provisionStep = ProvisionStep.SELECT_BLE
+            provisionDeviceMode = DEVICE_MODE_UNSET
+            deviceSettingsLoaded = false
+            isLoadingDeviceSettings = false
+            pendingProvisionNext = false
         }
     }
 
@@ -888,6 +996,8 @@ private fun ProvisioningContent(
                             selectedBle != null
                         } else if (provisionStep == ProvisionStep.SLEEP_MODE) {
                             showDeviceSettingsOnly && !isSavingProvisionSettings
+                        } else if (provisionStep == ProvisionStep.MODE) {
+                            showDeviceSettingsOnly && provisionDeviceMode != DEVICE_MODE_UNSET
                         } else {
                             showDeviceSettingsOnly
                         },
@@ -917,6 +1027,31 @@ private fun ProvisioningContent(
             }
         },
     ) { padding ->
+        if (showDeviceSettingsRetryDialog) {
+            AlertDialog(
+                onDismissRequest = { showDeviceSettingsRetryDialog = false },
+                title = { Text("Device settings not loaded") },
+                text = { Text("Could not get device settings yet. Retry loading and try again.") },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showDeviceSettingsRetryDialog = false
+                            pendingProvisionNext = true
+                            requestDeviceSettings(ActiveConnection.BLE)
+                        },
+                    ) {
+                        Text("Retry")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showDeviceSettingsRetryDialog = false },
+                    ) {
+                        Text("Cancel")
+                    }
+                },
+            )
+        }
         LazyColumn(
             modifier = Modifier
                 .padding(padding)
@@ -1051,22 +1186,59 @@ private fun ProvisioningContent(
                 }
             }
 
-            if (!provisionMode || (showDeviceSettingsOnly && provisionStep == ProvisionStep.IDENTITY)) item {
-                SettingsCard(title = if (showDeviceSettingsOnly) "Device user" else "User") {
-                    Text(if (showDeviceSettingsOnly) "ID" else "User ID", style = MaterialTheme.typography.titleSmall)
+            if (!provisionMode || (showDeviceSettingsOnly && provisionStep == ProvisionStep.MODE)) item {
+                if (provisionMode) {
+                    SettingsCard(title = "Device mode") {
+                        Text("Select mode", style = MaterialTheme.typography.titleSmall)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Device mode enables peer behavior; relay mode enables relay behavior.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                modifier = Modifier.weight(1f),
+                                onClick = {
+                                    provisionDeviceMode = DEVICE_MODE_DEVICE
+                                    status = "Device mode selected"
+                                },
+                            ) {
+                                Text("Device")
+                            }
+                            OutlinedButton(
+                                modifier = Modifier.weight(1f),
+                                onClick = {
+                                    provisionDeviceMode = DEVICE_MODE_RELAY
+                                    status = "Relay mode selected"
+                                },
+                            ) {
+                                Text("Relay")
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            when (provisionDeviceMode) {
+                                DEVICE_MODE_DEVICE -> "Selected: Device"
+                                DEVICE_MODE_RELAY -> "Selected: Relay"
+                                else -> "Selection required before continuing"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+
+                SettingsCard(title = "Device user") {
+                    Text("ID", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        if (showDeviceSettingsOnly) deviceIdentity?.userUuid ?: "Not loaded" else userIdentity.userUuid,
-                        style = MaterialTheme.typography.bodyMedium,
+                        deviceIdentity?.userUuid ?: "Not loaded",
+                        style = MaterialTheme.typography.bodySmall,
                     )
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
-                        value = if (showDeviceSettingsOnly) deviceUserName else userName,
+                        value = deviceUserName,
                         onValueChange = { value ->
-                            if (showDeviceSettingsOnly) {
-                                deviceUserName = value.take(64)
-                            } else {
-                                userName = value.take(64)
-                            }
+                            deviceUserName = value.take(64)
                         },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Name") },
@@ -1075,33 +1247,15 @@ private fun ProvisioningContent(
                     Spacer(Modifier.height(8.dp))
                     Text("X25519 public key", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        if (showDeviceSettingsOnly) {
-                            deviceIdentity?.publicKey?.let(::formatHex) ?: "Not loaded"
-                        } else {
-                            formatHex(userIdentity.publicKey)
-                        },
+                        deviceIdentity?.publicKey?.let(::formatHex) ?: "Not loaded",
                         style = MaterialTheme.typography.bodySmall,
                     )
-                    if (showDeviceSettingsOnly) {
-                        Spacer(Modifier.height(8.dp))
-                        Text("X25519 private key", style = MaterialTheme.typography.titleSmall)
-                        Text(deviceIdentity?.privateKey?.let(::formatHex) ?: "Not loaded", style = MaterialTheme.typography.bodySmall)
-                        Spacer(Modifier.height(10.dp))
-                        Button(onClick = { regenerateDeviceIdentity() }) {
-                            Text("Regenerate ID and key pair")
-                        }
-                    } else {
-                        Spacer(Modifier.height(10.dp))
-                        Button(onClick = {
-                            connectionPreferences.setUserName(userName)
-                            connectionPreferences.setUserMarker(userMarker)
-                            connectionPreferences.setShareLocation(shareLocation)
-                            userIdentity = connectionPreferences.regenerateUserKeyPair()
-                            userName = userIdentity.name
-                            status = "X25519 key pair regenerated"
-                        }) {
-                            Text("Generate key pair")
-                        }
+                    Spacer(Modifier.height(8.dp))
+                    Text("X25519 private key", style = MaterialTheme.typography.titleSmall)
+                    Text(deviceIdentity?.privateKey?.let(::formatHex) ?: "Not loaded", style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(10.dp))
+                    Button(onClick = { regenerateDeviceIdentity() }) {
+                        Text("Regenerate ID and key pair")
                     }
                     Spacer(Modifier.height(10.dp))
                     Box(modifier = Modifier.fillMaxWidth()) {
@@ -1109,9 +1263,7 @@ private fun ProvisioningContent(
                             modifier = Modifier.fillMaxWidth(),
                             onClick = { markerDropdownExpanded = true },
                         ) {
-                            Text(
-                                "Marker: ${NodeMapMarker.fromId(if (showDeviceSettingsOnly) deviceUserMarker else userMarker).label}",
-                            )
+                            Text("Marker: ${NodeMapMarker.fromId(deviceUserMarker).label}")
                         }
                         DropdownMenu(
                             expanded = markerDropdownExpanded,
@@ -1121,15 +1273,8 @@ private fun ProvisioningContent(
                                 DropdownMenuItem(
                                     text = { Text(marker.label) },
                                     onClick = {
-                                        if (showDeviceSettingsOnly) {
-                                            deviceUserMarker = marker.id
-                                        } else {
-                                            userMarker = marker.id
-                                        }
+                                        deviceUserMarker = marker.id
                                         markerDropdownExpanded = false
-                                        if (!showDeviceSettingsOnly) {
-                                            connectionPreferences.setUserMarker(marker.id)
-                                        }
                                         status = "Marker set to ${marker.label}"
                                     },
                                 )
@@ -1322,7 +1467,62 @@ private fun ProvisioningContent(
                                     text = { Text(country) },
                                     onClick = {
                                         meshCountry = country
+                                        val bandwidths = provisionHaLowBandwidthOptions(country)
+                                        meshBandwidthMHz = meshBandwidthMHz.takeIf { it in bandwidths }
+                                            ?: bandwidths.first()
+                                        val frequencies = provisionHaLowFrequenciesKHz(country, meshBandwidthMHz)
+                                        meshFrequencyKHz = meshFrequencyKHz.takeIf { it in frequencies }
+                                            ?: frequencies.first()
                                         countryDropdownExpanded = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { bandwidthDropdownExpanded = true },
+                        ) {
+                            Text("Bandwidth: $meshBandwidthMHz MHz")
+                        }
+                        DropdownMenu(
+                            expanded = bandwidthDropdownExpanded,
+                            onDismissRequest = { bandwidthDropdownExpanded = false },
+                        ) {
+                            provisionHaLowBandwidthOptions(meshCountry).forEach { bandwidth ->
+                                DropdownMenuItem(
+                                    text = { Text("$bandwidth MHz") },
+                                    onClick = {
+                                        meshBandwidthMHz = bandwidth
+                                        val frequencies = provisionHaLowFrequenciesKHz(meshCountry, bandwidth)
+                                        meshFrequencyKHz = meshFrequencyKHz.takeIf { it in frequencies }
+                                            ?: frequencies.first()
+                                        bandwidthDropdownExpanded = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { frequencyDropdownExpanded = true },
+                        ) {
+                            Text("Frequency: ${meshFrequencyKHz / 1000.0} MHz")
+                        }
+                        DropdownMenu(
+                            expanded = frequencyDropdownExpanded,
+                            onDismissRequest = { frequencyDropdownExpanded = false },
+                        ) {
+                            provisionHaLowFrequenciesKHz(meshCountry, meshBandwidthMHz).forEach { frequency ->
+                                DropdownMenuItem(
+                                    text = { Text("${frequency / 1000.0} MHz") },
+                                    onClick = {
+                                        meshFrequencyKHz = frequency
+                                        frequencyDropdownExpanded = false
                                     },
                                 )
                             }

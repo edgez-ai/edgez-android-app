@@ -80,6 +80,33 @@ private enum class SettingsTab(val label: String) {
     OTHERS("Others"),
 }
 
+private fun haLowFrequenciesKHz(country: String, bandwidthMHz: Int): List<Int> = when (country) {
+    "US" -> when (bandwidthMHz) {
+        1 -> (902500..927500 step 1000).toList()
+        2 -> (903000..927000 step 2000).toList()
+        4 -> (904000..926000 step 4000).toList()
+        8 -> (908000..924000 step 8000).toList()
+        else -> emptyList()
+    }
+    "JP" -> when (bandwidthMHz) {
+        1 -> (920500..927500 step 1000).toList()
+        2 -> (921000..927000 step 2000).toList()
+        4 -> listOf(922000, 926000)
+        8 -> listOf(924000)
+        else -> emptyList()
+    }
+    "EU" -> when (bandwidthMHz) {
+        1 -> (863500..867500 step 1000).toList()
+        2 -> listOf(864000, 866000)
+        4 -> listOf(865000)
+        else -> emptyList()
+    }
+    else -> emptyList()
+}
+
+private fun haLowBandwidthOptions(country: String): List<Int> =
+    listOf(1, 2, 4, 8).filter { haLowFrequenciesKHz(country, it).isNotEmpty() }
+
 private enum class Libp2pExtraServerOption(val label: String) {
     NONE("IPFS default"),
     EDGEZ("EdgeZ"),
@@ -195,12 +222,16 @@ private fun SettingsContent(
     }
 
     var countryDropdownExpanded by remember { mutableStateOf(false) }
+    var bandwidthDropdownExpanded by remember { mutableStateOf(false) }
+    var frequencyDropdownExpanded by remember { mutableStateOf(false) }
     var markerDropdownExpanded by remember { mutableStateOf(false) }
     var meshCountry by rememberSaveable { mutableStateOf(connectionPreferences.getMeshCountry()) }
     var meshId by rememberSaveable { mutableStateOf(connectionPreferences.getMeshId()) }
     var passphrase by rememberSaveable { mutableStateOf(connectionPreferences.getMeshPassphrase()) }
     var passphraseVisible by rememberSaveable { mutableStateOf(false) }
     var maxHop by rememberSaveable { mutableStateOf(connectionPreferences.getMeshMaxHop().toString()) }
+    var meshBandwidthMHz by rememberSaveable { mutableStateOf(connectionPreferences.getMeshBandwidthMHz()) }
+    var meshFrequencyKHz by rememberSaveable { mutableStateOf(connectionPreferences.getMeshFrequencyKHz()) }
     var libp2pMeshEnabled by rememberSaveable { mutableStateOf(connectionPreferences.getLibp2pMeshEnabled()) }
     var libp2pPublicDht by rememberSaveable { mutableStateOf(connectionPreferences.getLibp2pPublicDht()) }
     var libp2pBootstrapPeers by rememberSaveable {
@@ -300,6 +331,8 @@ private fun SettingsContent(
         meshId = connectionPreferences.getMeshId()
         passphrase = connectionPreferences.getMeshPassphrase()
         maxHop = connectionPreferences.getMeshMaxHop().toString()
+        meshBandwidthMHz = connectionPreferences.getMeshBandwidthMHz()
+        meshFrequencyKHz = connectionPreferences.getMeshFrequencyKHz()
         libp2pMeshEnabled = connectionPreferences.getLibp2pMeshEnabled()
         libp2pPublicDht = connectionPreferences.getLibp2pPublicDht()
         libp2pBootstrapPeers = connectionPreferences.getLibp2pBootstrapPeers().joinToString("\n")
@@ -772,7 +805,15 @@ private fun SettingsContent(
             status = "Custom bootstrap server cannot be empty"
             return
         }
-        connectionPreferences.setMeshCredentials(country, id, password, hopLimit, beaconInterval)
+        connectionPreferences.setMeshCredentials(
+            country,
+            id,
+            password,
+            hopLimit,
+            beaconInterval,
+            meshBandwidthMHz,
+            meshFrequencyKHz,
+        )
         maxHop = connectionPreferences.getMeshMaxHop().toString()
         beaconIntervalSeconds = connectionPreferences.getBeaconIntervalSeconds().toString()
         connectionPreferences.setUserName(userName)
@@ -1287,7 +1328,62 @@ private fun SettingsContent(
                                         text = { Text(country) },
                                         onClick = {
                                             meshCountry = country
+                                            val bandwidths = haLowBandwidthOptions(country)
+                                            meshBandwidthMHz = meshBandwidthMHz.takeIf { it in bandwidths }
+                                                ?: bandwidths.first()
+                                            val frequencies = haLowFrequenciesKHz(country, meshBandwidthMHz)
+                                            meshFrequencyKHz = meshFrequencyKHz.takeIf { it in frequencies }
+                                                ?: frequencies.first()
                                             countryDropdownExpanded = false
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = { bandwidthDropdownExpanded = true },
+                            ) {
+                                Text("Bandwidth: $meshBandwidthMHz MHz")
+                            }
+                            DropdownMenu(
+                                expanded = bandwidthDropdownExpanded,
+                                onDismissRequest = { bandwidthDropdownExpanded = false },
+                            ) {
+                                haLowBandwidthOptions(meshCountry).forEach { bandwidth ->
+                                    DropdownMenuItem(
+                                        text = { Text("$bandwidth MHz") },
+                                        onClick = {
+                                            meshBandwidthMHz = bandwidth
+                                            val frequencies = haLowFrequenciesKHz(meshCountry, bandwidth)
+                                            meshFrequencyKHz = meshFrequencyKHz.takeIf { it in frequencies }
+                                                ?: frequencies.first()
+                                            bandwidthDropdownExpanded = false
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = { frequencyDropdownExpanded = true },
+                            ) {
+                                Text("Frequency: ${meshFrequencyKHz / 1000.0} MHz")
+                            }
+                            DropdownMenu(
+                                expanded = frequencyDropdownExpanded,
+                                onDismissRequest = { frequencyDropdownExpanded = false },
+                            ) {
+                                haLowFrequenciesKHz(meshCountry, meshBandwidthMHz).forEach { frequency ->
+                                    DropdownMenuItem(
+                                        text = { Text("${frequency / 1000.0} MHz") },
+                                        onClick = {
+                                            meshFrequencyKHz = frequency
+                                            frequencyDropdownExpanded = false
                                         },
                                     )
                                 }

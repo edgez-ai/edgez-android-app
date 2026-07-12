@@ -6734,6 +6734,18 @@ public final class UsbControl {
      * @return The longitude.
      */
     float getLongitude();
+
+    /**
+     * <code>uint32 mesh_bandwidth_mhz = 13;</code>
+     * @return The meshBandwidthMhz.
+     */
+    int getMeshBandwidthMhz();
+
+    /**
+     * <code>uint32 mesh_frequency_khz = 14;</code>
+     * @return The meshFrequencyKhz.
+     */
+    int getMeshFrequencyKhz();
   }
   /**
    * Protobuf type {@code ai.edgez.halow.HaLowInitConfig}
@@ -7172,6 +7184,58 @@ public final class UsbControl {
     private void clearLongitude() {
 
       longitude_ = 0F;
+    }
+
+    public static final int MESH_BANDWIDTH_MHZ_FIELD_NUMBER = 13;
+    private int meshBandwidthMhz_;
+    /**
+     * <code>uint32 mesh_bandwidth_mhz = 13;</code>
+     * @return The meshBandwidthMhz.
+     */
+    @java.lang.Override
+    public int getMeshBandwidthMhz() {
+      return meshBandwidthMhz_;
+    }
+    /**
+     * <code>uint32 mesh_bandwidth_mhz = 13;</code>
+     * @param value The meshBandwidthMhz to set.
+     */
+    private void setMeshBandwidthMhz(int value) {
+      
+      meshBandwidthMhz_ = value;
+    }
+    /**
+     * <code>uint32 mesh_bandwidth_mhz = 13;</code>
+     */
+    private void clearMeshBandwidthMhz() {
+
+      meshBandwidthMhz_ = 0;
+    }
+
+    public static final int MESH_FREQUENCY_KHZ_FIELD_NUMBER = 14;
+    private int meshFrequencyKhz_;
+    /**
+     * <code>uint32 mesh_frequency_khz = 14;</code>
+     * @return The meshFrequencyKhz.
+     */
+    @java.lang.Override
+    public int getMeshFrequencyKhz() {
+      return meshFrequencyKhz_;
+    }
+    /**
+     * <code>uint32 mesh_frequency_khz = 14;</code>
+     * @param value The meshFrequencyKhz to set.
+     */
+    private void setMeshFrequencyKhz(int value) {
+      
+      meshFrequencyKhz_ = value;
+    }
+    /**
+     * <code>uint32 mesh_frequency_khz = 14;</code>
+     */
+    private void clearMeshFrequencyKhz() {
+
+      meshFrequencyKhz_ = 0;
     }
 
     public static ai.edgez.halow.UsbControl.HaLowInitConfig parseFrom(
@@ -7712,6 +7776,62 @@ public final class UsbControl {
         return this;
       }
 
+      /**
+       * <code>uint32 mesh_bandwidth_mhz = 13;</code>
+       * @return The meshBandwidthMhz.
+       */
+      @java.lang.Override
+      public int getMeshBandwidthMhz() {
+        return instance.getMeshBandwidthMhz();
+      }
+      /**
+       * <code>uint32 mesh_bandwidth_mhz = 13;</code>
+       * @param value The meshBandwidthMhz to set.
+       * @return This builder for chaining.
+       */
+      public Builder setMeshBandwidthMhz(int value) {
+        copyOnWrite();
+        instance.setMeshBandwidthMhz(value);
+        return this;
+      }
+      /**
+       * <code>uint32 mesh_bandwidth_mhz = 13;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearMeshBandwidthMhz() {
+        copyOnWrite();
+        instance.clearMeshBandwidthMhz();
+        return this;
+      }
+
+      /**
+       * <code>uint32 mesh_frequency_khz = 14;</code>
+       * @return The meshFrequencyKhz.
+       */
+      @java.lang.Override
+      public int getMeshFrequencyKhz() {
+        return instance.getMeshFrequencyKhz();
+      }
+      /**
+       * <code>uint32 mesh_frequency_khz = 14;</code>
+       * @param value The meshFrequencyKhz to set.
+       * @return This builder for chaining.
+       */
+      public Builder setMeshFrequencyKhz(int value) {
+        copyOnWrite();
+        instance.setMeshFrequencyKhz(value);
+        return this;
+      }
+      /**
+       * <code>uint32 mesh_frequency_khz = 14;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearMeshFrequencyKhz() {
+        copyOnWrite();
+        instance.clearMeshFrequencyKhz();
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:ai.edgez.halow.HaLowInitConfig)
     }
     @java.lang.Override
@@ -7740,11 +7860,13 @@ public final class UsbControl {
               "hasLocation_",
               "latitude_",
               "longitude_",
+              "meshBandwidthMhz_",
+              "meshFrequencyKhz_",
             };
             java.lang.String info =
-                "\u0000\f\u0000\u0000\u0001\f\f\u0000\u0000\u0000\u0001\u0208\u0002\u0208\u0003\u0208" +
-                "\u0004\u000b\u0005\u0003\u0006\u0003\u0007\u0208\b\n\t\u0208\n\u0007\u000b\u0001" +
-                "\f\u0001";
+                "\u0000\u000e\u0000\u0000\u0001\u000e\u000e\u0000\u0000\u0000\u0001\u0208\u0002\u0208" +
+                "\u0003\u0208\u0004\u000b\u0005\u0003\u0006\u0003\u0007\u0208\b\n\t\u0208\n\u0007" +
+                "\u000b\u0001\f\u0001\r\u000b\u000e\u000b";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         // fall through

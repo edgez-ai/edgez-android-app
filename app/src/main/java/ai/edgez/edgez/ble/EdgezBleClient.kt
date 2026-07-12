@@ -223,9 +223,11 @@ class EdgezBleClient(private val context: Context) {
         marker: String,
         latitude: Double?,
         longitude: Double?,
+        meshBandwidthMHz: Int,
+        meshFrequencyKHz: Int,
     ): Result<String> {
         return sendFrame(
-            EdgezUsbControlProto.encodeHaLowInit(countryCode, meshId, passphrase, userIdHigh, userIdLow, userName, userPublicKey, maxHop, marker, latitude, longitude),
+            EdgezUsbControlProto.encodeHaLowInit(countryCode, meshId, passphrase, userIdHigh, userIdLow, userName, userPublicKey, maxHop, marker, latitude, longitude, meshBandwidthMHz, meshFrequencyKHz),
         )
     }
 

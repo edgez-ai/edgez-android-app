@@ -159,6 +159,8 @@ data class HaLowInitConfig(
     val userIdLow: Long = 0,
     val userName: String = "",
     val userPublicKey: ByteArray = ByteArray(0),
+    val meshBandwidthMHz: Int = 0,
+    val meshFrequencyKHz: Int = 0,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -172,7 +174,9 @@ data class HaLowInitConfig(
             userIdHigh == other.userIdHigh &&
             userIdLow == other.userIdLow &&
             userName == other.userName &&
-            userPublicKey.contentEquals(other.userPublicKey)
+            userPublicKey.contentEquals(other.userPublicKey) &&
+            meshBandwidthMHz == other.meshBandwidthMHz &&
+            meshFrequencyKHz == other.meshFrequencyKHz
     }
 
     override fun hashCode(): Int {
@@ -184,6 +188,8 @@ data class HaLowInitConfig(
         result = 31 * result + userIdLow.hashCode()
         result = 31 * result + userName.hashCode()
         result = 31 * result + userPublicKey.contentHashCode()
+        result = 31 * result + meshBandwidthMHz
+        result = 31 * result + meshFrequencyKHz
         return result
     }
 }
@@ -492,6 +498,8 @@ object EdgezUsbControlProto {
         marker: String,
         latitude: Double?,
         longitude: Double?,
+        meshBandwidthMHz: Int,
+        meshFrequencyKHz: Int,
     ): ByteArray {
         val init = UsbControl.HaLowInitConfig.newBuilder()
             .setCountryCode(countryCode.take(2).uppercase())
@@ -506,6 +514,8 @@ object EdgezUsbControlProto {
             .setHasLocation(latitude != null && longitude != null)
             .setLatitude(latitude?.toFloat() ?: 0f)
             .setLongitude(longitude?.toFloat() ?: 0f)
+            .setMeshBandwidthMhz(meshBandwidthMHz.coerceIn(0, 8))
+            .setMeshFrequencyKhz(meshFrequencyKHz.coerceAtLeast(0))
             .build()
 
         return encodeNetworkPacketBuilder(
@@ -1035,6 +1045,8 @@ object EdgezUsbControlProto {
             userIdLow = userIdLow,
             userName = userName,
             userPublicKey = userPublicKey.toByteArray(),
+            meshBandwidthMHz = meshBandwidthMhz,
+            meshFrequencyKHz = meshFrequencyKhz,
         )
     }
 
@@ -1395,10 +1407,12 @@ class EdgezUsbClient(private val context: Context) {
         marker: String,
         latitude: Double?,
         longitude: Double?,
+        meshBandwidthMHz: Int,
+        meshFrequencyKHz: Int,
         timeoutMs: Int = 1500,
     ): Result<String> {
         return sendFrame(
-            EdgezUsbControlProto.encodeHaLowInit(countryCode, meshId, passphrase, userIdHigh, userIdLow, userName, userPublicKey, maxHop, marker, latitude, longitude),
+            EdgezUsbControlProto.encodeHaLowInit(countryCode, meshId, passphrase, userIdHigh, userIdLow, userName, userPublicKey, maxHop, marker, latitude, longitude, meshBandwidthMHz, meshFrequencyKHz),
             timeoutMs,
         )
     }
