@@ -896,6 +896,11 @@ private fun ProvisioningContent(
             val deviceSettings = decodeHaLowSyncFrame(frame, connectionPreferences.getMeshPassphrase())?.deviceSettings
                 ?: return
             activity?.runOnUiThread {
+                // Periodic beacon-profile DEVICE_SETTINGS_SET messages also
+                // receive REPORT responses. Only an explicit settings GET may
+                // refresh this editable form, otherwise a delayed periodic
+                // report can overwrite an in-progress name/marker/GPS edit.
+                if (!isLoadingDeviceSettings) return@runOnUiThread
                 applyDeviceSettings(deviceSettings)
             }
         }

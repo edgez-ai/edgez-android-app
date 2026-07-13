@@ -843,6 +843,11 @@ private fun SettingsContent(
             val deviceSettings = decodeHaLowSyncFrame(frame, connectionPreferences.getMeshPassphrase())?.deviceSettings
                 ?: return
             activity?.runOnUiThread {
+                // Periodic beacon-profile DEVICE_SETTINGS_SET messages also
+                // receive REPORT responses. Only an explicit settings GET may
+                // refresh this editable form, otherwise a delayed periodic
+                // report can overwrite an in-progress name/marker/GPS edit.
+                if (!isLoadingDeviceSettings) return@runOnUiThread
                 applyDeviceSettings(deviceSettings)
             }
         }
@@ -1233,6 +1238,21 @@ private fun SettingsContent(
                         Spacer(Modifier.height(8.dp))
                         Button(onClick = { refreshDeviceLocation() }) {
                             Text("Refresh location")
+                        }
+                    } else {
+                        Spacer(Modifier.height(12.dp))
+                        Button(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                connectionPreferences.setUserName(userName)
+                                connectionPreferences.setUserMarker(userMarker)
+                                connectionPreferences.setShareLocation(shareLocation)
+                                userIdentity = connectionPreferences.getOrCreateUserIdentity()
+                                userName = userIdentity.name
+                                status = "User settings saved"
+                            },
+                        ) {
+                            Text("Save user settings")
                         }
                     }
                 }
