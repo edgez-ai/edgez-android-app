@@ -293,6 +293,7 @@ private fun SettingsContent(
     var status by remember { mutableStateOf("Connect the ESP32-S3 USB port, then scan.") }
     var provisionStep by rememberSaveable { mutableStateOf(SettingsProvisionStep.SELECT_BLE) }
     var pendingProvisionNext by rememberSaveable { mutableStateOf(false) }
+    var isLoadingDeviceSettings by rememberSaveable { mutableStateOf(false) }
     val activity = context as? ComponentActivity
     val currentOnTransportConnectionChange by rememberUpdatedState(onTransportConnectionChange)
     val provisionBleReady = provisionMode && activeConnection == ActiveConnection.BLE && bleReady
@@ -602,6 +603,7 @@ private fun SettingsContent(
             status = "Connect USB or BLE before loading device settings"
             return
         }
+        isLoadingDeviceSettings = true
         status = "Loading device settings..."
         executor.execute {
             val result = when (connection) {
@@ -612,7 +614,10 @@ private fun SettingsContent(
             activity?.runOnUiThread {
                 status = result.fold(
                     onSuccess = { "Device settings request sent" },
-                    onFailure = { it.message ?: "Device settings unavailable" },
+                    onFailure = {
+                        isLoadingDeviceSettings = false
+                        it.message ?: "Device settings unavailable"
+                    },
                 )
             }
         }
@@ -849,6 +854,7 @@ private fun SettingsContent(
                 // report can overwrite an in-progress name/marker/GPS edit.
                 if (!isLoadingDeviceSettings) return@runOnUiThread
                 applyDeviceSettings(deviceSettings)
+                isLoadingDeviceSettings = false
             }
         }
 
