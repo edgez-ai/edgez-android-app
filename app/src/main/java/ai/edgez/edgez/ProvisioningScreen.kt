@@ -66,7 +66,7 @@ import java.util.UUID
 private enum class ProvisionStep {
     SELECT_BLE,
     MODE,
-    IDENTITY,
+    DEVICE_USER,
     NETWORK,
     LOCATION,
     GEO_FENCE,
@@ -75,8 +75,9 @@ private enum class ProvisionStep {
 }
 
 private const val DEVICE_MODE_UNSET = -1
-private const val DEVICE_MODE_DEVICE = 0
-private const val DEVICE_MODE_RELAY = 1
+private const val DEVICE_MODE_BEACON = 0
+private const val DEVICE_MODE_SENSOR = 1
+private const val DEVICE_MODE_RELAY = 2
 
 private fun parseIpv4Address(input: String): Long {
     val parts = input.trim().split(".")
@@ -292,12 +293,15 @@ private fun ProvisioningContent(
     val currentOnTransportConnectionChange by rememberUpdatedState(onTransportConnectionChange)
     val provisionBleReady = provisionMode && activeConnection == ActiveConnection.BLE && bleReady
     val showProvisionDeviceSettings = provisionMode && provisionStep != ProvisionStep.SELECT_BLE && provisionBleReady
-    val deviceMode = provisionDeviceMode == DEVICE_MODE_DEVICE
+    // The device protocol currently distinguishes device and relay behavior.
+    // Beacon and Sensor are both device profiles; Sensor configuration is
+    // collected later in the provisioning flow.
+    val deviceMode = provisionDeviceMode != DEVICE_MODE_RELAY
     val showDeviceSettingsOnly = showProvisionDeviceSettings
     val provisionStepNumber = when (provisionStep) {
         ProvisionStep.SELECT_BLE -> 1
         ProvisionStep.MODE -> 2
-        ProvisionStep.IDENTITY -> 3
+        ProvisionStep.DEVICE_USER -> 3
         ProvisionStep.NETWORK -> 4
         ProvisionStep.LOCATION -> 5
         ProvisionStep.GEO_FENCE -> 6
@@ -307,7 +311,7 @@ private fun ProvisioningContent(
     val provisionStepTitle = when (provisionStep) {
         ProvisionStep.SELECT_BLE -> "Select BLE device"
         ProvisionStep.MODE -> "Device mode"
-        ProvisionStep.IDENTITY -> "Name, ID, and keys"
+        ProvisionStep.DEVICE_USER -> "Device user"
         ProvisionStep.LOCATION -> "Location"
         ProvisionStep.GEO_FENCE -> "Geo fence"
         ProvisionStep.SENSOR -> "Sensor"
@@ -572,7 +576,7 @@ private fun ProvisioningContent(
         } else if (deviceIdentity == null && settings.deviceModeEnabled) {
             ensureDeviceIdentity()
         }
-        provisionDeviceMode = if (settings.deviceModeEnabled) DEVICE_MODE_DEVICE else DEVICE_MODE_RELAY
+        provisionDeviceMode = if (settings.deviceModeEnabled) DEVICE_MODE_BEACON else DEVICE_MODE_RELAY
         deviceSettingsLoaded = true
         isLoadingDeviceSettings = false
         if (pendingProvisionNext && provisionStep == ProvisionStep.SELECT_BLE) {
@@ -786,8 +790,8 @@ private fun ProvisioningContent(
                 return
             }
             ProvisionStep.MODE -> ProvisionStep.SELECT_BLE
-            ProvisionStep.IDENTITY -> ProvisionStep.MODE
-            ProvisionStep.NETWORK -> ProvisionStep.IDENTITY
+            ProvisionStep.DEVICE_USER -> ProvisionStep.MODE
+            ProvisionStep.NETWORK -> ProvisionStep.DEVICE_USER
             ProvisionStep.LOCATION -> ProvisionStep.NETWORK
             ProvisionStep.GEO_FENCE -> ProvisionStep.LOCATION
             ProvisionStep.SENSOR -> ProvisionStep.GEO_FENCE
@@ -820,7 +824,7 @@ private fun ProvisioningContent(
                     return
                 }
                 if (provisionDeviceMode == DEVICE_MODE_UNSET) {
-                    status = "Select Device or Relay mode"
+                    status = "Select Beacon, Sensor, or Relay mode"
                     return
                 }
                 pendingProvisionNext = false
@@ -828,12 +832,12 @@ private fun ProvisioningContent(
             }
             ProvisionStep.MODE -> {
                 if (provisionDeviceMode == DEVICE_MODE_UNSET) {
-                    status = "Select Device or Relay mode"
+                    status = "Select Beacon, Sensor, or Relay mode"
                     return
                 }
-                provisionStep = ProvisionStep.NETWORK
+                provisionStep = ProvisionStep.DEVICE_USER
             }
-            ProvisionStep.IDENTITY -> provisionStep = ProvisionStep.NETWORK
+            ProvisionStep.DEVICE_USER -> provisionStep = ProvisionStep.NETWORK
             ProvisionStep.NETWORK -> {
                 connectionPreferences.setMeshCredentials(
                     meshCountry,
@@ -848,7 +852,23 @@ private fun ProvisioningContent(
             }
             ProvisionStep.LOCATION -> provisionStep = ProvisionStep.GEO_FENCE
             ProvisionStep.GEO_FENCE -> provisionStep = ProvisionStep.SENSOR
-            ProvisionStep.SENSOR -> provisionStep = ProvisionStep.SLEEP_MODE
+            ProvisionStep.SENSOR -> {
+                if (provisionDeviceMode == DEVICE_MODE_RELAY) {
+                    sendDeviceSettingsToDevice(
+                        forceSaveScript = true,
+                        onSuccessAction = {
+                            isSavingProvisionSettings = false
+                            disconnectProvisionTransport()
+                            onProvisionComplete()
+                        },
+                        onFailureAction = {
+                            isSavingProvisionSettings = false
+                        },
+                    )
+                } else {
+                    provisionStep = ProvisionStep.SLEEP_MODE
+                }
+            }
             ProvisionStep.SLEEP_MODE -> sendDeviceSettingsToDevice(
                 forceSaveScript = true,
                 onSuccessAction = {
@@ -1010,7 +1030,9 @@ private fun ProvisioningContent(
                         modifier = Modifier.weight(1f),
                         enabled = if (provisionStep == ProvisionStep.SELECT_BLE) {
                             selectedBle != null
-                        } else if (provisionStep == ProvisionStep.SLEEP_MODE) {
+                        } else if (provisionStep == ProvisionStep.SLEEP_MODE ||
+                            (provisionStep == ProvisionStep.SENSOR && provisionDeviceMode == DEVICE_MODE_RELAY)
+                        ) {
                             showDeviceSettingsOnly && !isSavingProvisionSettings
                         } else if (provisionStep == ProvisionStep.MODE) {
                             showDeviceSettingsOnly && provisionDeviceMode != DEVICE_MODE_UNSET
@@ -1019,12 +1041,16 @@ private fun ProvisioningContent(
                         },
                         onClick = {
                             if (!isSavingProvisionSettings) {
-                                isSavingProvisionSettings = provisionStep == ProvisionStep.SLEEP_MODE
+                                isSavingProvisionSettings = provisionStep == ProvisionStep.SLEEP_MODE ||
+                                    (provisionStep == ProvisionStep.SENSOR && provisionDeviceMode == DEVICE_MODE_RELAY)
                                 goNextProvisionStep()
                             }
                         },
                     ) {
-                        if (provisionStep == ProvisionStep.SLEEP_MODE && isSavingProvisionSettings) {
+                        if ((provisionStep == ProvisionStep.SLEEP_MODE ||
+                                (provisionStep == ProvisionStep.SENSOR && provisionDeviceMode == DEVICE_MODE_RELAY)) &&
+                            isSavingProvisionSettings
+                        ) {
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -1036,7 +1062,11 @@ private fun ProvisioningContent(
                                 Text("Saving")
                             }
                         } else {
-                            Text(if (provisionStep == ProvisionStep.SLEEP_MODE) "Save" else "Next")
+                            Text(
+                                if (provisionStep == ProvisionStep.SLEEP_MODE ||
+                                    (provisionStep == ProvisionStep.SENSOR && provisionDeviceMode == DEVICE_MODE_RELAY)
+                                ) "Save" else "Next",
+                            )
                         }
                     }
                 }
@@ -1078,7 +1108,7 @@ private fun ProvisioningContent(
             item {
             if (provisionMode) {
                 Text(
-                        "Step $provisionStepNumber of 7: $provisionStepTitle",
+                        "Step $provisionStepNumber of 8: $provisionStepTitle",
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Spacer(Modifier.height(6.dp))
@@ -1208,21 +1238,54 @@ private fun ProvisioningContent(
                         Text("Select mode", style = MaterialTheme.typography.titleSmall)
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            "Device mode enables peer behavior; relay mode enables relay behavior.",
+                            "Choose the profile this EdgeZ will use.",
                             style = MaterialTheme.typography.bodySmall,
                         )
                         Spacer(Modifier.height(8.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(
+                            if (provisionDeviceMode == DEVICE_MODE_BEACON) Button(
                                 modifier = Modifier.weight(1f),
                                 onClick = {
-                                    provisionDeviceMode = DEVICE_MODE_DEVICE
-                                    status = "Device mode selected"
+                                    provisionDeviceMode = DEVICE_MODE_BEACON
+                                    status = "Beacon mode selected"
                                 },
                             ) {
-                                Text("Device")
+                                Text("Beacon")
+                            } else OutlinedButton(
+                                modifier = Modifier.weight(1f),
+                                onClick = {
+                                    provisionDeviceMode = DEVICE_MODE_BEACON
+                                    status = "Beacon mode selected"
+                                },
+                            ) {
+                                Text("Beacon")
                             }
-                            OutlinedButton(
+                            if (provisionDeviceMode == DEVICE_MODE_SENSOR) Button(
+                                modifier = Modifier.weight(1f),
+                                onClick = {
+                                    provisionDeviceMode = DEVICE_MODE_SENSOR
+                                    status = "Sensor mode selected"
+                                },
+                            ) {
+                                Text("Sensor")
+                            } else OutlinedButton(
+                                modifier = Modifier.weight(1f),
+                                onClick = {
+                                    provisionDeviceMode = DEVICE_MODE_SENSOR
+                                    status = "Sensor mode selected"
+                                },
+                            ) {
+                                Text("Sensor")
+                            }
+                            if (provisionDeviceMode == DEVICE_MODE_RELAY) Button(
+                                modifier = Modifier.weight(1f),
+                                onClick = {
+                                    provisionDeviceMode = DEVICE_MODE_RELAY
+                                    status = "Relay mode selected"
+                                },
+                            ) {
+                                Text("Relay")
+                            } else OutlinedButton(
                                 modifier = Modifier.weight(1f),
                                 onClick = {
                                     provisionDeviceMode = DEVICE_MODE_RELAY
@@ -1235,7 +1298,8 @@ private fun ProvisioningContent(
                         Spacer(Modifier.height(8.dp))
                         Text(
                             when (provisionDeviceMode) {
-                                DEVICE_MODE_DEVICE -> "Selected: Device"
+                                DEVICE_MODE_BEACON -> "Selected: Beacon"
+                                DEVICE_MODE_SENSOR -> "Selected: Sensor"
                                 DEVICE_MODE_RELAY -> "Selected: Relay"
                                 else -> "Selection required before continuing"
                             },
@@ -1243,7 +1307,9 @@ private fun ProvisioningContent(
                         )
                     }
                 }
+            }
 
+            if (!provisionMode || (showDeviceSettingsOnly && provisionStep == ProvisionStep.DEVICE_USER)) item {
                 SettingsCard(title = "Device user") {
                     Text("ID", style = MaterialTheme.typography.titleSmall)
                     Text(
