@@ -100,6 +100,13 @@ data class HaLowInterfaceStatus(
     val isUsable: Boolean get() = supported && stackInitialized && linkUp && routeReady
 }
 
+data class TopologyPeer(
+    val nodeNum: Long,
+    val encodedRssi: Int = 1000,
+) {
+    val rssiDbm: Int? get() = encodedRssi.takeIf { it != 1000 }?.minus(1000)
+}
+
 data class EdgeZAssocMetadata(
     val userIdHigh: Long = 0,
     val userIdLow: Long = 0,
@@ -113,6 +120,7 @@ data class EdgeZAssocMetadata(
     val geoFence: DeviceGeoFence? = null,
     val sleeping: Boolean = false,
     val sensorData: EdgeZSensorData? = null,
+    val peers: List<TopologyPeer> = emptyList(),
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -1122,6 +1130,7 @@ object EdgezUsbControlProto {
             geoFence = if (hasGeoFence()) geoFence.toAppGeoFence() else null,
             sleeping = sleeping,
             sensorData = if (hasSensorData()) sensorData.toAppSensorData() else null,
+            peers = peersList.map { TopologyPeer(nodeNum = it.id, encodedRssi = it.rssi) },
         )
     }
 

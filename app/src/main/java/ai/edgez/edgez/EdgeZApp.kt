@@ -1051,6 +1051,11 @@ fun EdgeZApp() {
                                 "selected=${selectedConversationUser?.let { isSameConversationUser(it, updatedUser) } == true}",
                         )
                         edgeZDatabase.upsertUser(updatedUser)
+                        edgeZDatabase.upsertTopology(
+                            updatedUser.nodeNum,
+                            message?.beacon?.peers.orEmpty(),
+                            updatedUser.lastSeenMs,
+                        )
                         sensorData?.let {
                             edgeZDatabase.insertSensorData(updatedUserKey, updatedUser.nodeNum, updatedUser.lastSeenMs, it)
                         }
@@ -1680,7 +1685,11 @@ fun EdgeZApp() {
         },
     ) {
         when (currentDestination) {
-            AppDestination.MAP -> MapScreen(
+AppDestination.TOPOLOGY -> TopologyScreen(
+    edgeZDatabase = edgeZDatabase,
+    users = haLowUsers,
+)
+AppDestination.MAP -> MapScreen(
                 users = haLowUsers.values.sortedByDescending { it.lastSeenMs },
                 gpsCursorMarker = mapCursorMarker,
                 savedCamera = savedMapCamera,
@@ -2072,6 +2081,7 @@ private enum class AppDestination(
 ) {
     PROFILE("Dashboard", R.drawable.ic_account_box),
     MAP("Map", R.drawable.ic_map),
+    TOPOLOGY("Topology", R.drawable.ic_halow_mesh),
     NODES("Nodes", R.drawable.ic_halow_mesh),
     SETTINGS("Settings", R.drawable.ic_usb),
 }

@@ -128,6 +128,11 @@ message SensorData {
   float vibration_average = 10;
 }
 
+message Peer {
+  uint64 id = 1;
+  sint32 rssi = 2;
+}
+
 message Beacon {
   uint64 user_id_high = 1;
   uint64 user_id_low = 2;
@@ -141,6 +146,7 @@ message Beacon {
   bool sleeping = 10;
   GeoFence geo_fence = 100;
   SensorData sensor_data = 101;
+  repeated Peer peers = 999;
 }
 
 

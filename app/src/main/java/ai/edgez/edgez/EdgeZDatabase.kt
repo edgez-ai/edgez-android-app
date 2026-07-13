@@ -9,11 +9,12 @@ import ai.edgez.edgez.usb.PacketMime
 import java.util.UUID
 
 private const val DATABASE_NAME = "edgez_local.db"
-private const val DATABASE_VERSION = 12
+private const val DATABASE_VERSION = 13
 private const val TABLE_USERS = "halow_users"
 private const val TABLE_MESSAGES = "conversation_messages"
 private const val TABLE_SENSOR_DATA = "sensor_data"
 private const val TABLE_GEO_FENCES = "device_geo_fences"
+private const val TABLE_TOPOLOGY = "mesh_topology"
 private const val TAG_USERS = "EdgeZUsers"
 private const val DEFAULT_MESSAGE_PAGE_SIZE = 50
 
@@ -21,6 +22,17 @@ data class SensorSample(
     val timestampMs: Long,
     val data: EdgeZSensorData,
 )
+
+const val MESH_TOPOLOGY_WINDOW_MS = 15L * 60L * 1000L
+
+data class MeshTopologyObservation(
+    val reporterNodeNum: Long,
+    val peerNodeNum: Long,
+    val encodedRssi: Int,
+    val lastSeenMs: Long,
+) {
+    val rssiDbm: Int? get() = encodedRssi.takeIf { it != 1000 }?.minus(1000)
+}
 
 class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
     context.applicationContext,
@@ -78,6 +90,7 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
         )
         db.execSQL("CREATE INDEX idx_messages_peer_time ON $TABLE_MESSAGES(peer_user_uuid, timestamp_ms)")
         createSensorDataTable(db)
+        createTopologyTable(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -133,6 +146,9 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
         }
         if (oldVersion < 12) {
             addColumnIfMissing(db, TABLE_SENSOR_DATA, "binary_image_path", "TEXT")
+        }
+        if (oldVersion < 13) {
+            createTopologyTable(db)
         }
     }
 
@@ -661,7 +677,76 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
         return lowHex.toULongOrNull(16)?.toLong() ?: 0L
     }
 
-    private fun createSensorDataTable(db: SQLiteDatabase) {
+fun getRecentTopology(
+    sinceMs: Long = System.currentTimeMillis() - MESH_TOPOLOGY_WINDOW_MS,
+): List<MeshTopologyObservation> {
+    val observations = mutableListOf<MeshTopologyObservation>()
+    readableDatabase.query(
+        TABLE_TOPOLOGY,
+        arrayOf("reporter_node_num", "peer_node_num", "encoded_rssi", "last_seen_ms"),
+        "last_seen_ms >= ?",
+        arrayOf(sinceMs.toString()),
+        null,
+        null,
+        "last_seen_ms DESC, reporter_node_num, peer_node_num",
+    ).use { cursor ->
+        val reporterIndex = cursor.getColumnIndexOrThrow("reporter_node_num")
+        val peerIndex = cursor.getColumnIndexOrThrow("peer_node_num")
+        val rssiIndex = cursor.getColumnIndexOrThrow("encoded_rssi")
+        val lastSeenIndex = cursor.getColumnIndexOrThrow("last_seen_ms")
+        while (cursor.moveToNext()) {
+            observations += MeshTopologyObservation(
+                reporterNodeNum = cursor.getLong(reporterIndex),
+                peerNodeNum = cursor.getLong(peerIndex),
+                encodedRssi = cursor.getInt(rssiIndex),
+                lastSeenMs = cursor.getLong(lastSeenIndex),
+            )
+        }
+    }
+    return observations
+}
+
+fun upsertTopology(reporterNodeNum: Long, peers: List<ai.edgez.edgez.usb.TopologyPeer>, timestampMs: Long) {
+    if (reporterNodeNum == 0L || peers.isEmpty()) return
+    val db = writableDatabase
+    db.beginTransaction()
+    try {
+        peers.distinctBy { it.nodeNum }.forEach { peer ->
+            if (peer.nodeNum == 0L || peer.nodeNum == reporterNodeNum) return@forEach
+            db.insertWithOnConflict(
+                TABLE_TOPOLOGY,
+                null,
+                ContentValues().apply {
+                    put("reporter_node_num", reporterNodeNum)
+                    put("peer_node_num", peer.nodeNum)
+                    put("encoded_rssi", peer.encodedRssi.takeIf { it > 0 } ?: 1000)
+                    put("last_seen_ms", timestampMs)
+                },
+                SQLiteDatabase.CONFLICT_REPLACE,
+            )
+        }
+        db.setTransactionSuccessful()
+    } finally {
+        db.endTransaction()
+    }
+}
+
+private fun createTopologyTable(db: SQLiteDatabase) {
+    db.execSQL(
+        """
+        CREATE TABLE IF NOT EXISTS $TABLE_TOPOLOGY (
+            reporter_node_num INTEGER NOT NULL,
+            peer_node_num INTEGER NOT NULL,
+            encoded_rssi INTEGER NOT NULL DEFAULT 1000,
+            last_seen_ms INTEGER NOT NULL,
+            PRIMARY KEY(reporter_node_num, peer_node_num)
+        )
+        """.trimIndent(),
+    )
+    db.execSQL("CREATE INDEX IF NOT EXISTS idx_topology_seen ON $TABLE_TOPOLOGY(last_seen_ms)")
+}
+
+private fun createSensorDataTable(db: SQLiteDatabase) {
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS $TABLE_SENSOR_DATA (
