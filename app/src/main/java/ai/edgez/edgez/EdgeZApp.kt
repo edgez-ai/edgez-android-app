@@ -94,6 +94,7 @@ private const val EDGEZ_NETWORK_PACKET_MAX_PAYLOAD = 350
 private const val LIBP2P_NO_TOPIC_PEER_QUEUE_DELAY_MS = 10_000L
 private const val LIBP2P_QUEUE_FLUSH_INTERVAL_MS = 3_000L
 private const val LIBP2P_PUBLISH_QUEUE_MAX = 128
+private const val LIBP2P_RUNTIME_ENABLED = false
 private val GROUP_RANDOM = SecureRandom()
 
 private fun paceVoiceChunkSend(index: Int, totalChunks: Int) {
@@ -348,7 +349,7 @@ fun EdgeZApp() {
     var mapCameraLongitude by rememberSaveable { mutableStateOf<Double?>(null) }
     var mapCameraZoom by rememberSaveable { mutableStateOf<Int?>(null) }
     var activeConnection by rememberSaveable { mutableStateOf(ActiveConnection.NONE) }
-    val canSendOverMesh = activeConnection != ActiveConnection.NONE || libp2pMeshConnected
+    val canSendOverMesh = activeConnection != ActiveConnection.NONE
     var haLowStatus by remember { mutableStateOf<HaLowInterfaceStatus?>(null) }
     var haLowUsers by remember { mutableStateOf(edgeZDatabase.getUsers()) }
     var selectedConversationUser by remember { mutableStateOf<HaLowUser?>(null) }
@@ -540,6 +541,20 @@ fun EdgeZApp() {
 
     fun syncLibp2pMesh() {
         val bridge = libp2pBridgeHolder ?: return
+        if (!LIBP2P_RUNTIME_ENABLED) {
+            synchronized(libp2pQueueLock) {
+                libp2pPublishQueue.clear()
+                libp2pNoTopicPeerSince.set(0L)
+            }
+            libp2pExecutor.execute {
+                bridge.stop()
+                mainHandler.post {
+                    libp2pMeshConnected = false
+                    stopMeshBeaconRunnerIfIdle()
+                }
+            }
+            return
+        }
         libp2pExecutor.execute {
             if (lastConnectionPreferences.getLibp2pMeshEnabled()) {
                 bridge.start(bridge.configFromPreferences(lastConnectionPreferences)).onFailure {
@@ -587,7 +602,7 @@ fun EdgeZApp() {
                 key == "user_public_key"
             ) {
                 if (key == "libp2p_mesh_enabled") {
-                    bleClient.setForwardingEnabled(lastConnectionPreferences.getLibp2pMeshEnabled())
+                    bleClient.setForwardingEnabled(true)
                 }
                 syncLibp2pMesh()
             }
@@ -613,7 +628,7 @@ fun EdgeZApp() {
     }
 
     fun flushLibp2pPublishQueue() {
-        if (shuttingDown.get() || !lastConnectionPreferences.getLibp2pMeshEnabled()) return
+        if (!LIBP2P_RUNTIME_ENABLED || shuttingDown.get() || !lastConnectionPreferences.getLibp2pMeshEnabled()) return
         val bridge = libp2pBridgeHolder ?: return
         val health = bridge.getHealth() ?: return
         if (health.topicPeers <= 0) return
@@ -657,7 +672,7 @@ fun EdgeZApp() {
     }
 
         fun publishLibp2pFrame(frame: ByteArray) {
-            if (frame.isEmpty() || !lastConnectionPreferences.getLibp2pMeshEnabled()) return
+            if (!LIBP2P_RUNTIME_ENABLED || frame.isEmpty() || !lastConnectionPreferences.getLibp2pMeshEnabled()) return
             val bridge = libp2pBridgeHolder ?: return
             libp2pExecutor.execute {
                 val health = bridge.getHealth()
@@ -732,6 +747,7 @@ fun EdgeZApp() {
         packet: ByteArray,
         sendAction: () -> Result<String>,
     ): Result<String> {
+        if (!LIBP2P_RUNTIME_ENABLED) return sendAction()
         val result = sendAction()
         val meshPassphrase = lastConnectionPreferences.getMeshPassphrase()
         val decodedPacket = decodeHaLowSyncFrame(packet, meshPassphrase)
@@ -756,19 +772,19 @@ fun EdgeZApp() {
     }
 
     fun sendRouteLabel(): String = when {
-        activeConnection != ActiveConnection.NONE && libp2pMeshConnected -> "${activeConnection.name}+LIBP2P"
+        LIBP2P_RUNTIME_ENABLED && activeConnection != ActiveConnection.NONE && libp2pMeshConnected -> "${activeConnection.name}+LIBP2P"
         activeConnection != ActiveConnection.NONE -> activeConnection.name
-        libp2pMeshConnected -> "LIBP2P"
+        LIBP2P_RUNTIME_ENABLED && libp2pMeshConnected -> "LIBP2P"
         else -> activeConnection.name
     }
 
     fun outgoingFromNode(): Long? {
         return haLowStatus?.macAddress?.takeIf { it != 0L }
-            ?: LIBP2P_PSEUDO_NODE.takeIf { activeConnection == ActiveConnection.NONE && libp2pMeshConnected }
+            ?: LIBP2P_PSEUDO_NODE.takeIf { LIBP2P_RUNTIME_ENABLED && activeConnection == ActiveConnection.NONE && libp2pMeshConnected }
     }
 
     fun outgoingToNode(conversationUser: HaLowUser): Long {
-        return if (activeConnection == ActiveConnection.NONE && libp2pMeshConnected) {
+        return if (LIBP2P_RUNTIME_ENABLED && activeConnection == ActiveConnection.NONE && libp2pMeshConnected) {
             LIBP2P_PSEUDO_NODE
         } else {
             conversationUser.nodeNum
@@ -925,7 +941,7 @@ fun EdgeZApp() {
         }
 
         fun handleMeshFrame(route: String, frame: ByteArray) {
-            if (route == ROUTE_BLE_FORWARD && !lastConnectionPreferences.getLibp2pMeshEnabled()) {
+            if (LIBP2P_RUNTIME_ENABLED && route == ROUTE_BLE_FORWARD && !lastConnectionPreferences.getLibp2pMeshEnabled()) {
                 Log.d(TAG_USERS, "ignore BLE forward frame while libp2p disabled route=$route bytes=${frame.size}")
                 return
             }
@@ -974,7 +990,7 @@ fun EdgeZApp() {
                 }
                 when (route) {
                     ROUTE_BLE, ROUTE_BLE_FORWARD -> {
-                        if (libp2pMeshConnected) {
+                        if (LIBP2P_RUNTIME_ENABLED && libp2pMeshConnected) {
                             Log.d(TAG_USERS, "libp2p forward tx route=$route msg=${formatMessageUuid(message.messageIdHigh, message.messageIdLow)} hop=${message.hop}")
                             rememberForwardedPacket(message.copy(hop = message.hop + 1), message.hop + 1)
                             publishLibp2pFrame(frame)
@@ -1405,7 +1421,7 @@ fun EdgeZApp() {
             }
         }
         val removeBleForwardFrameListener = bleClient.addForwardFrameListener { frame ->
-            if (currentActiveConnection == ActiveConnection.BLE && lastConnectionPreferences.getLibp2pMeshEnabled()) {
+            if (currentActiveConnection == ActiveConnection.BLE) {
                 handleMeshFrame(ROUTE_BLE_FORWARD, frame)
             }
         }
@@ -1462,7 +1478,7 @@ fun EdgeZApp() {
     }
 
     LaunchedEffect(Unit) {
-        bleClient.setForwardingEnabled(lastConnectionPreferences.getLibp2pMeshEnabled())
+        bleClient.setForwardingEnabled(true)
         if (lastConnectionPreferences.getBleAutoConnect()) {
             connectSelectedBleFromPreferences()
         }
@@ -1471,7 +1487,7 @@ fun EdgeZApp() {
     LaunchedEffect(Unit) {
         while (true) {
             delay(LIBP2P_QUEUE_FLUSH_INTERVAL_MS)
-            if (shuttingDown.get()) continue
+            if (!LIBP2P_RUNTIME_ENABLED || shuttingDown.get()) continue
             libp2pExecutor.execute(::flushLibp2pPublishQueue)
         }
     }

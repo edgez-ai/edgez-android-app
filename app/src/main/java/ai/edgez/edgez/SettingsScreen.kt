@@ -119,6 +119,8 @@ private fun haLowFrequencyLabel(country: String, frequencyKHz: Int): String {
     return "Channel $channel - ${frequencyKHz / 1000.0} MHz"
 }
 
+private const val SHOW_LIBP2P_SETTINGS = false
+
 private enum class Libp2pExtraServerOption(val label: String) {
     NONE("IPFS default"),
     EDGEZ("EdgeZ"),
@@ -1555,7 +1557,7 @@ private fun SettingsContent(
                             }
                         },
                     )
-                    if (!showDeviceSettingsOnly) {
+                    if (SHOW_LIBP2P_SETTINGS && !showDeviceSettingsOnly) {
                         Spacer(Modifier.height(8.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
