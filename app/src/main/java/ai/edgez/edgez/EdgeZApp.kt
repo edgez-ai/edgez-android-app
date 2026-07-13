@@ -966,9 +966,17 @@ fun EdgeZApp() {
                 ((localNode != null && message.from == localNode) ||
                     (user?.userUuid?.isNotBlank() == true && user.userUuid == localIdentity.userUuid))
             if (isSelfBeacon) {
+                // Do not add this phone's own beacon to the user list, but its
+                // peer report is still a valid topology observation.
+                edgeZDatabase.upsertTopology(
+                    message.from,
+                    message.beacon?.peers.orEmpty(),
+                    System.currentTimeMillis(),
+                )
                 Log.d(
                     TAG_USERS,
-                    "ignore self beacon route=$route node=0x%012x uuid=${user?.userUuid.orEmpty()}".format(message.from),
+                    "ignore self beacon user route=$route node=0x%012x peers=${message.beacon?.peers?.size ?: 0} uuid=${user?.userUuid.orEmpty()}"
+                        .format(message.from),
                 )
                 return
             }
