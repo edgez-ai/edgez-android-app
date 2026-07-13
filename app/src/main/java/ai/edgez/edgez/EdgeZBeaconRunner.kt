@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import ai.edgez.edgez.ble.EdgezBleClient
+import ai.edgez.edgez.usb.DeviceSettings
 import ai.edgez.edgez.usb.EdgezUsbClient
 import ai.edgez.edgez.usb.HaLowInterfaceStatus
 import ai.edgez.edgez.usb.EdgezUsbControlProto
@@ -138,8 +139,13 @@ object EdgeZBeaconRunner {
     fun start(context: Context) {
         appContext = context.applicationContext
         synchronized(lock) {
-            running = false
+            if (running) return
+            running = true
             handler.removeCallbacks(beaconRunnable)
+            if (executor == null || executor?.isShutdown == true) {
+                executor = Executors.newSingleThreadExecutor()
+            }
+            handler.post(beaconRunnable)
         }
     }
 
@@ -173,9 +179,25 @@ object EdgeZBeaconRunner {
         val marker = preferences.getUserMarker()
         val shareLocationEnabled = preferences.getShareLocation()
         val location = if (shareLocationEnabled) context.getBestKnownLocation() else null
+        val deviceSettings = DeviceSettings(
+            deviceModeEnabled = false,
+            meshId = preferences.getMeshId(),
+            passphrase = meshPassphrase,
+            shareLocation = shareLocationEnabled,
+            userName = userIdentity.name,
+            marker = marker,
+            beaconIntervalSeconds = preferences.getBeaconIntervalSeconds(),
+            userIdHigh = userIdentity.userIdHigh,
+            userIdLow = userIdentity.userIdLow,
+            userPublicKey = userIdentity.publicKey,
+            userPrivateKey = userIdentity.privateKey,
+            latitude = location?.latitude,
+            longitude = location?.longitude,
+            maxHop = preferences.getMeshMaxHop(),
+        )
         Log.d(
             TAG_BEACON,
-            "beacon location share=$shareLocationEnabled marker=$marker hasLocation=${location != null} lat=${location?.latitude} lon=${location?.longitude}",
+            "periodic device_settings share=$shareLocationEnabled marker=$marker hasLocation=${location != null} lat=${location?.latitude} lon=${location?.longitude}",
         )
 
         val executor = executor ?: return
@@ -194,32 +216,12 @@ object EdgeZBeaconRunner {
                 )
             }.getOrNull() ?: return@execute
             val transportResult = when (source) {
-                ActiveConnection.USB -> usbClient?.sendHaLowBeacon(
-                    userIdentity.userIdHigh,
-                    userIdentity.userIdLow,
-                    userIdentity.name,
-                    userIdentity.publicKey,
-                    meshPassphrase,
-                    location?.latitude,
-                    location?.longitude,
-                    location?.time ?: 0L,
-                    marker,
-                )
-                ActiveConnection.BLE -> bleClient?.sendHaLowBeacon(
-                    userIdentity.userIdHigh,
-                    userIdentity.userIdLow,
-                    userIdentity.name,
-                    userIdentity.publicKey,
-                    meshPassphrase,
-                    location?.latitude,
-                    location?.longitude,
-                    location?.time ?: 0L,
-                    marker,
-                )
+                ActiveConnection.USB -> usbClient?.sendDeviceSettings(deviceSettings)
+                ActiveConnection.BLE -> bleClient?.sendDeviceSettings(deviceSettings)
                 ActiveConnection.NONE -> null
             }
             if (canPublishLibp2pBeacon || transportResult?.isSuccess == true) {
-                Log.d(TAG_BEACON, "queue beacon for libp2p source=$source direct=$canPublishLibp2pBeacon")
+                Log.d(TAG_BEACON, "periodic device_settings sent source=$source; queue beacon for libp2p direct=$canPublishLibp2pBeacon")
                 onFramePublished?.invoke(beaconFrame)
             }
         }
