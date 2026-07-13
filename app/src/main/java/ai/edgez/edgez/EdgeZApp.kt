@@ -960,6 +960,18 @@ fun EdgeZApp() {
             val message = parsed?.copy(hop = inferredHop.coerceAtLeast(parsed.hop))
             val status = message?.halowStatus ?: decodeHaLowStatusFrame(frame, meshPassphrase)
             val user = message?.toHaLowUser(route)
+            val localIdentity = lastConnectionPreferences.getOrCreateUserIdentity()
+            val localNode = haLowStatus?.macAddress?.takeIf { it != 0L }
+            val isSelfBeacon = message?.beacon != null &&
+                ((localNode != null && message.from == localNode) ||
+                    (user?.userUuid?.isNotBlank() == true && user.userUuid == localIdentity.userUuid))
+            if (isSelfBeacon) {
+                Log.d(
+                    TAG_USERS,
+                    "ignore self beacon route=$route node=0x%012x uuid=${user?.userUuid.orEmpty()}".format(message.from),
+                )
+                return
+            }
             val sensorData = message?.beaconSensorData()
             val conversationMessage = message?.conversationMessage
             val conversationAck = message?.let {
