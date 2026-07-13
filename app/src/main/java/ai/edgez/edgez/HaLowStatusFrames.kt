@@ -157,7 +157,7 @@ fun NetworkPacket.summary(): String {
         return "NetworkPacket init country=${it.countryCode} meshId=${it.meshId} maxHop=${it.maxHop} user=${it.userName.ifBlank { "unknown" }} messageId=$messageId"
     }
     deviceSettings?.let {
-        return "NetworkPacket deviceSettings action=${it.action} mode=${it.deviceModeEnabled} meshId=${it.meshId} maxHop=${it.maxHop} user=${it.userName.ifBlank { "unknown" }} marker=${it.marker} interval=${it.beaconIntervalSeconds} shareLocation=${it.shareLocation} geoFence=${it.geoFence?.name ?: "none"} geoIndex=${it.geoIndex} uartI2cSensor=${it.uartI2cSensorType.ifBlank { "none" }} rs485Sensor=${it.rs485SensorType.ifBlank { "none" }} messageId=$messageId"
+        return "NetworkPacket deviceSettings action=${it.action} type=${it.deviceType.label} meshId=${it.meshId} maxHop=${it.maxHop} user=${it.userName.ifBlank { "unknown" }} marker=${it.marker} interval=${it.beaconIntervalSeconds} shareLocation=${it.shareLocation} geoFence=${it.geoFence?.name ?: "none"} geoIndex=${it.geoIndex} uartI2cSensor=${it.uartI2cSensorType.ifBlank { "none" }} rs485Sensor=${it.rs485SensorType.ifBlank { "none" }} messageId=$messageId"
     }
     return "NetworkPacket op=$operation iface=$interfaceId seq=$sequence messageId=$messageId from=0x%012x to=0x%012x user=${formatUuid(userHigh, userLow)}".format(from, to)
 }

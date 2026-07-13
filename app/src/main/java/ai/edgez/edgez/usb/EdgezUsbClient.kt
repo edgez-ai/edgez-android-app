@@ -204,7 +204,7 @@ data class HaLowInitConfig(
 
 data class DeviceSettings(
     val action: Int = 0,
-    val deviceModeEnabled: Boolean = false,
+    val deviceType: EdgeZDeviceType = EdgeZDeviceType.RELAY,
     val meshId: String = "",
     val passphrase: String = "",
     val shareLocation: Boolean = false,
@@ -233,7 +233,7 @@ data class DeviceSettings(
 
         other as DeviceSettings
         return action == other.action &&
-            deviceModeEnabled == other.deviceModeEnabled &&
+            deviceType == other.deviceType &&
             meshId == other.meshId &&
             passphrase == other.passphrase &&
             shareLocation == other.shareLocation &&
@@ -259,7 +259,7 @@ data class DeviceSettings(
 
     override fun hashCode(): Int {
         var result = action
-        result = 31 * result + deviceModeEnabled.hashCode()
+        result = 31 * result + deviceType.hashCode()
         result = 31 * result + meshId.hashCode()
         result = 31 * result + passphrase.hashCode()
         result = 31 * result + shareLocation.hashCode()
@@ -580,7 +580,8 @@ object EdgezUsbControlProto {
     fun encodeDeviceSettingsSet(settings: DeviceSettings): ByteArray {
         val protoSettings = UsbControl.DeviceSettings.newBuilder()
             .setAction(UsbControl.DeviceSettingsAction.DEVICE_SETTINGS_SET)
-            .setDeviceModeEnabled(settings.deviceModeEnabled)
+            .setDeviceType(UsbControl.DeviceType.forNumber(settings.deviceType.protoValue)
+                ?: UsbControl.DeviceType.DEVICE_TYPE_RELAY)
             .setMeshId(settings.meshId.take(32))
             .setPassphrase(settings.passphrase.take(64))
             .setShareLocation(settings.shareLocation)
@@ -1061,7 +1062,7 @@ object EdgezUsbControlProto {
     private fun UsbControl.DeviceSettings.toAppDeviceSettings(): DeviceSettings {
         return DeviceSettings(
             action = actionValue,
-            deviceModeEnabled = deviceModeEnabled,
+            deviceType = EdgeZDeviceType.fromProtoValue(deviceTypeValue),
             meshId = meshId,
             passphrase = passphrase,
             shareLocation = shareLocation,

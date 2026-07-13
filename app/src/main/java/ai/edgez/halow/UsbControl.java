@@ -870,6 +870,10 @@ public final class UsbControl {
      * <code>DEVICE_TYPE_SENSOR = 5;</code>
      */
     DEVICE_TYPE_SENSOR(5),
+    /**
+     * <code>DEVICE_TYPE_RELAY = 6;</code>
+     */
+    DEVICE_TYPE_RELAY(6),
     UNRECOGNIZED(-1),
     ;
 
@@ -897,6 +901,10 @@ public final class UsbControl {
      * <code>DEVICE_TYPE_SENSOR = 5;</code>
      */
     public static final int DEVICE_TYPE_SENSOR_VALUE = 5;
+    /**
+     * <code>DEVICE_TYPE_RELAY = 6;</code>
+     */
+    public static final int DEVICE_TYPE_RELAY_VALUE = 6;
 
 
     @java.lang.Override
@@ -926,6 +934,7 @@ public final class UsbControl {
         case 3: return DEVICE_TYPE_GATEWAY;
         case 4: return DEVICE_TYPE_BEACON;
         case 5: return DEVICE_TYPE_SENSOR;
+        case 6: return DEVICE_TYPE_RELAY;
         default: return null;
       }
     }
@@ -8460,6 +8469,10 @@ public final class UsbControl {
     ai.edgez.halow.UsbControl.DeviceSettingsAction getAction();
 
     /**
+     * <pre>
+     * Legacy device/relay flag. New clients use device_type instead.
+     * </pre>
+     *
      * <code>bool device_mode_enabled = 2;</code>
      * @return The deviceModeEnabled.
      */
@@ -8642,6 +8655,17 @@ public final class UsbControl {
      * @return The sleepModeEnabled.
      */
     boolean getSleepModeEnabled();
+
+    /**
+     * <code>.ai.edgez.halow.DeviceType device_type = 24;</code>
+     * @return The enum numeric value on the wire for deviceType.
+     */
+    int getDeviceTypeValue();
+    /**
+     * <code>.ai.edgez.halow.DeviceType device_type = 24;</code>
+     * @return The deviceType.
+     */
+    ai.edgez.halow.UsbControl.DeviceType getDeviceType();
   }
   /**
    * Protobuf type {@code ai.edgez.halow.DeviceSettings}
@@ -8708,6 +8732,10 @@ public final class UsbControl {
     public static final int DEVICE_MODE_ENABLED_FIELD_NUMBER = 2;
     private boolean deviceModeEnabled_;
     /**
+     * <pre>
+     * Legacy device/relay flag. New clients use device_type instead.
+     * </pre>
+     *
      * <code>bool device_mode_enabled = 2;</code>
      * @return The deviceModeEnabled.
      */
@@ -8716,6 +8744,10 @@ public final class UsbControl {
       return deviceModeEnabled_;
     }
     /**
+     * <pre>
+     * Legacy device/relay flag. New clients use device_type instead.
+     * </pre>
+     *
      * <code>bool device_mode_enabled = 2;</code>
      * @param value The deviceModeEnabled to set.
      */
@@ -8724,6 +8756,10 @@ public final class UsbControl {
       deviceModeEnabled_ = value;
     }
     /**
+     * <pre>
+     * Legacy device/relay flag. New clients use device_type instead.
+     * </pre>
+     *
      * <code>bool device_mode_enabled = 2;</code>
      */
     private void clearDeviceModeEnabled() {
@@ -9470,6 +9506,48 @@ public final class UsbControl {
       sleepModeEnabled_ = false;
     }
 
+    public static final int DEVICE_TYPE_FIELD_NUMBER = 24;
+    private int deviceType_;
+    /**
+     * <code>.ai.edgez.halow.DeviceType device_type = 24;</code>
+     * @return The enum numeric value on the wire for deviceType.
+     */
+    @java.lang.Override
+    public int getDeviceTypeValue() {
+      return deviceType_;
+    }
+    /**
+     * <code>.ai.edgez.halow.DeviceType device_type = 24;</code>
+     * @return The deviceType.
+     */
+    @java.lang.Override
+    public ai.edgez.halow.UsbControl.DeviceType getDeviceType() {
+      ai.edgez.halow.UsbControl.DeviceType result = ai.edgez.halow.UsbControl.DeviceType.forNumber(deviceType_);
+      return result == null ? ai.edgez.halow.UsbControl.DeviceType.UNRECOGNIZED : result;
+    }
+    /**
+     * <code>.ai.edgez.halow.DeviceType device_type = 24;</code>
+     * @param value The enum numeric value on the wire for deviceType to set.
+     */
+    private void setDeviceTypeValue(int value) {
+        deviceType_ = value;
+    }
+    /**
+     * <code>.ai.edgez.halow.DeviceType device_type = 24;</code>
+     * @param value The deviceType to set.
+     */
+    private void setDeviceType(ai.edgez.halow.UsbControl.DeviceType value) {
+      deviceType_ = value.getNumber();
+
+    }
+    /**
+     * <code>.ai.edgez.halow.DeviceType device_type = 24;</code>
+     */
+    private void clearDeviceType() {
+
+      deviceType_ = 0;
+    }
+
     public static ai.edgez.halow.UsbControl.DeviceSettings parseFrom(
         java.nio.ByteBuffer data)
         throws com.google.protobuf.InvalidProtocolBufferException {
@@ -9614,6 +9692,10 @@ public final class UsbControl {
       }
 
       /**
+       * <pre>
+       * Legacy device/relay flag. New clients use device_type instead.
+       * </pre>
+       *
        * <code>bool device_mode_enabled = 2;</code>
        * @return The deviceModeEnabled.
        */
@@ -9622,6 +9704,10 @@ public final class UsbControl {
         return instance.getDeviceModeEnabled();
       }
       /**
+       * <pre>
+       * Legacy device/relay flag. New clients use device_type instead.
+       * </pre>
+       *
        * <code>bool device_mode_enabled = 2;</code>
        * @param value The deviceModeEnabled to set.
        * @return This builder for chaining.
@@ -9632,6 +9718,10 @@ public final class UsbControl {
         return this;
       }
       /**
+       * <pre>
+       * Legacy device/relay flag. New clients use device_type instead.
+       * </pre>
+       *
        * <code>bool device_mode_enabled = 2;</code>
        * @return This builder for chaining.
        */
@@ -10413,6 +10503,52 @@ public final class UsbControl {
         return this;
       }
 
+      /**
+       * <code>.ai.edgez.halow.DeviceType device_type = 24;</code>
+       * @return The enum numeric value on the wire for deviceType.
+       */
+      @java.lang.Override
+      public int getDeviceTypeValue() {
+        return instance.getDeviceTypeValue();
+      }
+      /**
+       * <code>.ai.edgez.halow.DeviceType device_type = 24;</code>
+       * @param value The deviceType to set.
+       * @return This builder for chaining.
+       */
+      public Builder setDeviceTypeValue(int value) {
+        copyOnWrite();
+        instance.setDeviceTypeValue(value);
+        return this;
+      }
+      /**
+       * <code>.ai.edgez.halow.DeviceType device_type = 24;</code>
+       * @return The deviceType.
+       */
+      @java.lang.Override
+      public ai.edgez.halow.UsbControl.DeviceType getDeviceType() {
+        return instance.getDeviceType();
+      }
+      /**
+       * <code>.ai.edgez.halow.DeviceType device_type = 24;</code>
+       * @param value The enum numeric value on the wire for deviceType to set.
+       * @return This builder for chaining.
+       */
+      public Builder setDeviceType(ai.edgez.halow.UsbControl.DeviceType value) {
+        copyOnWrite();
+        instance.setDeviceType(value);
+        return this;
+      }
+      /**
+       * <code>.ai.edgez.halow.DeviceType device_type = 24;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearDeviceType() {
+        copyOnWrite();
+        instance.clearDeviceType();
+        return this;
+      }
+
       // @@protoc_insertion_point(builder_scope:ai.edgez.halow.DeviceSettings)
     }
     @java.lang.Override
@@ -10453,12 +10589,13 @@ public final class UsbControl {
               "upstreamWifiPassphrase_",
               "beaconUnicast_",
               "sleepModeEnabled_",
+              "deviceType_",
             };
             java.lang.String info =
-                "\u0000\u0017\u0000\u0001\u0001\u0017\u0017\u0000\u0000\u0000\u0001\f\u0002\u0007" +
+                "\u0000\u0018\u0000\u0001\u0001\u0018\u0018\u0000\u0000\u0000\u0001\f\u0002\u0007" +
                 "\u0003\u0208\u0004\u0007\u0005\u0208\u0006\f\u0007\u000b\b\u0003\t\u0003\n\n\u000b" +
                 "\n\f\u0001\r\u0001\u000e\u000b\u000f\u1009\u0000\u0010\u0208\u0011\u0208\u0012\u000b" +
-                "\u0013\u0208\u0014\u0208\u0015\u0208\u0016\u0003\u0017\u0007";
+                "\u0013\u0208\u0014\u0208\u0015\u0208\u0016\u0003\u0017\u0007\u0018\f";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         // fall through

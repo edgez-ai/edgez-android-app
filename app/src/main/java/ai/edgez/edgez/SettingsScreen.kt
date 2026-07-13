@@ -266,6 +266,7 @@ private fun SettingsContent(
     var deviceIdentity by remember { mutableStateOf<UserIdentity?>(null) }
     var deviceUserName by rememberSaveable { mutableStateOf("EdgeZ Device") }
     var deviceUserMarker by rememberSaveable { mutableStateOf(NodeMapMarker.DEFAULT.id) }
+    var deviceType by rememberSaveable { mutableStateOf(EdgeZDeviceType.RELAY) }
     var deviceMeshId by rememberSaveable { mutableStateOf("edgez") }
     var devicePassphrase by rememberSaveable { mutableStateOf(connectionPreferences.getMeshPassphrase()) }
     var deviceMaxHop by rememberSaveable { mutableStateOf(connectionPreferences.getMeshMaxHop().toString()) }
@@ -539,6 +540,7 @@ private fun SettingsContent(
         deviceRs485SensorType = loadedRs485SensorType
         lastSavedDeviceUartI2cSensorType = loadedUartI2cSensorType
         lastSavedDeviceRs485SensorType = loadedRs485SensorType
+        deviceType = settings.deviceType
         if (deviceIdentity == null && (settings.userIdHigh != 0L || settings.userIdLow != 0L) && settings.userPrivateKey.size == 32) {
             val publicKey = if (settings.userPublicKey.size == 32) {
                 settings.userPublicKey
@@ -553,17 +555,17 @@ private fun SettingsContent(
                 privateKey = settings.userPrivateKey,
                 publicKey = publicKey,
             )
-        } else if (deviceIdentity == null && settings.deviceModeEnabled) {
+        } else if (deviceIdentity == null && settings.deviceType.isDeviceProfile) {
             ensureDeviceIdentity()
         }
         status = "Device settings loaded"
     }
 
-    fun currentDeviceSettings(enabled: Boolean = deviceMode): DeviceSettings {
+    fun currentDeviceSettings(): DeviceSettings {
         val identity = ensureDeviceIdentity()
         val selectedGeoFence = deviceGeoFences.firstOrNull { DeviceGeoFence.matchesKey(it, selectedDeviceGeoFenceKey) }
         return DeviceSettings(
-            deviceModeEnabled = enabled,
+            deviceType = deviceType,
             meshId = deviceMeshId.ifBlank { "edgez" },
             passphrase = devicePassphrase.take(64),
             shareLocation = deviceShareLocation,
@@ -635,7 +637,7 @@ private fun SettingsContent(
         val shareUserLocation = connectionPreferences.getShareLocation()
         val location = if (shareUserLocation) currentLocationPair() else null
         return DeviceSettings(
-            deviceModeEnabled = false,
+            deviceType = EdgeZDeviceType.USER,
             meshId = connectionPreferences.getMeshId(),
             passphrase = connectionPreferences.getMeshPassphrase(),
             shareLocation = shareUserLocation,
@@ -884,8 +886,8 @@ private fun SettingsContent(
                 if (!isLoadingDeviceSettings) return@runOnUiThread
                 isLoadingDeviceSettings = false
                 if (!provisionMode && bleReady) {
-                    DeviceModeState.enabled = deviceSettings.deviceModeEnabled
-                    if (deviceSettings.deviceModeEnabled) {
+                    DeviceModeState.enabled = deviceSettings.deviceType.isDeviceProfile
+                    if (deviceSettings.deviceType.isDeviceProfile) {
                         showResetDeviceModeDialog = true
                         status = "This device is provisioned in device mode"
                     } else {

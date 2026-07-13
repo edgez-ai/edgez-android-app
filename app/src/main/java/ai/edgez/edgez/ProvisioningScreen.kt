@@ -293,9 +293,6 @@ private fun ProvisioningContent(
     val currentOnTransportConnectionChange by rememberUpdatedState(onTransportConnectionChange)
     val provisionBleReady = provisionMode && activeConnection == ActiveConnection.BLE && bleReady
     val showProvisionDeviceSettings = provisionMode && provisionStep != ProvisionStep.SELECT_BLE && provisionBleReady
-    // The device protocol currently distinguishes device and relay behavior.
-    // Beacon and Sensor are both device profiles; Sensor configuration is
-    // collected later in the provisioning flow.
     val deviceMode = provisionDeviceMode != DEVICE_MODE_RELAY
     val showDeviceSettingsOnly = showProvisionDeviceSettings
     val provisionStepNumber = when (provisionStep) {
@@ -573,10 +570,14 @@ private fun ProvisioningContent(
                 privateKey = settings.userPrivateKey,
                 publicKey = publicKey,
             )
-        } else if (deviceIdentity == null && settings.deviceModeEnabled) {
+        } else if (deviceIdentity == null && settings.deviceType.isDeviceProfile) {
             ensureDeviceIdentity()
         }
-        provisionDeviceMode = if (settings.deviceModeEnabled) DEVICE_MODE_BEACON else DEVICE_MODE_RELAY
+        provisionDeviceMode = when (settings.deviceType) {
+            EdgeZDeviceType.BEACON -> DEVICE_MODE_BEACON
+            EdgeZDeviceType.SENSOR -> DEVICE_MODE_SENSOR
+            else -> DEVICE_MODE_RELAY
+        }
         deviceSettingsLoaded = true
         isLoadingDeviceSettings = false
         if (pendingProvisionNext && provisionStep == ProvisionStep.SELECT_BLE) {
@@ -586,13 +587,17 @@ private fun ProvisioningContent(
         status = "Device settings loaded"
     }
 
-    fun currentDeviceSettings(enabled: Boolean = deviceMode): DeviceSettings {
+    fun currentDeviceSettings(): DeviceSettings {
         val identity = ensureDeviceIdentity()
         val selectedGeoFence = deviceGeoFences
             .firstOrNull { DeviceGeoFence.matchesKey(it, selectedDeviceGeoFenceKey) }
             .takeIf { deviceGeoFenceEnabled }
         return DeviceSettings(
-            deviceModeEnabled = enabled,
+            deviceType = when (provisionDeviceMode) {
+                DEVICE_MODE_BEACON -> EdgeZDeviceType.BEACON
+                DEVICE_MODE_SENSOR -> EdgeZDeviceType.SENSOR
+                else -> EdgeZDeviceType.RELAY
+            },
             meshId = deviceMeshId.ifBlank { "edgez" },
             passphrase = devicePassphrase.take(64),
             shareLocation = deviceShareLocation,

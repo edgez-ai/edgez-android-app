@@ -98,6 +98,7 @@ enum DeviceType {
   DEVICE_TYPE_GATEWAY = 3;
   DEVICE_TYPE_BEACON = 4;
   DEVICE_TYPE_SENSOR = 5;
+  DEVICE_TYPE_RELAY = 6;
 }
 
 enum AlertCondition {
@@ -185,6 +186,7 @@ message HaLowInitConfig {
 
 message DeviceSettings {
   DeviceSettingsAction action = 1;
+  // Legacy device/relay flag. New clients use device_type instead.
   bool device_mode_enabled = 2;
   string mesh_id = 3;
   bool share_location = 4;
@@ -207,6 +209,7 @@ message DeviceSettings {
   string upstream_wifi_passphrase = 21;
   uint64 beacon_unicast = 22;
   bool sleep_mode_enabled = 23;
+  DeviceType device_type = 24;
 }
 
 message ScriptConfig {

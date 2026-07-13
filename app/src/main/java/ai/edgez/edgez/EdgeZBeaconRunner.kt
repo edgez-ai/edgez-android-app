@@ -180,7 +180,7 @@ object EdgeZBeaconRunner {
         val shareLocationEnabled = preferences.getShareLocation()
         val location = if (shareLocationEnabled) context.getBestKnownLocation() else null
         val deviceSettings = DeviceSettings(
-            deviceModeEnabled = false,
+            deviceType = EdgeZDeviceType.USER,
             meshId = preferences.getMeshId(),
             passphrase = meshPassphrase,
             shareLocation = shareLocationEnabled,

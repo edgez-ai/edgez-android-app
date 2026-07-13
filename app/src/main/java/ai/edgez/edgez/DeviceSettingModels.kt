@@ -251,6 +251,7 @@ enum class EdgeZDeviceType(val protoValue: Int, val label: String) {
     GATEWAY(3, "Gateway"),
     BEACON(4, "Beacon"),
     SENSOR(5, "Sensor"),
+    RELAY(6, "Relay"),
     GROUP(100, "Group");
 
     companion object {
@@ -259,6 +260,9 @@ enum class EdgeZDeviceType(val protoValue: Int, val label: String) {
         }
     }
 }
+
+val EdgeZDeviceType.isDeviceProfile: Boolean
+    get() = this == EdgeZDeviceType.BEACON || this == EdgeZDeviceType.SENSOR
 
 data class EdgeZSensorData(
     val latitude: Double? = null,
