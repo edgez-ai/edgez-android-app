@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -294,6 +295,7 @@ private fun SettingsContent(
     var provisionStep by rememberSaveable { mutableStateOf(SettingsProvisionStep.SELECT_BLE) }
     var pendingProvisionNext by rememberSaveable { mutableStateOf(false) }
     var isLoadingDeviceSettings by rememberSaveable { mutableStateOf(false) }
+    var showResetDeviceModeDialog by rememberSaveable { mutableStateOf(false) }
     val activity = context as? ComponentActivity
     val currentOnTransportConnectionChange by rememberUpdatedState(onTransportConnectionChange)
     val provisionBleReady = provisionMode && activeConnection == ActiveConnection.BLE && bleReady
@@ -616,11 +618,36 @@ private fun SettingsContent(
                     onSuccess = { "Device settings request sent" },
                     onFailure = {
                         isLoadingDeviceSettings = false
+                        if (!provisionMode && connection == ActiveConnection.BLE) {
+                            DeviceModeState.enabled = false
+                        }
                         it.message ?: "Device settings unavailable"
                     },
                 )
             }
         }
+    }
+
+    fun currentUserModeSettings(): DeviceSettings {
+        val identity = connectionPreferences.getOrCreateUserIdentity()
+        val shareUserLocation = connectionPreferences.getShareLocation()
+        val location = if (shareUserLocation) currentLocationPair() else null
+        return DeviceSettings(
+            deviceModeEnabled = false,
+            meshId = connectionPreferences.getMeshId(),
+            passphrase = connectionPreferences.getMeshPassphrase(),
+            shareLocation = shareUserLocation,
+            userName = identity.name,
+            marker = connectionPreferences.getUserMarker(),
+            beaconIntervalSeconds = connectionPreferences.getBeaconIntervalSeconds(),
+            userIdHigh = identity.userIdHigh,
+            userIdLow = identity.userIdLow,
+            userPublicKey = identity.publicKey,
+            userPrivateKey = identity.privateKey,
+            latitude = location?.first,
+            longitude = location?.second,
+            maxHop = connectionPreferences.getMeshMaxHop(),
+        )
     }
 
     fun sendDeviceSettingsToDevice(
@@ -853,8 +880,18 @@ private fun SettingsContent(
                 // refresh this editable form, otherwise a delayed periodic
                 // report can overwrite an in-progress name/marker/GPS edit.
                 if (!isLoadingDeviceSettings) return@runOnUiThread
-                applyDeviceSettings(deviceSettings)
                 isLoadingDeviceSettings = false
+                if (!provisionMode && bleReady) {
+                    DeviceModeState.enabled = deviceSettings.deviceModeEnabled
+                    if (deviceSettings.deviceModeEnabled) {
+                        showResetDeviceModeDialog = true
+                        status = "This device is provisioned in device mode"
+                    } else {
+                        status = "Device is already in user mode"
+                    }
+                    return@runOnUiThread
+                }
+                applyDeviceSettings(deviceSettings)
             }
         }
 
@@ -874,6 +911,10 @@ private fun SettingsContent(
             activity?.runOnUiThread {
                 if (line == "SERVICE ready") {
                     bleReady = true
+                    if (!provisionMode) {
+                        DeviceModeState.enabled = true
+                    }
+                    currentOnTransportConnectionChange(ActiveConnection.BLE, true)
                     if (provisionMode && provisionStep == SettingsProvisionStep.SELECT_BLE) {
                         if (pendingProvisionNext) {
                             pendingProvisionNext = false
@@ -882,8 +923,9 @@ private fun SettingsContent(
                         } else {
                             status = "BLE ready; tap Next"
                         }
+                    } else if (!provisionMode) {
+                        requestDeviceSettings(ActiveConnection.BLE)
                     }
-                    currentOnTransportConnectionChange(ActiveConnection.BLE, true)
                 } else if (line.startsWith("CONN") && line.contains("state=0") || line == "CLOSE") {
                     bleReady = false
                     currentOnTransportConnectionChange(ActiveConnection.BLE, false)
@@ -964,6 +1006,45 @@ private fun SettingsContent(
             onDispose { bleClient.stopScan() }
         }
         return
+    }
+
+    if (showResetDeviceModeDialog) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Device mode detected") },
+            text = {
+                Text("This EdgeZ is provisioned as a device and is advertising its device profile. Reset it to user mode and use this phone user name, marker, and shared GPS instead?")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showResetDeviceModeDialog = false
+                        sendDeviceSettingsToDevice(
+                            settings = currentUserModeSettings(),
+                            connection = ActiveConnection.BLE,
+                            label = "User mode settings",
+                            onSuccessAction = {
+                                DeviceModeState.enabled = false
+                                status = "Device reset to user mode"
+                            },
+                        )
+                    },
+                ) {
+                    Text("Reset to user mode")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showResetDeviceModeDialog = false
+                        DeviceModeState.enabled = true
+                        status = "Keeping device mode"
+                    },
+                ) {
+                    Text("Keep device mode")
+                }
+            },
+        )
     }
 
     Scaffold(
