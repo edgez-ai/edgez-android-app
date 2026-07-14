@@ -147,7 +147,6 @@ class EdgezBleClient(private val context: Context) {
     fun isOtaReady(): Boolean = gatt != null && otaCharacteristic != null
 
     /** Streams an app-only ESP image through the dedicated OTA characteristic. */
-    @SuppressLint("MissingPermission")
     fun performOta(
         image: InputStream,
         totalSize: Int,
@@ -156,39 +155,25 @@ class EdgezBleClient(private val context: Context) {
         if (totalSize <= 0) return Result.failure(IllegalArgumentException("OTA image size is invalid"))
         if (!isOtaReady()) return Result.failure(IllegalStateException("BLE OTA service is not ready"))
 
-        val otaGatt = gatt ?: return Result.failure(IllegalStateException("BLE is not connected"))
-        val highPriorityRequested = otaGatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
-        emitDebug("OTA connection priority high requested=$highPriorityRequested")
-        if (highPriorityRequested) {
-            Thread.sleep(OTA_CONNECTION_PRIORITY_SETTLE_MS)
-        }
-
-        return try {
-            runCatching {
-                writeOtaPacket(otaPacket(OTA_BEGIN, totalSize))
-                // The ESP32 NimBLE transport uses 255-byte ACL buffers. Keep each encrypted
-                // ATT write within one buffer rather than relying on long-write reassembly.
-                val chunkSize = (negotiatedMtu - 3 - OTA_DATA_HEADER_SIZE).coerceIn(20, OTA_DATA_MAX_CHUNK_SIZE)
-                val buffer = ByteArray(chunkSize)
-                var sent = 0
-                while (sent < totalSize) {
-                    val read = image.read(buffer, 0, minOf(buffer.size, totalSize - sent))
-                    if (read < 0) throw IllegalStateException("OTA image ended at $sent of $totalSize bytes")
-                    if (read == 0) continue
-                    writeOtaPacket(otaDataPacket(sent, buffer, read))
-                    sent += read
-                    onProgress(sent, totalSize)
-                }
-                writeOtaPacket(byteArrayOf(OTA_END))
-                "Firmware uploaded; the device is restarting"
-            }.onFailure {
-                runCatching { writeOtaPacket(byteArrayOf(OTA_ABORT)) }
+        return runCatching {
+            writeOtaPacket(otaPacket(OTA_BEGIN, totalSize))
+            // The ESP32 NimBLE transport uses 255-byte ACL buffers. Keep each encrypted
+            // ATT write within one buffer rather than relying on long-write reassembly.
+            val chunkSize = (negotiatedMtu - 3 - OTA_DATA_HEADER_SIZE).coerceIn(20, OTA_DATA_MAX_CHUNK_SIZE)
+            val buffer = ByteArray(chunkSize)
+            var sent = 0
+            while (sent < totalSize) {
+                val read = image.read(buffer, 0, minOf(buffer.size, totalSize - sent))
+                if (read < 0) throw IllegalStateException("OTA image ended at $sent of $totalSize bytes")
+                if (read == 0) continue
+                writeOtaPacket(otaDataPacket(sent, buffer, read))
+                sent += read
+                onProgress(sent, totalSize)
             }
-        } finally {
-            if (gatt === otaGatt) {
-                val balancedRequested = otaGatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_BALANCED)
-                emitDebug("OTA connection priority balanced requested=$balancedRequested")
-            }
+            writeOtaPacket(byteArrayOf(OTA_END))
+            "Firmware uploaded; the device is restarting"
+        }.onFailure {
+            runCatching { writeOtaPacket(byteArrayOf(OTA_ABORT)) }
         }
     }
 
@@ -761,6 +746,8 @@ class EdgezBleClient(private val context: Context) {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             emitDebug("CONN status=$status state=$newState")
             if (newState == BluetoothProfile.STATE_CONNECTED) {
+                val highPriorityRequested = gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
+                emitDebug("CONN high priority requested=$highPriorityRequested")
                 gatt.requestMtu(EDGEZ_BLE_REQUESTED_MTU)
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 rxCharacteristic = null
@@ -926,7 +913,6 @@ class EdgezBleClient(private val context: Context) {
         const val OTA_DATA_HEADER_SIZE = 5
         const val OTA_DATA_MAX_CHUNK_SIZE = 220
         const val OTA_WRITE_TIMEOUT_MS = 15_000L
-        const val OTA_CONNECTION_PRIORITY_SETTLE_MS = 500L
     }
 
     private fun handleBytes(bytes: ByteArray) {
