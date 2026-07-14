@@ -66,6 +66,7 @@ import ai.edgez.edgez.ui.theme.EdgeZTheme
 import ai.edgez.edgez.usb.ACTION_USB_PERMISSION
 import ai.edgez.edgez.usb.DeviceSettings
 import ai.edgez.edgez.usb.EdgezUsbClient
+import ai.edgez.edgez.usb.HaLowInterfaceStatus
 import ai.edgez.edgez.usb.UsbCandidate
 import java.util.concurrent.Executors
 import java.util.UUID
@@ -158,6 +159,7 @@ fun SettingsScreen(
     client: EdgezUsbClient,
     bleClient: EdgezBleClient,
     activeConnection: ActiveConnection,
+    haLowStatus: HaLowInterfaceStatus?,
     edgeZDatabase: EdgeZDatabase,
     shareLocation: Boolean,
     onLibp2pMeshSettingsSaved: () -> Unit = {},
@@ -169,6 +171,7 @@ fun SettingsScreen(
         client = client,
         bleClient = bleClient,
         activeConnection = activeConnection,
+        haLowStatus = haLowStatus,
         edgeZDatabase = edgeZDatabase,
         shareLocation = shareLocation,
         provisionMode = false,
@@ -186,6 +189,7 @@ private fun SettingsContent(
     client: EdgezUsbClient,
     bleClient: EdgezBleClient,
     activeConnection: ActiveConnection,
+    haLowStatus: HaLowInterfaceStatus?,
     edgeZDatabase: EdgeZDatabase,
     shareLocation: Boolean,
     provisionMode: Boolean,
@@ -1164,6 +1168,35 @@ private fun SettingsContent(
                                 if (activeConnection == ActiveConnection.BLE) "BLE connected" else "BLE disconnected",
                                 style = MaterialTheme.typography.bodySmall,
                             )
+                            if (activeConnection == ActiveConnection.BLE && haLowStatus != null) {
+                                Spacer(Modifier.height(6.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    val licensed = haLowStatus.licensed
+                                    Icon(
+                                        painter = painterResource(
+                                            if (licensed) R.drawable.ic_license_valid else R.drawable.ic_license_error,
+                                        ),
+                                        contentDescription = if (licensed) "Device licensed" else "Device unlicensed",
+                                        tint = if (licensed) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.error
+                                        },
+                                    )
+                                    Text(
+                                        if (licensed) "Licensed" else "Unlicensed",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (licensed) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.error
+                                        },
+                                    )
+                                }
+                            }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(
@@ -2074,6 +2107,7 @@ private fun SettingsPreview() {
             client = EdgezUsbClient(context),
             bleClient = EdgezBleClient(context),
             activeConnection = ActiveConnection.NONE,
+            haLowStatus = null,
             edgeZDatabase = EdgeZDatabase(context),
             shareLocation = false,
             onShareLocationChange = {},

@@ -59,6 +59,7 @@ import ai.edgez.edgez.ui.theme.EdgeZTheme
 import ai.edgez.edgez.usb.ACTION_USB_PERMISSION
 import ai.edgez.edgez.usb.DeviceSettings
 import ai.edgez.edgez.usb.EdgezUsbClient
+import ai.edgez.edgez.usb.HaLowInterfaceStatus
 import ai.edgez.edgez.usb.UsbCandidate
 import java.util.concurrent.Executors
 import java.util.UUID
@@ -159,6 +160,7 @@ fun ProvisioningScreen(
     client: EdgezUsbClient,
     bleClient: EdgezBleClient,
     activeConnection: ActiveConnection,
+    haLowStatus: HaLowInterfaceStatus?,
     edgeZDatabase: EdgeZDatabase,
     shareLocation: Boolean,
     onShareLocationChange: (Boolean) -> Unit,
@@ -171,6 +173,7 @@ fun ProvisioningScreen(
         client = client,
         bleClient = bleClient,
         activeConnection = activeConnection,
+        haLowStatus = haLowStatus,
         edgeZDatabase = edgeZDatabase,
         shareLocation = shareLocation,
         onShareLocationChange = onShareLocationChange,
@@ -187,6 +190,7 @@ private fun ProvisioningContent(
     client: EdgezUsbClient,
     bleClient: EdgezBleClient,
     activeConnection: ActiveConnection,
+    haLowStatus: HaLowInterfaceStatus?,
     edgeZDatabase: EdgeZDatabase,
     shareLocation: Boolean,
     onShareLocationChange: (Boolean) -> Unit,
@@ -292,6 +296,7 @@ private fun ProvisioningContent(
     val activity = context as? ComponentActivity
     val currentOnTransportConnectionChange by rememberUpdatedState(onTransportConnectionChange)
     val provisionBleReady = provisionMode && activeConnection == ActiveConnection.BLE && bleReady
+    val provisioningBlockedByLicense = haLowStatus?.licensed == false
     val showProvisionDeviceSettings = provisionMode && provisionStep != ProvisionStep.SELECT_BLE && provisionBleReady
     val deviceMode = provisionDeviceMode != DEVICE_MODE_RELAY
     val showDeviceSettingsOnly = showProvisionDeviceSettings
@@ -816,6 +821,10 @@ private fun ProvisioningContent(
     }
 
     fun goNextProvisionStep() {
+        if (provisioningBlockedByLicense) {
+            status = "Device is not licensed. Provisioning is unavailable."
+            return
+        }
         when (provisionStep) {
             ProvisionStep.SELECT_BLE -> {
                 if (!provisionBleReady) {
@@ -1033,17 +1042,19 @@ private fun ProvisioningContent(
                     }
                     Button(
                         modifier = Modifier.weight(1f),
-                        enabled = if (provisionStep == ProvisionStep.SELECT_BLE) {
-                            selectedBle != null
-                        } else if (provisionStep == ProvisionStep.SLEEP_MODE ||
-                            (provisionStep == ProvisionStep.SENSOR && provisionDeviceMode == DEVICE_MODE_RELAY)
-                        ) {
-                            showDeviceSettingsOnly && !isSavingProvisionSettings
-                        } else if (provisionStep == ProvisionStep.MODE) {
-                            showDeviceSettingsOnly && provisionDeviceMode != DEVICE_MODE_UNSET
-                        } else {
-                            showDeviceSettingsOnly
-                        },
+                        enabled = !provisioningBlockedByLicense && (
+                            if (provisionStep == ProvisionStep.SELECT_BLE) {
+                                selectedBle != null
+                            } else if (provisionStep == ProvisionStep.SLEEP_MODE ||
+                                (provisionStep == ProvisionStep.SENSOR && provisionDeviceMode == DEVICE_MODE_RELAY)
+                            ) {
+                                showDeviceSettingsOnly && !isSavingProvisionSettings
+                            } else if (provisionStep == ProvisionStep.MODE) {
+                                showDeviceSettingsOnly && provisionDeviceMode != DEVICE_MODE_UNSET
+                            } else {
+                                showDeviceSettingsOnly
+                            }
+                        ),
                         onClick = {
                             if (!isSavingProvisionSettings) {
                                 isSavingProvisionSettings = provisionStep == ProvisionStep.SLEEP_MODE ||
@@ -1131,6 +1142,14 @@ private fun ProvisioningContent(
                     Spacer(Modifier.height(6.dp))
                 }
                 Text(status, style = MaterialTheme.typography.bodyMedium)
+                if (provisioningBlockedByLicense) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Device is not licensed. Provisioning is unavailable.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
                 if (!provisionMode && !showDeviceSettingsOnly) {
                     Spacer(Modifier.height(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1964,6 +1983,7 @@ private fun ProvisioningPreview() {
             client = EdgezUsbClient(context),
             bleClient = EdgezBleClient(context),
             activeConnection = ActiveConnection.NONE,
+            haLowStatus = null,
             edgeZDatabase = EdgeZDatabase(context),
             shareLocation = false,
             onShareLocationChange = {},

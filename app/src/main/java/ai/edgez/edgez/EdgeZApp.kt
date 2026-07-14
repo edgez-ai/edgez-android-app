@@ -1710,6 +1710,7 @@ AppDestination.MAP -> MapScreen(
                         client = usbClient,
                         bleClient = bleClient,
                         activeConnection = activeConnection,
+                        haLowStatus = haLowStatus,
                         edgeZDatabase = edgeZDatabase,
                         shareLocation = shareLocation,
                         onShareLocationChange = { enabled ->
@@ -2023,6 +2024,7 @@ AppDestination.MAP -> MapScreen(
             }
             AppDestination.PROFILE -> DashboardScreen(
                 users = haLowUsers.values.sortedByDescending { it.lastSeenMs },
+                licensed = haLowStatus?.licensed,
                 canSendOverMesh = canSendOverMesh,
                 sensorSamples = dashboardDeviceDisplays
                     .filterValues { it.showOnDashboard }
@@ -2065,6 +2067,7 @@ AppDestination.MAP -> MapScreen(
                 client = usbClient,
                 bleClient = bleClient,
                 activeConnection = activeConnection,
+                haLowStatus = haLowStatus,
                 edgeZDatabase = edgeZDatabase,
                 shareLocation = shareLocation,
                 onLibp2pMeshSettingsSaved = { syncLibp2pMesh() },
@@ -2097,6 +2100,7 @@ private enum class AppDestination(
 @Composable
 private fun DashboardScreen(
     users: List<HaLowUser>,
+    licensed: Boolean?,
     canSendOverMesh: Boolean,
     sensorSamples: Map<String, List<SensorSample>>,
     dashboardDeviceDisplays: Map<String, DashboardDeviceDisplay>,
@@ -2153,6 +2157,31 @@ private fun DashboardScreen(
                         Button(onClick = { editLayoutMode = !editLayoutMode }) {
                             Text(if (editLayoutMode) "Done" else "Edit")
                         }
+                    }
+                }
+            }
+            if (licensed == false) item {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.errorContainer,
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_license_error),
+                            contentDescription = "Device unlicensed",
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                        Text(
+                            "This device is unlicensed. License it to use HaLow mesh features.",
+                            modifier = Modifier.weight(1f),
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
                     }
                 }
             }
