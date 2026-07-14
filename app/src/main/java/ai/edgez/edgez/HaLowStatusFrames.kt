@@ -138,7 +138,7 @@ fun decodeHaLowSyncFrame(frame: ByteArray, meshPassphrase: String = ""): Network
 
 fun HaLowInterfaceStatus.summary(): String {
     val mac = if (macAddress != 0L) " mac=%012x".format(macAddress) else ""
-    return "HaLow supported=$supported initialized=$stackInitialized mesh=$meshMode link=$linkUp route=$routeReady ready=$readyForReport licensed=$licensed meshId=$meshId ip=$ipAddr gateway=$gateway$mac"
+    return "HaLow supported=$supported initialized=$stackInitialized mesh=$meshMode link=$linkUp route=$routeReady ready=$readyForReport licensed=$licensed firmware=${firmwareVersion.ifBlank { "unknown" }} meshId=$meshId ip=$ipAddr gateway=$gateway$mac"
 }
 
 fun NetworkPacket.summary(): String {

@@ -97,6 +97,7 @@ data class HaLowInterfaceStatus(
     val gateway: String = "",
     val macAddress: Long = 0,
     val licensed: Boolean = false,
+    val firmwareVersion: String = "",
 ) {
     val isUsable: Boolean get() = supported && stackInitialized && linkUp && routeReady
 }
@@ -1043,6 +1044,7 @@ object EdgezUsbControlProto {
             gateway = gateway,
             macAddress = macAddress,
             licensed = licensed,
+            firmwareVersion = firmwareVersion,
         )
     }
 

@@ -164,6 +164,7 @@ message HaLowInterfaceStatus {
   string gateway = 10;
   uint64 mac_address = 11;
   bool licensed = 12;
+  string firmware_version = 13;
 }
 
 

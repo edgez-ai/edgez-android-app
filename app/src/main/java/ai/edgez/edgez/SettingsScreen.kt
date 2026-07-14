@@ -1168,6 +1168,12 @@ private fun SettingsContent(
                                 if (activeConnection == ActiveConnection.BLE) "BLE connected" else "BLE disconnected",
                                 style = MaterialTheme.typography.bodySmall,
                             )
+                            if (activeConnection == ActiveConnection.BLE && haLowStatus?.firmwareVersion?.isNotBlank() == true) {
+                                Text(
+                                    "Firmware: ${haLowStatus.firmwareVersion}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
                             if (activeConnection == ActiveConnection.BLE && haLowStatus != null) {
                                 Spacer(Modifier.height(6.dp))
                                 Row(
