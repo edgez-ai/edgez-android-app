@@ -30,6 +30,7 @@ import ai.edgez.edgez.usb.ConversationMessage
 import ai.edgez.edgez.usb.DeviceSettings
 import ai.edgez.edgez.usb.EdgezUsbControlProto
 import ai.edgez.edgez.usb.PacketMime
+import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.ArrayDeque
@@ -43,6 +44,8 @@ private val EDGEZ_RX_UUID: UUID = UUID.fromString("0000fff1-0000-1000-8000-00805
 private val EDGEZ_TX_UUID: UUID = UUID.fromString("0000fff2-0000-1000-8000-00805f9b34fb")
 private val EDGEZ_FORWARD_RX_UUID: UUID = UUID.fromString("0000fff3-0000-1000-8000-00805f9b34fb")
 private val EDGEZ_FORWARD_TX_UUID: UUID = UUID.fromString("0000fff4-0000-1000-8000-00805f9b34fb")
+private val EDGEZ_OTA_UUID: UUID = UUID.fromString("0000fff5-0000-1000-8000-00805f9b34fb")
+private val EDGEZ_OTA_STATUS_UUID: UUID = UUID.fromString("0000fff6-0000-1000-8000-00805f9b34fb")
 private val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
 data class BleCandidate(
@@ -70,6 +73,11 @@ class EdgezBleClient(private val context: Context) {
     private var txCharacteristic: BluetoothGattCharacteristic? = null
     private var forwardRxCharacteristic: BluetoothGattCharacteristic? = null
     private var forwardTxCharacteristic: BluetoothGattCharacteristic? = null
+    private var otaCharacteristic: BluetoothGattCharacteristic? = null
+    private var otaStatusCharacteristic: BluetoothGattCharacteristic? = null
+    private val otaWriteLock = Object()
+    private var otaWriteStatus: Int? = null
+    private var negotiatedMtu = 23
     private val txQueue = ArrayDeque<ByteArray>()
     private val forwardTxQueue = ArrayDeque<ByteArray>()
     private var txWriteInFlight = false
@@ -91,6 +99,79 @@ class EdgezBleClient(private val context: Context) {
     }
 
     fun isReady(): Boolean = gatt != null && rxCharacteristic != null
+
+    fun isOtaReady(): Boolean = gatt != null && otaCharacteristic != null
+
+    /** Streams an app-only ESP image through the dedicated OTA characteristic. */
+    fun performOta(
+        image: InputStream,
+        totalSize: Int,
+        onProgress: (sentBytes: Int, totalBytes: Int) -> Unit = { _, _ -> },
+    ): Result<String> {
+        if (totalSize <= 0) return Result.failure(IllegalArgumentException("OTA image size is invalid"))
+        if (!isOtaReady()) return Result.failure(IllegalStateException("BLE OTA service is not ready"))
+
+        return runCatching {
+            writeOtaPacket(otaPacket(OTA_BEGIN, totalSize))
+            val chunkSize = (negotiatedMtu - 3 - OTA_DATA_HEADER_SIZE).coerceIn(20, 480)
+            val buffer = ByteArray(chunkSize)
+            var sent = 0
+            while (sent < totalSize) {
+                val read = image.read(buffer, 0, minOf(buffer.size, totalSize - sent))
+                if (read < 0) throw IllegalStateException("OTA image ended at $sent of $totalSize bytes")
+                if (read == 0) continue
+                writeOtaPacket(otaDataPacket(sent, buffer, read))
+                sent += read
+                onProgress(sent, totalSize)
+            }
+            writeOtaPacket(byteArrayOf(OTA_END))
+            "Firmware uploaded; the device is restarting"
+        }.onFailure {
+            runCatching { writeOtaPacket(byteArrayOf(OTA_ABORT)) }
+        }
+    }
+
+    private fun otaPacket(command: Byte, value: Int): ByteArray = ByteBuffer.allocate(OTA_DATA_HEADER_SIZE)
+        .order(ByteOrder.LITTLE_ENDIAN)
+        .put(command)
+        .putInt(value)
+        .array()
+
+    private fun otaDataPacket(offset: Int, bytes: ByteArray, length: Int): ByteArray = ByteBuffer.allocate(OTA_DATA_HEADER_SIZE + length)
+        .order(ByteOrder.LITTLE_ENDIAN)
+        .put(OTA_DATA)
+        .putInt(offset)
+        .put(bytes, 0, length)
+        .array()
+
+    @SuppressLint("MissingPermission")
+    private fun writeOtaPacket(packet: ByteArray) {
+        val activeGatt = gatt ?: throw IllegalStateException("BLE is not connected")
+        val characteristic = otaCharacteristic ?: throw IllegalStateException("BLE OTA service is not ready")
+        synchronized(otaWriteLock) {
+            otaWriteStatus = null
+            val started = if (Build.VERSION.SDK_INT >= 33) {
+                activeGatt.writeCharacteristic(
+                    characteristic,
+                    packet,
+                    BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT,
+                ) == BluetoothGatt.GATT_SUCCESS
+            } else {
+                characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                characteristic.value = packet
+                activeGatt.writeCharacteristic(characteristic)
+            }
+            if (!started) throw IllegalStateException("BLE OTA write could not start")
+            val deadline = System.currentTimeMillis() + OTA_WRITE_TIMEOUT_MS
+            while (otaWriteStatus == null && System.currentTimeMillis() < deadline) {
+                otaWriteLock.wait((deadline - System.currentTimeMillis()).coerceAtLeast(1))
+            }
+            val status = otaWriteStatus ?: throw IllegalStateException("BLE OTA write timed out")
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                throw IllegalStateException("BLE OTA write failed: $status")
+            }
+        }
+    }
 
     fun setForwardingEnabled(enabled: Boolean) {
         synchronized(this) {
@@ -564,6 +645,9 @@ class EdgezBleClient(private val context: Context) {
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 rxCharacteristic = null
                 txCharacteristic = null
+                otaCharacteristic = null
+                otaStatusCharacteristic = null
+                negotiatedMtu = 23
                 setForwardingEnabled(false)
                 rxLen = 0
                 forwardRxLen = 0
@@ -574,6 +658,9 @@ class EdgezBleClient(private val context: Context) {
         @SuppressLint("MissingPermission")
         override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
             emitDebug("MTU mtu=$mtu status=$status")
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                negotiatedMtu = mtu
+            }
             gatt.discoverServices()
         }
 
@@ -590,6 +677,8 @@ class EdgezBleClient(private val context: Context) {
 
             rxCharacteristic = rx
             txCharacteristic = tx
+            otaCharacteristic = service?.getCharacteristic(EDGEZ_OTA_UUID)
+            otaStatusCharacteristic = service?.getCharacteristic(EDGEZ_OTA_STATUS_UUID)
             gatt.setCharacteristicNotification(tx, true)
             val descriptor = tx.getDescriptor(CCCD_UUID)
             if (descriptor != null) {
@@ -624,6 +713,17 @@ class EdgezBleClient(private val context: Context) {
                 clearForwardState(log = false)
                 emitDebug("SERVICE forward disabled by settings")
             }
+            otaStatusCharacteristic?.let { otaStatus ->
+                gatt.setCharacteristicNotification(otaStatus, true)
+                otaStatus.getDescriptor(CCCD_UUID)?.let { descriptor ->
+                    if (Build.VERSION.SDK_INT >= 33) {
+                        gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+                    } else {
+                        descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                        gatt.writeDescriptor(descriptor)
+                    }
+                }
+            }
             emitDebug("SERVICE ready")
         }
 
@@ -635,6 +735,7 @@ class EdgezBleClient(private val context: Context) {
             when (characteristic.uuid) {
                 txCharacteristic?.uuid -> handleBytes(value)
                 if (forwardEnabled) forwardTxCharacteristic?.uuid else null -> handleForwardBytes(value)
+                otaStatusCharacteristic?.uuid -> emitDebug("OTA status=${value.joinToString("") { "%02x".format(it) }}")
                 else -> emitDebug("RX unknown char=${characteristic.uuid}")
             }
         }
@@ -648,6 +749,7 @@ class EdgezBleClient(private val context: Context) {
             when (characteristic.uuid) {
                 txCharacteristic?.uuid -> handleBytes(value)
                 if (forwardEnabled) forwardTxCharacteristic?.uuid else null -> handleForwardBytes(value)
+                otaStatusCharacteristic?.uuid -> emitDebug("OTA status=${value.joinToString("") { "%02x".format(it) }}")
                 else -> emitDebug("RX unknown char=${characteristic.uuid}")
             }
         }
@@ -657,6 +759,13 @@ class EdgezBleClient(private val context: Context) {
             characteristic: BluetoothGattCharacteristic,
             status: Int,
         ) {
+            if (characteristic.uuid == otaCharacteristic?.uuid) {
+                synchronized(otaWriteLock) {
+                    otaWriteStatus = status
+                    otaWriteLock.notifyAll()
+                }
+                return
+            }
             val isForwardWrite = characteristic.uuid == forwardTxCharacteristic?.uuid && forwardEnabled
             synchronized(this@EdgezBleClient) {
                 if (isForwardWrite) {
@@ -686,6 +795,15 @@ class EdgezBleClient(private val context: Context) {
                 }
             }
         }
+    }
+
+    private companion object {
+        const val OTA_BEGIN: Byte = 1
+        const val OTA_DATA: Byte = 2
+        const val OTA_END: Byte = 3
+        const val OTA_ABORT: Byte = 4
+        const val OTA_DATA_HEADER_SIZE = 5
+        const val OTA_WRITE_TIMEOUT_MS = 15_000L
     }
 
     private fun handleBytes(bytes: ByteArray) {

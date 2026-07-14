@@ -68,8 +68,12 @@ import ai.edgez.edgez.usb.DeviceSettings
 import ai.edgez.edgez.usb.EdgezUsbClient
 import ai.edgez.edgez.usb.HaLowInterfaceStatus
 import ai.edgez.edgez.usb.UsbCandidate
+import java.io.BufferedInputStream
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.concurrent.Executors
 import java.util.UUID
+import org.json.JSONObject
 
 private enum class SettingsProvisionStep {
     SELECT_BLE,
@@ -121,6 +125,50 @@ private fun haLowFrequencyLabel(country: String, frequencyKHz: Int): String {
 }
 
 private const val SHOW_LIBP2P_SETTINGS = false
+private const val OTA_MANIFEST_URL = "https://www.edgez.ai/api/ota/firmware"
+
+private data class OtaFirmwareRelease(
+    val version: String,
+    val size: Int,
+    val url: String,
+)
+
+private fun isNewerFirmwareVersion(current: String, available: String): Boolean {
+    fun components(value: String): List<Int> = value.removePrefix("v")
+        .split('.', '-', '_')
+        .mapNotNull { it.toIntOrNull() }
+    val currentParts = components(current)
+    val availableParts = components(available)
+    if (currentParts.isEmpty() || availableParts.isEmpty()) return current != available
+    val count = maxOf(currentParts.size, availableParts.size)
+    for (index in 0 until count) {
+        val left = currentParts.getOrElse(index) { 0 }
+        val right = availableParts.getOrElse(index) { 0 }
+        if (left != right) return right > left
+    }
+    return false
+}
+
+private fun fetchOtaFirmwareRelease(): OtaFirmwareRelease {
+    val connection = (URL(OTA_MANIFEST_URL).openConnection() as HttpURLConnection).apply {
+        connectTimeout = 10_000
+        readTimeout = 15_000
+        requestMethod = "GET"
+    }
+    try {
+        if (connection.responseCode !in 200..299) {
+            throw IllegalStateException("Firmware check failed: HTTP ${connection.responseCode}")
+        }
+        val json = connection.inputStream.bufferedReader().use { JSONObject(it.readText()) }
+        return OtaFirmwareRelease(
+            version = json.getString("version"),
+            size = json.getInt("size"),
+            url = json.getString("url"),
+        )
+    } finally {
+        connection.disconnect()
+    }
+}
 
 private enum class Libp2pExtraServerOption(val label: String) {
     NONE("IPFS default"),
@@ -296,6 +344,11 @@ private fun SettingsContent(
     var selectedBleAddress by rememberSaveable { mutableStateOf(connectionPreferences.getSelectedBleAddress()) }
     var selectedBleLabel by rememberSaveable { mutableStateOf(connectionPreferences.getSelectedBleLabel()) }
     var bleAutoConnect by rememberSaveable { mutableStateOf(connectionPreferences.getBleAutoConnect()) }
+    var otaRelease by remember { mutableStateOf<OtaFirmwareRelease?>(null) }
+    var otaCheckInProgress by rememberSaveable { mutableStateOf(false) }
+    var otaInProgress by rememberSaveable { mutableStateOf(false) }
+    var otaProgress by rememberSaveable { mutableStateOf(0f) }
+    var otaMessage by rememberSaveable { mutableStateOf("") }
     var showDebugPopup by rememberSaveable { mutableStateOf(false) }
     var selectedSettingsTab by rememberSaveable { mutableStateOf(SettingsTab.USER) }
     var status by remember { mutableStateOf("Connect the ESP32-S3 USB port, then scan.") }
@@ -346,6 +399,71 @@ private fun SettingsContent(
     }
 
     val executor = remember { Executors.newSingleThreadExecutor() }
+
+    fun checkForOtaUpdate() {
+        if (otaCheckInProgress || otaInProgress) return
+        otaCheckInProgress = true
+        otaMessage = "Checking for firmware updates..."
+        executor.execute {
+            runCatching(::fetchOtaFirmwareRelease).onSuccess { release ->
+                activity?.runOnUiThread {
+                    otaRelease = release
+                    otaCheckInProgress = false
+                    otaMessage = if (isNewerFirmwareVersion(haLowStatus?.firmwareVersion.orEmpty(), release.version)) {
+                        "Update available: ${release.version}"
+                    } else {
+                        "Your firmware is up to date"
+                    }
+                }
+            }.onFailure { error ->
+                activity?.runOnUiThread {
+                    otaCheckInProgress = false
+                    otaMessage = error.message ?: "Firmware check failed"
+                }
+            }
+        }
+    }
+
+    fun installOtaUpdate(release: OtaFirmwareRelease) {
+        if (otaInProgress || !bleClient.isOtaReady()) {
+            otaMessage = "Reconnect to a device with BLE OTA support"
+            return
+        }
+        otaInProgress = true
+        otaProgress = 0f
+        otaMessage = "Downloading ${release.version}..."
+        executor.execute {
+            val result = runCatching {
+                val connection = (URL(release.url).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 15_000
+                    readTimeout = 30_000
+                    requestMethod = "GET"
+                }
+                try {
+                    if (connection.responseCode !in 200..299) {
+                        throw IllegalStateException("Firmware download failed: HTTP ${connection.responseCode}")
+                    }
+                    BufferedInputStream(connection.inputStream).use { image ->
+                        bleClient.performOta(image, release.size) { sent, total ->
+                            activity?.runOnUiThread {
+                                otaProgress = sent.toFloat() / total.toFloat()
+                                otaMessage = "Installing ${release.version}: ${(otaProgress * 100).toInt()}%"
+                            }
+                        }.getOrThrow()
+                    }
+                } finally {
+                    connection.disconnect()
+                }
+            }
+            activity?.runOnUiThread {
+                otaInProgress = false
+                otaMessage = result.fold(
+                    onSuccess = { "Firmware uploaded. The device is restarting." },
+                    onFailure = { it.message ?: "Firmware update failed" },
+                )
+            }
+        }
+    }
 
     fun reloadAppSettingsFromPreferences() {
         meshCountry = connectionPreferences.getMeshCountry()
@@ -1211,6 +1329,37 @@ private fun SettingsContent(
                             ) {
                                 Text(if (activeConnection == ActiveConnection.BLE) "Disconnect" else "Connect")
                             }
+                        }
+                    }
+                    if (activeConnection == ActiveConnection.BLE) {
+                        Spacer(Modifier.height(10.dp))
+                        val currentFirmware = haLowStatus?.firmwareVersion.orEmpty()
+                        val updateAvailable = otaRelease?.let { isNewerFirmwareVersion(currentFirmware, it.version) } == true
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                enabled = currentFirmware.isNotBlank() && !otaCheckInProgress && !otaInProgress,
+                                onClick = ::checkForOtaUpdate,
+                            ) {
+                                Text(if (otaCheckInProgress) "Checking..." else "Check for update")
+                            }
+                            if (updateAvailable) {
+                                Button(
+                                    enabled = !otaInProgress && bleClient.isOtaReady(),
+                                    onClick = { otaRelease?.let(::installOtaUpdate) },
+                                ) {
+                                    Text(if (otaInProgress) "Updating ${(otaProgress * 100).toInt()}%" else "Update")
+                                }
+                            }
+                        }
+                        if (otaMessage.isNotBlank()) {
+                            Text(otaMessage, style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (updateAvailable && !bleClient.isOtaReady()) {
+                            Text(
+                                "This connected firmware does not expose BLE OTA yet.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
                         }
                     }
                     Spacer(Modifier.height(12.dp))
