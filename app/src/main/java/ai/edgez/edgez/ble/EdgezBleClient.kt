@@ -53,7 +53,9 @@ private val EDGEZ_OTA_STATUS_UUID: UUID = UUID.fromString("0000fff6-0000-1000-80
 private val EDGEZ_VOICE_RX_UUID: UUID = UUID.fromString("0000fff7-0000-1000-8000-00805f9b34fb")
 private val EDGEZ_VOICE_TX_UUID: UUID = UUID.fromString("0000fff8-0000-1000-8000-00805f9b34fb")
 private val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
-private val EDGEZ_VOICE_PROTOCOL_MAGIC = byteArrayOf('V'.code.toByte(), 'C'.code.toByte(), 1)
+private val EDGEZ_VOICE_PROTOCOL_MAGIC = byteArrayOf('V'.code.toByte(), 'C'.code.toByte(), 2)
+private const val EDGEZ_VOICE_NONCE_SIZE = 12
+private const val EDGEZ_VOICE_ROUTE_SIZE = 6 + 1 + 4
 private const val EDGEZ_VOICE_TX_QUEUE_DEPTH = 2
 
 data class BleCandidate(
@@ -466,24 +468,21 @@ class EdgezBleClient(private val context: Context) {
     /** Sends one realtime voice NetworkPacket on the dedicated FFF7 media characteristic. */
     fun sendVoiceCallMessage(
         message: ConversationMessage,
-        from: Long,
         to: Long,
         maxHop: Int = 0,
         sequence: Int = 1,
-        messageIdHigh: Long = 0,
-        messageIdLow: Long = 0,
-        userIdHigh: Long,
-        userIdLow: Long,
-        groupIdHigh: Long = 0,
-        groupIdLow: Long = 0,
     ): Result<String> {
-        val packet = runCatching {
-            EdgezUsbControlProto.encodeConversationMessage(
-                message, from, to, PacketMime.VOICE, maxHop, sequence, messageIdHigh, messageIdLow,
-                userIdHigh, userIdLow, groupIdHigh, groupIdLow,
-            )
-        }.getOrElse { return Result.failure(it) }
-        return sendVoicePacket(packet)
+        if (message.nonce.size != EDGEZ_VOICE_NONCE_SIZE || message.ciphertext.isEmpty()) {
+            return Result.failure(IllegalArgumentException("Invalid voice-call crypto envelope"))
+        }
+        val packet = ByteBuffer.allocate(EDGEZ_VOICE_ROUTE_SIZE + message.nonce.size + message.ciphertext.size)
+            .order(ByteOrder.BIG_ENDIAN)
+        for (shift in 40 downTo 0 step 8) packet.put((to ushr shift).toByte())
+        packet.put(maxHop.coerceIn(0, 255).toByte())
+        packet.putInt(sequence)
+        packet.put(message.nonce)
+        packet.put(message.ciphertext)
+        return sendVoicePacket(packet.array())
     }
 
     @SuppressLint("MissingPermission")
@@ -811,14 +810,6 @@ class EdgezBleClient(private val context: Context) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 val highPriorityRequested = gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
                 emitDebug("CONN high priority requested=$highPriorityRequested")
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    gatt.setPreferredPhy(
-                        BluetoothDevice.PHY_LE_2M_MASK,
-                        BluetoothDevice.PHY_LE_2M_MASK,
-                        BluetoothDevice.PHY_OPTION_NO_PREFERRED,
-                    )
-                    emitDebug("CONN 2M PHY requested")
-                }
                 gatt.requestMtu(EDGEZ_BLE_REQUESTED_MTU)
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 rxCharacteristic = null
@@ -1129,13 +1120,11 @@ class EdgezBleClient(private val context: Context) {
             return
         }
         val payload = bytes.copyOfRange(EDGEZ_VOICE_PROTOCOL_MAGIC.size, bytes.size)
-        if (payload.size > EDGEZ_MAX_PAYLOAD) {
+        if (payload.size < 6 + 4 + EDGEZ_VOICE_NONCE_SIZE + 1 || payload.size > EDGEZ_MAX_PAYLOAD) {
             emitDebug("RX voice too large len=${payload.size}")
             return
         }
-        val frame = ByteBuffer.allocate(EDGEZ_HEADER_LEN + payload.size).order(ByteOrder.LITTLE_ENDIAN)
-            .put(EDGEZ_MAGIC_0).put(EDGEZ_MAGIC_1).putShort(payload.size.toShort()).put(payload).array()
-        voiceFrameListeners.forEach { it(frame) }
+        voiceFrameListeners.forEach { it(payload) }
     }
 
     private fun findMagicOffset(data: ByteArray, length: Int): Int {

@@ -7,6 +7,7 @@ import java.util.UUID
 private const val LAST_CONNECTION_PREFS = "edgez_connection"
 private const val KEY_LAST_SUCCESSFUL_CONNECTION = "last_successful_connection"
 private const val KEY_LAST_HALOW_NODE_ID = "last_halow_node_id"
+private const val KEY_LAST_HALOW_NODE_BLE_ADDRESS = "last_halow_node_ble_address"
 private const val KEY_MESH_COUNTRY = "mesh_country"
 private const val KEY_MESH_ID = "mesh_id"
 private const val KEY_MESH_PASSPHRASE = "mesh_passphrase"
@@ -73,16 +74,45 @@ class LastConnectionPreferences(context: Context) {
             .apply()
     }
 
-    fun getLastHaLowNodeId(): Long? = prefs.getLong(KEY_LAST_HALOW_NODE_ID, 0L)
-        .and(0x0000ffffffffffffL)
-        .takeIf { it > 0x00000000ffffffffL && it != 0x0000ffffffffffffL }
+    fun getLastHaLowNodeId(): Long? {
+        val selectedBleAddress = normalizeBleAddress(getSelectedBleAddress())
+        if (selectedBleAddress.isEmpty()) return null
+        val storedBleAddress = normalizeBleAddress(
+            prefs.getString(KEY_LAST_HALOW_NODE_BLE_ADDRESS, "").orEmpty(),
+        )
+        val nodeId = prefs.getLong(KEY_LAST_HALOW_NODE_ID, 0L)
+            .and(0x0000ffffffffffffL)
+            .takeIf { it > 0x00000000ffffffffL && it != 0x0000ffffffffffffL }
+            ?: return null
 
-    fun setLastHaLowNodeId(nodeId: Long) {
+        if (storedBleAddress.isEmpty()) {
+            // One-time migration of the original global cache: associate it
+            // with the BLE device already selected by the user.
+            prefs.edit()
+                .putString(KEY_LAST_HALOW_NODE_BLE_ADDRESS, selectedBleAddress)
+                .apply()
+            return nodeId
+        }
+        return nodeId.takeIf { storedBleAddress == selectedBleAddress }
+    }
+
+    /** Updates the node ID associated with the remembered BLE device. */
+    fun setLastHaLowNodeId(nodeId: Long): Boolean {
         val normalized = nodeId and 0x0000ffffffffffffL
-        if (normalized <= 0x00000000ffffffffL || normalized == 0x0000ffffffffffffL) return
+        if (normalized <= 0x00000000ffffffffL || normalized == 0x0000ffffffffffffL) return false
+        val selectedBleAddress = normalizeBleAddress(getSelectedBleAddress())
+        if (selectedBleAddress.isEmpty()) return false
+        val storedNodeId = prefs.getLong(KEY_LAST_HALOW_NODE_ID, 0L)
+            .and(0x0000ffffffffffffL)
+        val storedBleAddress = normalizeBleAddress(
+            prefs.getString(KEY_LAST_HALOW_NODE_BLE_ADDRESS, "").orEmpty(),
+        )
+        if (storedNodeId == normalized && storedBleAddress == selectedBleAddress) return false
         prefs.edit()
             .putLong(KEY_LAST_HALOW_NODE_ID, normalized)
+            .putString(KEY_LAST_HALOW_NODE_BLE_ADDRESS, selectedBleAddress)
             .apply()
+        return true
     }
 
     fun getMeshId(): String = prefs.getString(KEY_MESH_ID, DEFAULT_MESH_ID) ?: DEFAULT_MESH_ID
@@ -200,10 +230,12 @@ class LastConnectionPreferences(context: Context) {
 
     fun setSelectedBleDevice(address: String, label: String) {
         prefs.edit()
-            .putString(KEY_SELECTED_BLE_ADDRESS, address)
+            .putString(KEY_SELECTED_BLE_ADDRESS, normalizeBleAddress(address))
             .putString(KEY_SELECTED_BLE_LABEL, label)
             .apply()
     }
+
+    private fun normalizeBleAddress(address: String): String = address.trim().uppercase()
 
     fun getDeviceGeoFences(): List<DeviceGeoFence> {
         val stored = prefs.getString(KEY_DEVICE_GEOFENCES, "") ?: ""

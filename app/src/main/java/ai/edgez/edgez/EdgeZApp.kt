@@ -63,11 +63,14 @@ import androidx.core.content.ContextCompat
 import ai.edgez.edgez.ble.EdgezBleClient
 import ai.edgez.edgez.usb.EdgezUsbClient
 import ai.edgez.edgez.usb.EdgezUsbControlProto
+import ai.edgez.edgez.usb.ConversationMessage
 import ai.edgez.edgez.usb.HaLowInterfaceStatus
 import ai.edgez.edgez.usb.PacketMime
 import ai.edgez.halow.UsbControl
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.security.SecureRandom
 import java.util.ArrayDeque
 import java.util.UUID
@@ -334,11 +337,11 @@ fun EdgeZApp() {
     val beaconExecutor = remember { Executors.newSingleThreadExecutor() }
     val messageAckExecutor = remember { Executors.newSingleThreadExecutor() }
     val libp2pExecutor = remember { Executors.newSingleThreadExecutor() }
-    val voiceCallTransport = remember { AtomicReference<(HaLowUser, ByteArray) -> Result<Unit>>({ _, _ -> Result.failure(IllegalStateException("Voice call transport is not ready")) }) }
+    val voiceCallTransport = remember { AtomicReference<(HaLowUser, ByteArray, Int) -> Result<Unit>>({ _, _, _ -> Result.failure(IllegalStateException("Voice call transport is not ready")) }) }
     var voiceCallState by remember { mutableStateOf(VoiceCallState()) }
     val voiceCall = remember {
         VoiceCallSession(
-            onSend = { peer, payload -> voiceCallTransport.get().invoke(peer, payload) },
+            onSend = { peer, payload, sequence -> voiceCallTransport.get().invoke(peer, payload, sequence) },
             onState = { next ->
                 EdgeZBeaconRunner.setVoiceCallActive(next.phase != VoiceCallPhase.IDLE)
                 mainHandler.post { voiceCallState = next }
@@ -798,7 +801,7 @@ fun EdgeZApp() {
         return haLowStatus?.macAddress
             ?.and(0x0000ffffffffffffL)
             ?.takeIf { it > 0x00000000ffffffffL && it != HALOW_BROADCAST_NODE_48 }
-            ?: lastConnectionPreferences.getLastHaLowNodeId().takeIf { activeConnection != ActiveConnection.NONE }
+            ?: lastConnectionPreferences.getLastHaLowNodeId().takeIf { activeConnection == ActiveConnection.BLE }
             ?: LIBP2P_PSEUDO_NODE.takeIf { LIBP2P_RUNTIME_ENABLED && activeConnection == ActiveConnection.NONE && libp2pMeshConnected }
     }
 
@@ -810,7 +813,7 @@ fun EdgeZApp() {
         }
     }
 
-    fun sendVoiceCallFrame(peer: HaLowUser, payload: ByteArray): Result<Unit> = runCatching {
+    fun sendVoiceCallFrame(peer: HaLowUser, payload: ByteArray, sequence: Int): Result<Unit> = runCatching {
         val identity = lastConnectionPreferences.getOrCreateUserIdentity()
         val from = requireNotNull(outgoingFromNode()) { "Local HaLow node id unavailable" }
         val groupId = conversationGroupId(peer)
@@ -820,12 +823,8 @@ fun EdgeZApp() {
         val to = outgoingToNode(peer)
         val maxHop = lastConnectionPreferences.getMeshMaxHop()
         when (activeConnection) {
-            ActiveConnection.USB -> usbClient.sendConversationMessage(encrypted, from, to, PacketMime.VOICE, maxHop,
-                messageIdHigh = messageId.high, messageIdLow = messageId.low, userIdHigh = identity.userIdHigh, userIdLow = identity.userIdLow,
-                groupIdHigh = groupId?.high ?: 0L, groupIdLow = groupId?.low ?: 0L)
-            ActiveConnection.BLE -> bleClient.sendVoiceCallMessage(encrypted, from, to, maxHop,
-                messageIdHigh = messageId.high, messageIdLow = messageId.low, userIdHigh = identity.userIdHigh, userIdLow = identity.userIdLow,
-                groupIdHigh = groupId?.high ?: 0L, groupIdLow = groupId?.low ?: 0L)
+            ActiveConnection.USB -> Result.failure(UnsupportedOperationException("Realtime voice call requires BLE"))
+            ActiveConnection.BLE -> bleClient.sendVoiceCallMessage(encrypted, to, maxHop, sequence)
             ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
         }.getOrThrow()
     }.map { Unit }
@@ -938,7 +937,13 @@ fun EdgeZApp() {
         ) {
             if (message.messageIdHigh == 0L && message.messageIdLow == 0L) return
             val identity = lastConnectionPreferences.getOrCreateUserIdentity()
-            val fromNode = haLowStatus?.macAddress?.takeIf { it != 0L } ?: message.to.takeIf { it != 0L } ?: return
+            // Use the same validated/cached 48-bit node resolution as normal
+            // message TX. A transient status/interface value (for example 2
+            // or 3) must never be serialized as the ACK sender MAC.
+            val fromNode = outgoingFromNode()
+                ?.and(0x0000ffffffffffffL)
+                ?.takeIf { it > 0x00000000ffffffffL && it != HALOW_BROADCAST_NODE_48 }
+                ?: return
             val toNode = message.from
             if (toNode == 0L || toNode == HALOW_BROADCAST_NODE_48 || toNode == HALOW_BROADCAST_NODE_32) return
             val maxHop = lastConnectionPreferences.getMeshMaxHop()
@@ -1075,7 +1080,15 @@ fun EdgeZApp() {
             }
 
             if (status != null) {
-                status.macAddress.takeIf { it != 0L }?.let(lastConnectionPreferences::setLastHaLowNodeId)
+                if (currentActiveConnection == ActiveConnection.BLE) {
+                    if (lastConnectionPreferences.setLastHaLowNodeId(status.macAddress)) {
+                        Log.i(
+                            TAG_USERS,
+                            "cached local HaLow node updated ble=${lastConnectionPreferences.getSelectedBleAddress()} node=0x%012x"
+                                .format(status.macAddress and 0x0000ffffffffffffL),
+                        )
+                    }
+                }
                 val source = currentActiveConnection
                 if (source != ActiveConnection.NONE) {
                     triggerHaLowInitIfNeeded(source, status)
@@ -1223,7 +1236,8 @@ fun EdgeZApp() {
                             }
                             val shouldUseConversationCrypto = isUserConversationCrypto(resolvedSenderUser)
                             val groupMessageId = packetGroupId ?: conversationGroupId(resolvedSenderUser)
-                            val realtimeVoicePacket = route == ROUTE_BLE_VOICE && message.mime == PacketMime.VOICE
+                            val realtimeVoicePacket = route == ROUTE_BLE_VOICE &&
+                                message.mime == PacketMime.VOICE_CALL
                             val entry: ConversationEntry? = if (rawBinaryPacket) {
                                 null
                             } else if (realtimeVoicePacket) {
@@ -1490,15 +1504,11 @@ fun EdgeZApp() {
                                 conversations = conversations + (
                                     senderKey to ((conversations[senderKey] ?: emptyList()) + entry)
                                     )
-                                if (route != ROUTE_BLE_VOICE &&
-                                    (route != ROUTE_LIBP2P || currentActiveConnection != ActiveConnection.NONE)
-                                ) {
+                                if (route != ROUTE_LIBP2P || currentActiveConnection != ActiveConnection.NONE) {
                                     sendConversationAck(currentActiveConnection, route, message)
                                 }
                             } else if (rawBinaryPacket) {
-                                if (route != ROUTE_BLE_VOICE &&
-                                    (route != ROUTE_LIBP2P || currentActiveConnection != ActiveConnection.NONE)
-                                ) {
+                                if (route != ROUTE_LIBP2P || currentActiveConnection != ActiveConnection.NONE) {
                                     sendConversationAck(currentActiveConnection, route, message)
                                 }
                             }
@@ -1521,9 +1531,33 @@ fun EdgeZApp() {
                 handleMeshFrame(ROUTE_BLE, frame)
             }
         }
-        val removeBleVoiceFrameListener = bleClient.addVoiceFrameListener { frame ->
+        val removeBleVoiceFrameListener = bleClient.addVoiceFrameListener { payload ->
             if (currentActiveConnection == ActiveConnection.BLE) {
-                handleMeshFrame(ROUTE_BLE_VOICE, frame)
+                runCatching {
+                    require(payload.size >= 6 + 4 + 12 + 1) { "Compact voice frame is too short" }
+                    val buffer = ByteBuffer.wrap(payload).order(ByteOrder.BIG_ENDIAN)
+                    var from = 0L
+                    repeat(6) { from = (from shl 8) or (buffer.get().toLong() and 0xff) }
+                    val sequence = buffer.int
+                    val nonce = ByteArray(12).also(buffer::get)
+                    val ciphertext = ByteArray(buffer.remaining()).also(buffer::get)
+                    val sender = haLowUsers[from]
+                        ?: error("Unknown voice-call sender 0x%012x".format(from))
+                    val identity = lastConnectionPreferences.getOrCreateUserIdentity()
+                    val groupId = conversationGroupId(sender)
+                    val cleartext = decryptConversationPayload(
+                        identity,
+                        sender,
+                        ConversationMessage(nonce, ciphertext),
+                        groupIdHigh = groupId?.high ?: 0L,
+                        groupIdLow = groupId?.low ?: 0L,
+                    )
+                    val callPacket = requireNotNull(decodeVoiceCallPacket(cleartext)) {
+                        "Compact voice payload is not EVC2"
+                    }
+                    require(callPacket.sequence == sequence) { "Voice sequence mismatch" }
+                    voiceCall.receive(sender, callPacket)
+                }.onFailure { Log.w(TAG_USERS, "Compact voice RX failed", it) }
             }
         }
         val removeBleForwardFrameListener = bleClient.addForwardFrameListener { frame ->

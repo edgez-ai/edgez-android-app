@@ -28,6 +28,7 @@ enum Mime {
   MIME_IMAGE = 3;
   MIME_VIDEO = 4;
   MIME_BINARY = 5;
+  MIME_VOICE_CALL = 6; // realtime EVC2 binary call frame; best effort, not persisted
 }
 
 enum MarkerColor {

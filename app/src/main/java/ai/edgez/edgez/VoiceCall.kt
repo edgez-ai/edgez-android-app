@@ -50,13 +50,13 @@ fun decodeVoiceCallPacket(payload: ByteArray): VoiceCallPacket? {
 }
 
 class VoiceCallSession(
-    private val onSend: (HaLowUser, ByteArray) -> Result<Unit>,
+    private val onSend: (HaLowUser, ByteArray, Int) -> Result<Unit>,
     private val onState: (VoiceCallState) -> Unit,
 ) {
     private val executor = Executors.newSingleThreadExecutor()
     private val sending = AtomicBoolean(false)
     private var state = VoiceCallState()
-    private var sequence = 0
+    private var sequence = 1
     private var player: AudioTrack? = null
 
     fun start(peer: HaLowUser): Result<Unit> {
@@ -106,7 +106,12 @@ class VoiceCallSession(
 
     private fun send(type: Byte, audio: ByteArray = ByteArray(0)): Result<Unit> {
         val peer = state.peer ?: return Result.failure(IllegalStateException("Call peer unavailable"))
-        return onSend(peer, encodeVoiceCallPacket(VoiceCallPacket(type, state.callId, sequence++, audio)))
+        val packetSequence = sequence++
+        return onSend(
+            peer,
+            encodeVoiceCallPacket(VoiceCallPacket(type, state.callId, packetSequence, audio)),
+            packetSequence,
+        )
     }
 
     private fun startCapture() {

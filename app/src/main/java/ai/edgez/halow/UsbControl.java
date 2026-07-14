@@ -289,6 +289,14 @@ public final class UsbControl {
      * <code>MIME_BINARY = 5;</code>
      */
     MIME_BINARY(5),
+    /**
+     * <pre>
+     * realtime EVC2 binary call frame; best effort, not persisted
+     * </pre>
+     *
+     * <code>MIME_VOICE_CALL = 6;</code>
+     */
+    MIME_VOICE_CALL(6),
     UNRECOGNIZED(-1),
     ;
 
@@ -316,6 +324,14 @@ public final class UsbControl {
      * <code>MIME_BINARY = 5;</code>
      */
     public static final int MIME_BINARY_VALUE = 5;
+    /**
+     * <pre>
+     * realtime EVC2 binary call frame; best effort, not persisted
+     * </pre>
+     *
+     * <code>MIME_VOICE_CALL = 6;</code>
+     */
+    public static final int MIME_VOICE_CALL_VALUE = 6;
 
 
     @java.lang.Override
@@ -345,6 +361,7 @@ public final class UsbControl {
         case 3: return MIME_IMAGE;
         case 4: return MIME_VIDEO;
         case 5: return MIME_BINARY;
+        case 6: return MIME_VOICE_CALL;
         default: return null;
       }
     }

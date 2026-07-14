@@ -375,7 +375,8 @@ enum class PacketMime(val wireValue: Int) {
     VOICE(2),
     IMAGE(3),
     VIDEO(4),
-    BINARY(5);
+    BINARY(5),
+    VOICE_CALL(6);
 
     companion object {
         fun fromWireValue(value: Int): PacketMime {
@@ -1240,6 +1241,7 @@ object EdgezUsbControlProto {
             PacketMime.IMAGE -> UsbControl.Mime.MIME_IMAGE
             PacketMime.VIDEO -> UsbControl.Mime.MIME_VIDEO
             PacketMime.BINARY -> UsbControl.Mime.MIME_BINARY
+            PacketMime.VOICE_CALL -> UsbControl.Mime.MIME_VOICE_CALL
             PacketMime.UNSPECIFIED -> UsbControl.Mime.MIME_UNSPECIFIED
         }
     }

@@ -97,6 +97,16 @@ fun decryptConversationPayload(
     groupIdLow: Long = 0,
 ): ByteArray {
     val message = packet.conversationMessage ?: error("Conversation payload is missing")
+    return decryptConversationPayload(identity, sender, message, groupIdHigh, groupIdLow)
+}
+
+fun decryptConversationPayload(
+    identity: UserIdentity,
+    sender: HaLowUser,
+    message: ConversationMessage,
+    groupIdHigh: Long = 0,
+    groupIdLow: Long = 0,
+): ByteArray {
     require(sender.publicKey.size == 32) {
         if (sender.deviceType == EdgeZDeviceType.GROUP) "Group PSK is missing" else "Sender public key is missing"
     }
