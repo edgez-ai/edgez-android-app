@@ -27,6 +27,7 @@ object EdgeZBeaconRunner {
     @Volatile private var bleClient: EdgezBleClient? = null
     @Volatile private var activeConnection: ActiveConnection = ActiveConnection.NONE
     @Volatile private var haLowStatus: HaLowInterfaceStatus? = null
+    @Volatile private var voiceCallActive = false
     @Volatile private var onFramePublished: ((ByteArray) -> Unit)? = null
     @Volatile private var running = false
     private var executor: ExecutorService? = null
@@ -65,6 +66,10 @@ object EdgeZBeaconRunner {
 
     fun setHaLowStatus(status: HaLowInterfaceStatus?) {
         haLowStatus = status
+    }
+
+    fun setVoiceCallActive(active: Boolean) {
+        voiceCallActive = active
     }
 
     fun setFramePublishedListener(listener: ((ByteArray) -> Unit)?) {
@@ -168,6 +173,10 @@ object EdgeZBeaconRunner {
             status.meshMode
         val canPublishLibp2pBeacon = LastConnectionPreferences(context).getLibp2pMeshEnabled() &&
             (status == null || (status.supported && status.stackInitialized && status.meshMode))
+        if (voiceCallActive && !canPublishLibp2pBeacon) {
+            Log.d(TAG_BEACON, "periodic device_settings skipped during voice call")
+            return
+        }
         if (!canSendTransportBeacon && !canPublishLibp2pBeacon) {
             return
         }
@@ -215,10 +224,15 @@ object EdgeZBeaconRunner {
                     marker,
                 )
             }.getOrNull() ?: return@execute
-            val transportResult = when (source) {
-                ActiveConnection.USB -> usbClient?.sendDeviceSettings(deviceSettings)
-                ActiveConnection.BLE -> bleClient?.sendDeviceSettings(deviceSettings)
-                ActiveConnection.NONE -> null
+            val transportResult = if (voiceCallActive) {
+                Log.d(TAG_BEACON, "periodic device_settings skipped during voice call")
+                null
+            } else {
+                when (source) {
+                    ActiveConnection.USB -> usbClient?.sendDeviceSettings(deviceSettings)
+                    ActiveConnection.BLE -> bleClient?.sendDeviceSettings(deviceSettings)
+                    ActiveConnection.NONE -> null
+                }
             }
             if (canPublishLibp2pBeacon || transportResult?.isSuccess == true) {
                 Log.d(TAG_BEACON, "periodic device_settings sent source=$source; queue beacon for libp2p direct=$canPublishLibp2pBeacon")

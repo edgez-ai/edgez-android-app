@@ -90,6 +90,7 @@ private const val LIBP2P_PSEUDO_NODE = 1L
 // latency.
 private const val VOICE_CHUNK_SEND_SPACING_MS = 40L
 private const val ROUTE_BLE = "BLE"
+private const val ROUTE_BLE_VOICE = "BLE_VOICE"
 private const val ROUTE_BLE_FORWARD = "BLE_FORWARD"
 private const val ROUTE_LIBP2P = "LIBP2P"
 private const val FORWARD_CACHE_SIZE = 1024
@@ -338,7 +339,10 @@ fun EdgeZApp() {
     val voiceCall = remember {
         VoiceCallSession(
             onSend = { peer, payload -> voiceCallTransport.get().invoke(peer, payload) },
-            onState = { next -> mainHandler.post { voiceCallState = next } },
+            onState = { next ->
+                EdgeZBeaconRunner.setVoiceCallActive(next.phase != VoiceCallPhase.IDLE)
+                mainHandler.post { voiceCallState = next }
+            },
         )
     }
     val pendingHaLowInitKey = remember { AtomicReference<String?>(null) }
@@ -506,6 +510,7 @@ fun EdgeZApp() {
         if (connected && connection != ActiveConnection.NONE) {
             markTransportConnected(connection)
         } else if (activeConnection == connection) {
+            voiceCall.transportDisconnected()
             DeviceModeState.enabled = false
             activeConnection = ActiveConnection.NONE
             haLowStatus = null
@@ -1218,7 +1223,33 @@ fun EdgeZApp() {
                             }
                             val shouldUseConversationCrypto = isUserConversationCrypto(resolvedSenderUser)
                             val groupMessageId = packetGroupId ?: conversationGroupId(resolvedSenderUser)
+                            val realtimeVoicePacket = route == ROUTE_BLE_VOICE && message.mime == PacketMime.VOICE
                             val entry: ConversationEntry? = if (rawBinaryPacket) {
+                                null
+                            } else if (realtimeVoicePacket) {
+                                runCatching {
+                                    require(shouldUseConversationCrypto) { "Voice call sender does not support conversation encryption" }
+                                    val payload = decryptConversationPayload(
+                                        identity,
+                                        resolvedSenderUser,
+                                        message,
+                                        groupIdHigh = groupMessageId?.high ?: 0L,
+                                        groupIdLow = groupMessageId?.low ?: 0L,
+                                    )
+                                    val callPacket = requireNotNull(decodeVoiceCallPacket(payload)) {
+                                        "Dedicated voice frame does not contain a voice-call packet"
+                                    }
+                                    voiceCall.receive(resolvedSenderUser, callPacket)
+                                }.onFailure {
+                                    Log.w(
+                                        TAG_USERS,
+                                        "voice call decode failed from=0x%012x to=0x%012x seq=${message.sequence} payload=${message.payload.size}"
+                                            .format(message.from, message.to),
+                                        it,
+                                    )
+                                }
+                                // Dedicated FFF8 traffic is realtime-only: never turn a
+                                // failed call frame into a saved conversation message.
                                 null
                             } else {
                                 runCatching {
@@ -1459,11 +1490,15 @@ fun EdgeZApp() {
                                 conversations = conversations + (
                                     senderKey to ((conversations[senderKey] ?: emptyList()) + entry)
                                     )
-                                if (route != ROUTE_LIBP2P || currentActiveConnection != ActiveConnection.NONE) {
+                                if (route != ROUTE_BLE_VOICE &&
+                                    (route != ROUTE_LIBP2P || currentActiveConnection != ActiveConnection.NONE)
+                                ) {
                                     sendConversationAck(currentActiveConnection, route, message)
                                 }
                             } else if (rawBinaryPacket) {
-                                if (route != ROUTE_LIBP2P || currentActiveConnection != ActiveConnection.NONE) {
+                                if (route != ROUTE_BLE_VOICE &&
+                                    (route != ROUTE_LIBP2P || currentActiveConnection != ActiveConnection.NONE)
+                                ) {
                                     sendConversationAck(currentActiveConnection, route, message)
                                 }
                             }
@@ -1484,6 +1519,11 @@ fun EdgeZApp() {
         val removeBleFrameListener = bleClient.addFrameListener { frame ->
             if (currentActiveConnection == ActiveConnection.BLE) {
                 handleMeshFrame(ROUTE_BLE, frame)
+            }
+        }
+        val removeBleVoiceFrameListener = bleClient.addVoiceFrameListener { frame ->
+            if (currentActiveConnection == ActiveConnection.BLE) {
+                handleMeshFrame(ROUTE_BLE_VOICE, frame)
             }
         }
         val removeBleForwardFrameListener = bleClient.addForwardFrameListener { frame ->
@@ -1527,6 +1567,7 @@ fun EdgeZApp() {
             libp2pBridgeHolder = null
             removeUsbFrameListener()
             removeBleFrameListener()
+            removeBleVoiceFrameListener()
             removeBleForwardFrameListener()
             removeUsbDebugListener()
             removeBleDebugListener()

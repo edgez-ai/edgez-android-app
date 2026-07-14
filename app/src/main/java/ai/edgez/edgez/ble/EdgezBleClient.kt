@@ -54,6 +54,7 @@ private val EDGEZ_VOICE_RX_UUID: UUID = UUID.fromString("0000fff7-0000-1000-8000
 private val EDGEZ_VOICE_TX_UUID: UUID = UUID.fromString("0000fff8-0000-1000-8000-00805f9b34fb")
 private val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 private val EDGEZ_VOICE_PROTOCOL_MAGIC = byteArrayOf('V'.code.toByte(), 'C'.code.toByte(), 1)
+private const val EDGEZ_VOICE_TX_QUEUE_DEPTH = 2
 
 data class BleCandidate(
     val device: BluetoothDevice,
@@ -68,6 +69,7 @@ class EdgezBleClient(private val context: Context) {
     private val bluetoothManager = context.getSystemService(BluetoothManager::class.java)
     private val bluetoothAdapter: BluetoothAdapter? = bluetoothManager?.adapter
     private val frameListeners = CopyOnWriteArraySet<(ByteArray) -> Unit>()
+    private val voiceFrameListeners = CopyOnWriteArraySet<(ByteArray) -> Unit>()
     private val forwardFrameListeners = CopyOnWriteArraySet<(ByteArray) -> Unit>()
     private val debugListeners = CopyOnWriteArraySet<(String) -> Unit>()
     private val rxBuffer = ByteArray(EDGEZ_MAX_FRAME * 2)
@@ -92,8 +94,11 @@ class EdgezBleClient(private val context: Context) {
     private var negotiatedMtu = 23
     private val txQueue = ArrayDeque<ByteArray>()
     private val forwardTxQueue = ArrayDeque<ByteArray>()
+    private val voiceTxQueue = ArrayDeque<ByteArray>()
     private var txWriteInFlight = false
     private var forwardTxWriteInFlight = false
+    private var voiceTxWriteInFlight = false
+    private var dataWriteInFlight = false
     private var forwardEnabled = false
 
     private val bondStateReceiver = object : BroadcastReceiver() {
@@ -235,6 +240,11 @@ class EdgezBleClient(private val context: Context) {
     fun addFrameListener(listener: (ByteArray) -> Unit): () -> Unit {
         frameListeners.add(listener)
         return { frameListeners.remove(listener) }
+    }
+
+    fun addVoiceFrameListener(listener: (ByteArray) -> Unit): () -> Unit {
+        voiceFrameListeners.add(listener)
+        return { voiceFrameListeners.remove(listener) }
     }
 
     fun addForwardFrameListener(listener: (ByteArray) -> Unit): () -> Unit {
@@ -487,14 +497,20 @@ class EdgezBleClient(private val context: Context) {
         if (frame.size > maxVoiceFrame) {
             return Result.failure(IllegalArgumentException("Voice packet too large: ${frame.size}/$maxVoiceFrame"))
         }
-        val sent = if (Build.VERSION.SDK_INT >= 33) {
-            activeGatt.writeCharacteristic(voice, frame, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE) == BluetoothGatt.GATT_SUCCESS
-        } else {
-            voice.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
-            voice.value = frame
-            activeGatt.writeCharacteristic(voice)
+        synchronized(this) {
+            if (voiceTxQueue.size >= EDGEZ_VOICE_TX_QUEUE_DEPTH) {
+                // Preserve the frame currently owned by Android's GATT stack and
+                // replace the older waiting frame. Realtime audio should stay fresh.
+                if (voiceTxWriteInFlight) voiceTxQueue.pollLast() else voiceTxQueue.pollFirst()
+            }
+            voiceTxQueue.addLast(frame)
         }
-        return if (sent) Result.success("BLE voice sent") else Result.failure(IllegalStateException("BLE voice write failed"))
+        return if (writeNextVoiceFrame(activeGatt, voice)) {
+            Result.success("BLE voice queued")
+        } else {
+            synchronized(this) { voiceTxQueue.remove(frame) }
+            Result.failure(IllegalStateException("BLE voice write failed"))
+        }
     }
 
     fun sendConversationMessageForward(
@@ -623,7 +639,12 @@ class EdgezBleClient(private val context: Context) {
                     return Result.success("BLE control TX complete")
                 }
             }
-            Thread.sleep(10)
+            try {
+                Thread.sleep(10)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return Result.failure(IllegalStateException("BLE control TX interrupted"))
+            }
         }
         return Result.failure(IllegalStateException("BLE control TX not complete after ${timeoutMs}ms"))
     }
@@ -670,15 +691,18 @@ class EdgezBleClient(private val context: Context) {
         if (isForward && !forwardEnabled) return false
         val rx = writeCharacteristic ?: return false
         val frame = synchronized(this) {
+            if (dataWriteInFlight) return true
             if (isForward) {
                 if (forwardTxWriteInFlight) return true
                 val nextFrame = forwardTxQueue.peekFirst() ?: return true
                 forwardTxWriteInFlight = true
+                dataWriteInFlight = true
                 nextFrame
             } else {
                 if (txWriteInFlight) return true
                 val nextFrame = txQueue.peekFirst() ?: return true
                 txWriteInFlight = true
+                dataWriteInFlight = true
                 nextFrame
             }
         }
@@ -701,6 +725,37 @@ class EdgezBleClient(private val context: Context) {
                 } else {
                     txWriteInFlight = false
                 }
+                dataWriteInFlight = false
+            }
+        }
+        return ok
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun writeNextVoiceFrame(
+        activeGatt: BluetoothGatt?,
+        writeCharacteristic: BluetoothGattCharacteristic?,
+    ): Boolean {
+        val gatt = activeGatt ?: return false
+        val voice = writeCharacteristic ?: return false
+        val frame = synchronized(this) {
+            if (dataWriteInFlight || voiceTxWriteInFlight) return true
+            val nextFrame = voiceTxQueue.peekFirst() ?: return true
+            voiceTxWriteInFlight = true
+            dataWriteInFlight = true
+            nextFrame
+        }
+        val ok = if (Build.VERSION.SDK_INT >= 33) {
+            gatt.writeCharacteristic(voice, frame, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE) == BluetoothGatt.GATT_SUCCESS
+        } else {
+            voice.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+            voice.value = frame
+            gatt.writeCharacteristic(voice)
+        }
+        if (!ok) {
+            synchronized(this) {
+                voiceTxWriteInFlight = false
+                dataWriteInFlight = false
             }
         }
         return ok
@@ -710,8 +765,11 @@ class EdgezBleClient(private val context: Context) {
     private fun clearTxQueue() {
         txQueue.clear()
         forwardTxQueue.clear()
+        voiceTxQueue.clear()
         txWriteInFlight = false
         forwardTxWriteInFlight = false
+        voiceTxWriteInFlight = false
+        dataWriteInFlight = false
     }
 
     private fun clearForwardState(log: Boolean) {
@@ -729,9 +787,14 @@ class EdgezBleClient(private val context: Context) {
     @SuppressLint("MissingPermission")
     private fun writeNextFrame(activeGatt: BluetoothGatt?): Boolean {
         val gatt = activeGatt ?: return false
+        if (synchronized(this) { dataWriteInFlight }) return true
         val controlRx = rxCharacteristic
         if (controlRx != null && synchronized(this) { !txWriteInFlight && txQueue.isNotEmpty() }) {
             return writeNextFrame(gatt, controlRx, isForward = false)
+        }
+        val voiceRx = voiceRxCharacteristic
+        if (voiceRx != null && synchronized(this) { !voiceTxWriteInFlight && voiceTxQueue.isNotEmpty() }) {
+            return writeNextVoiceFrame(gatt, voiceRx)
         }
         if (!forwardEnabled) return false
         val forwardRx = forwardRxCharacteristic
@@ -748,6 +811,14 @@ class EdgezBleClient(private val context: Context) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 val highPriorityRequested = gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
                 emitDebug("CONN high priority requested=$highPriorityRequested")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    gatt.setPreferredPhy(
+                        BluetoothDevice.PHY_LE_2M_MASK,
+                        BluetoothDevice.PHY_LE_2M_MASK,
+                        BluetoothDevice.PHY_OPTION_NO_PREFERRED,
+                    )
+                    emitDebug("CONN 2M PHY requested")
+                }
                 gatt.requestMtu(EDGEZ_BLE_REQUESTED_MTU)
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 rxCharacteristic = null
@@ -874,9 +945,18 @@ class EdgezBleClient(private val context: Context) {
                 }
                 return
             }
+            val isVoiceWrite = characteristic.uuid == voiceRxCharacteristic?.uuid
             val isForwardWrite = characteristic.uuid == forwardTxCharacteristic?.uuid && forwardEnabled
             synchronized(this@EdgezBleClient) {
-                if (isForwardWrite) {
+                dataWriteInFlight = false
+                if (isVoiceWrite) {
+                    voiceTxWriteInFlight = false
+                    if (status == BluetoothGatt.GATT_SUCCESS) {
+                        voiceTxQueue.pollFirst()
+                    } else {
+                        voiceTxQueue.clear()
+                    }
+                } else if (isForwardWrite) {
                     forwardTxWriteInFlight = false
                     if (status == BluetoothGatt.GATT_SUCCESS) {
                         forwardTxQueue.pollFirst()
@@ -893,15 +973,13 @@ class EdgezBleClient(private val context: Context) {
                 }
             }
             emitDebug("TX complete status=$status remaining=${synchronized(this@EdgezBleClient) {
-                if (isForwardWrite) forwardTxQueue.size else txQueue.size
-            }}")
-            if (status == BluetoothGatt.GATT_SUCCESS) {
-                if (isForwardWrite) {
-                    writeNextFrame(gatt, forwardRxCharacteristic, isForward = true)
-                } else {
-                    writeNextFrame(gatt, rxCharacteristic, isForward = false)
+                when {
+                    isVoiceWrite -> voiceTxQueue.size
+                    isForwardWrite -> forwardTxQueue.size
+                    else -> txQueue.size
                 }
-            }
+            }}")
+            writeNextFrame(gatt)
         }
     }
 
@@ -1057,7 +1135,7 @@ class EdgezBleClient(private val context: Context) {
         }
         val frame = ByteBuffer.allocate(EDGEZ_HEADER_LEN + payload.size).order(ByteOrder.LITTLE_ENDIAN)
             .put(EDGEZ_MAGIC_0).put(EDGEZ_MAGIC_1).putShort(payload.size.toShort()).put(payload).array()
-        frameListeners.forEach { it(frame) }
+        voiceFrameListeners.forEach { it(frame) }
     }
 
     private fun findMagicOffset(data: ByteArray, length: Int): Int {

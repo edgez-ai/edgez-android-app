@@ -81,6 +81,10 @@ class VoiceCallSession(
         reset()
     }
 
+    fun transportDisconnected() {
+        if (state.phase != VoiceCallPhase.IDLE) reset()
+    }
+
     fun receive(peer: HaLowUser, packet: VoiceCallPacket) {
         when (packet.type) {
             CALL_INVITE -> if (state.phase == VoiceCallPhase.IDLE) {
