@@ -85,7 +85,10 @@ private const val TAG_USERS = "EdgeZUsers"
 private const val HALOW_BROADCAST_NODE_48 = 0xffffffffffffL
 private const val HALOW_BROADCAST_NODE_32 = 0xffffffffL
 private const val LIBP2P_PSEUDO_NODE = 1L
-private const val VOICE_CHUNK_SEND_SPACING_MS = 120L
+// The firmware drains voice packets from its bounded HaLow TX queue. Keeping
+// the phone-side cadence at 40 ms prevents BLE bursts while preserving call
+// latency.
+private const val VOICE_CHUNK_SEND_SPACING_MS = 40L
 private const val ROUTE_BLE = "BLE"
 private const val ROUTE_BLE_FORWARD = "BLE_FORWARD"
 private const val ROUTE_LIBP2P = "LIBP2P"
