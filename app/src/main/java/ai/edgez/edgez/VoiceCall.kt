@@ -15,7 +15,7 @@ private const val CALL_SAMPLE_RATE = 8_000
 private const val TAG_VOICE_CALL = "EdgeZVoiceCall"
 private const val CALL_FRAME_MS = 40
 private const val CALL_SAMPLES_PER_FRAME = CALL_SAMPLE_RATE * CALL_FRAME_MS / 1_000
-private val CALL_MAGIC = byteArrayOf('E'.code.toByte(), 'V'.code.toByte(), 'C'.code.toByte(), '1'.code.toByte())
+private val CALL_MAGIC = byteArrayOf('E'.code.toByte(), 'V'.code.toByte(), 'C'.code.toByte(), '2'.code.toByte())
 
 private const val CALL_INVITE: Byte = 1
 private const val CALL_ACCEPT: Byte = 2
@@ -128,7 +128,7 @@ class VoiceCallSession(
                         offset += read
                     }
                     if (offset == pcm.size && state.phase == VoiceCallPhase.ACTIVE) {
-                        send(CALL_AUDIO, pcmToMuLaw(pcm)).onFailure {
+                        send(CALL_AUDIO, encodeImaAdpcm(pcm)).onFailure {
                             Log.w(TAG_VOICE_CALL, "TX audio failed", it)
                         }
                     } else if (offset <= 0) {
@@ -149,7 +149,11 @@ class VoiceCallSession(
             .setBufferSizeInBytes(CALL_SAMPLES_PER_FRAME * 8)
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build().also { it.play(); player = it }
-        track.write(muLawToPcm(audio), 0, audio.size, AudioTrack.WRITE_NON_BLOCKING)
+        val pcm = decodeImaAdpcm(audio, CALL_SAMPLES_PER_FRAME) ?: run {
+            Log.w(TAG_VOICE_CALL, "RX ADPCM frame malformed bytes=${audio.size}")
+            return
+        }
+        track.write(pcm, 0, pcm.size, AudioTrack.WRITE_NON_BLOCKING)
     }
 
     private fun reset() {
@@ -163,23 +167,80 @@ class VoiceCallSession(
     private fun publishState() = onState(state)
 }
 
-private fun pcmToMuLaw(samples: ShortArray): ByteArray = ByteArray(samples.size) { index ->
-    encodeMuLaw(samples[index])
+private val IMA_INDEX_TABLE = intArrayOf(-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8)
+private val IMA_STEP_TABLE = intArrayOf(
+    7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31,
+    34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 130, 143,
+    157, 173, 190, 209, 230, 253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658,
+    724, 796, 876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499,
+    2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630,
+    9493, 10442, 11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086,
+    29794, 32767,
+)
+
+/** Encodes one independently decodable 40 ms block: predictor, index, reserved, then 4-bit samples. */
+private fun encodeImaAdpcm(samples: ShortArray): ByteArray {
+    if (samples.isEmpty()) return ByteArray(0)
+    var predictor = samples[0].toInt()
+    val probeCount = minOf(samples.size - 1, 16)
+    val averageDelta = if (probeCount > 0) {
+        (1..probeCount).sumOf { kotlin.math.abs(samples[it].toInt() - samples[it - 1].toInt()) } / probeCount
+    } else {
+        0
+    }
+    var stepIndex = IMA_STEP_TABLE.indexOfFirst { it >= averageDelta }.let { if (it < 0) IMA_STEP_TABLE.lastIndex else it }
+    val output = ByteArray(4 + (samples.size - 1 + 1) / 2)
+    output[0] = predictor.toByte()
+    output[1] = (predictor shr 8).toByte()
+    output[2] = stepIndex.toByte()
+    output[3] = 0
+
+    for (sampleIndex in 1 until samples.size) {
+        val step = IMA_STEP_TABLE[stepIndex]
+        var difference = samples[sampleIndex].toInt() - predictor
+        var code = 0
+        if (difference < 0) {
+            code = 8
+            difference = -difference
+        }
+        var delta = step shr 3
+        if (difference >= step) { code = code or 4; difference -= step; delta += step }
+        if (difference >= step shr 1) { code = code or 2; difference -= step shr 1; delta += step shr 1 }
+        if (difference >= step shr 2) { code = code or 1; delta += step shr 2 }
+        predictor = (predictor + if (code and 8 != 0) -delta else delta).coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+        stepIndex = (stepIndex + IMA_INDEX_TABLE[code]).coerceIn(0, IMA_STEP_TABLE.lastIndex)
+
+        val nibbleIndex = sampleIndex - 1
+        val outputIndex = 4 + nibbleIndex / 2
+        output[outputIndex] = if (nibbleIndex and 1 == 0) {
+            code.toByte()
+        } else {
+            (output[outputIndex].toInt() or (code shl 4)).toByte()
+        }
+    }
+    return output
 }
 
-private fun encodeMuLaw(value: Short): Byte {
-    val sample = value.toInt()
-    val sign = if (sample < 0) 0x80 else 0
-    var magnitude = if (sample < 0) -sample else sample
-    magnitude = (magnitude + 132).coerceAtMost(32635)
-    var exponent = 7
-    var mask = 0x4000
-    while (exponent > 0 && magnitude and mask == 0) { exponent--; mask = mask shr 1 }
-    return (sign or (exponent shl 4) or ((magnitude shr (exponent + 3)) and 0x0f)).inv().toByte()
-}
+private fun decodeImaAdpcm(bytes: ByteArray, sampleCount: Int): ShortArray? {
+    if (sampleCount <= 0 || bytes.size < 4 + (sampleCount - 1 + 1) / 2) return null
+    var predictor = ((bytes[0].toInt() and 0xff) or (bytes[1].toInt() shl 8)).toShort().toInt()
+    var stepIndex = bytes[2].toInt() and 0xff
+    if (stepIndex > IMA_STEP_TABLE.lastIndex) return null
+    val output = ShortArray(sampleCount)
+    output[0] = predictor.toShort()
 
-private fun muLawToPcm(bytes: ByteArray): ShortArray = ShortArray(bytes.size) { index ->
-    val value = bytes[index].toInt().inv() and 0xff
-    val magnitude = (((value and 0x0f) shl 3) + 132) shl ((value shr 4) and 7)
-    (if (value and 0x80 != 0) 132 - magnitude else magnitude - 132).toShort()
+    for (sampleIndex in 1 until sampleCount) {
+        val nibbleIndex = sampleIndex - 1
+        val packed = bytes[4 + nibbleIndex / 2].toInt() and 0xff
+        val code = if (nibbleIndex and 1 == 0) packed and 0x0f else packed shr 4
+        val step = IMA_STEP_TABLE[stepIndex]
+        var delta = step shr 3
+        if (code and 4 != 0) delta += step
+        if (code and 2 != 0) delta += step shr 1
+        if (code and 1 != 0) delta += step shr 2
+        predictor = (predictor + if (code and 8 != 0) -delta else delta).coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+        stepIndex = (stepIndex + IMA_INDEX_TABLE[code]).coerceIn(0, IMA_STEP_TABLE.lastIndex)
+        output[sampleIndex] = predictor.toShort()
+    }
+    return output
 }

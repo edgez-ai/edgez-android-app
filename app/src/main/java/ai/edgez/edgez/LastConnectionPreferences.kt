@@ -6,6 +6,7 @@ import java.util.UUID
 
 private const val LAST_CONNECTION_PREFS = "edgez_connection"
 private const val KEY_LAST_SUCCESSFUL_CONNECTION = "last_successful_connection"
+private const val KEY_LAST_HALOW_NODE_ID = "last_halow_node_id"
 private const val KEY_MESH_COUNTRY = "mesh_country"
 private const val KEY_MESH_ID = "mesh_id"
 private const val KEY_MESH_PASSPHRASE = "mesh_passphrase"
@@ -69,6 +70,18 @@ class LastConnectionPreferences(context: Context) {
         if (connection == ActiveConnection.NONE) return
         prefs.edit()
             .putString(KEY_LAST_SUCCESSFUL_CONNECTION, connection.name)
+            .apply()
+    }
+
+    fun getLastHaLowNodeId(): Long? = prefs.getLong(KEY_LAST_HALOW_NODE_ID, 0L)
+        .and(0x0000ffffffffffffL)
+        .takeIf { it > 0x00000000ffffffffL && it != 0x0000ffffffffffffL }
+
+    fun setLastHaLowNodeId(nodeId: Long) {
+        val normalized = nodeId and 0x0000ffffffffffffL
+        if (normalized <= 0x00000000ffffffffL || normalized == 0x0000ffffffffffffL) return
+        prefs.edit()
+            .putLong(KEY_LAST_HALOW_NODE_ID, normalized)
             .apply()
     }
 

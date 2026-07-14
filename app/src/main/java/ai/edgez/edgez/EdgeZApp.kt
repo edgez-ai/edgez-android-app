@@ -790,7 +790,10 @@ fun EdgeZApp() {
     }
 
     fun outgoingFromNode(): Long? {
-        return haLowStatus?.macAddress?.takeIf { it != 0L }
+        return haLowStatus?.macAddress
+            ?.and(0x0000ffffffffffffL)
+            ?.takeIf { it > 0x00000000ffffffffL && it != HALOW_BROADCAST_NODE_48 }
+            ?: lastConnectionPreferences.getLastHaLowNodeId().takeIf { activeConnection != ActiveConnection.NONE }
             ?: LIBP2P_PSEUDO_NODE.takeIf { LIBP2P_RUNTIME_ENABLED && activeConnection == ActiveConnection.NONE && libp2pMeshConnected }
     }
 
@@ -1067,6 +1070,7 @@ fun EdgeZApp() {
             }
 
             if (status != null) {
+                status.macAddress.takeIf { it != 0L }?.let(lastConnectionPreferences::setLastHaLowNodeId)
                 val source = currentActiveConnection
                 if (source != ActiveConnection.NONE) {
                     triggerHaLowInitIfNeeded(source, status)
