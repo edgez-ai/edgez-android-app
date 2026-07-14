@@ -1075,7 +1075,8 @@ private fun SettingsContent(
             removeBleSettingsListener()
             removeUsbDebugListener()
             removeBleDebugListener()
-            executor.shutdownNow()
+            // OTA runs on this executor. Do not interrupt it when the user
+            // switches away from Settings; the BLE transfer must finish.
         }
     }
 
