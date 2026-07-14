@@ -2024,7 +2024,7 @@ AppDestination.MAP -> MapScreen(
             }
             AppDestination.PROFILE -> DashboardScreen(
                 users = haLowUsers.values.sortedByDescending { it.lastSeenMs },
-                licensed = haLowStatus?.licensed,
+                licensed = haLowStatus?.loadedLicense,
                 canSendOverMesh = canSendOverMesh,
                 sensorSamples = dashboardDeviceDisplays
                     .filterValues { it.showOnDashboard }

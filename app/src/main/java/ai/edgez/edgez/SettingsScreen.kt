@@ -1293,13 +1293,13 @@ private fun SettingsContent(
                                     style = MaterialTheme.typography.bodySmall,
                                 )
                             }
-                            if (activeConnection == ActiveConnection.BLE && haLowStatus != null) {
+                            if (activeConnection == ActiveConnection.BLE && haLowStatus?.loadedLicense != null) {
                                 Spacer(Modifier.height(6.dp))
                                 Row(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    val licensed = haLowStatus.licensed
+                                    val licensed = haLowStatus.loadedLicense == true
                                     Icon(
                                         painter = painterResource(
                                             if (licensed) R.drawable.ic_license_valid else R.drawable.ic_license_error,

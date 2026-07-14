@@ -296,7 +296,7 @@ private fun ProvisioningContent(
     val activity = context as? ComponentActivity
     val currentOnTransportConnectionChange by rememberUpdatedState(onTransportConnectionChange)
     val provisionBleReady = provisionMode && activeConnection == ActiveConnection.BLE && bleReady
-    val provisioningBlockedByLicense = haLowStatus?.licensed == false
+    val provisioningBlockedByLicense = haLowStatus?.loadedLicense == false
     val showProvisionDeviceSettings = provisionMode && provisionStep != ProvisionStep.SELECT_BLE && provisionBleReady
     val deviceMode = provisionDeviceMode != DEVICE_MODE_RELAY
     val showDeviceSettingsOnly = showProvisionDeviceSettings

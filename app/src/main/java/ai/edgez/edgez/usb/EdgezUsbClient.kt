@@ -100,6 +100,7 @@ data class HaLowInterfaceStatus(
     val firmwareVersion: String = "",
 ) {
     val isUsable: Boolean get() = supported && stackInitialized && linkUp && routeReady
+    val loadedLicense: Boolean? get() = licensed.takeIf { firmwareVersion.isNotBlank() }
 }
 
 data class TopologyPeer(
