@@ -15,10 +15,14 @@ import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.ParcelUuid
+import android.util.Log
 import androidx.core.content.ContextCompat
 import ai.edgez.edgez.NodeMapMarker
 import ai.edgez.edgez.DeviceSensorScriptConfig
@@ -46,7 +50,10 @@ private val EDGEZ_FORWARD_RX_UUID: UUID = UUID.fromString("0000fff3-0000-1000-80
 private val EDGEZ_FORWARD_TX_UUID: UUID = UUID.fromString("0000fff4-0000-1000-8000-00805f9b34fb")
 private val EDGEZ_OTA_UUID: UUID = UUID.fromString("0000fff5-0000-1000-8000-00805f9b34fb")
 private val EDGEZ_OTA_STATUS_UUID: UUID = UUID.fromString("0000fff6-0000-1000-8000-00805f9b34fb")
+private val EDGEZ_VOICE_RX_UUID: UUID = UUID.fromString("0000fff7-0000-1000-8000-00805f9b34fb")
+private val EDGEZ_VOICE_TX_UUID: UUID = UUID.fromString("0000fff8-0000-1000-8000-00805f9b34fb")
 private val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+private val EDGEZ_VOICE_PROTOCOL_MAGIC = byteArrayOf('V'.code.toByte(), 'C'.code.toByte(), 1)
 
 data class BleCandidate(
     val device: BluetoothDevice,
@@ -68,6 +75,7 @@ class EdgezBleClient(private val context: Context) {
     private val forwardRxBuffer = ByteArray(EDGEZ_MAX_FRAME * 2)
     private var forwardRxLen = 0
     private var scanCallback: ScanCallback? = null
+    private var pendingBondCandidate: BleCandidate? = null
     private var gatt: BluetoothGatt? = null
     private var rxCharacteristic: BluetoothGattCharacteristic? = null
     private var txCharacteristic: BluetoothGattCharacteristic? = null
@@ -75,6 +83,10 @@ class EdgezBleClient(private val context: Context) {
     private var forwardTxCharacteristic: BluetoothGattCharacteristic? = null
     private var otaCharacteristic: BluetoothGattCharacteristic? = null
     private var otaStatusCharacteristic: BluetoothGattCharacteristic? = null
+    private var voiceRxCharacteristic: BluetoothGattCharacteristic? = null
+    private var voiceTxCharacteristic: BluetoothGattCharacteristic? = null
+    private val notificationDescriptors = ArrayDeque<BluetoothGattDescriptor>()
+    private var notificationDescriptorWriteInFlight = false
     private val otaWriteLock = Object()
     private var otaWriteStatus: Int? = null
     private var negotiatedMtu = 23
@@ -83,6 +95,38 @@ class EdgezBleClient(private val context: Context) {
     private var txWriteInFlight = false
     private var forwardTxWriteInFlight = false
     private var forwardEnabled = false
+
+    private val bondStateReceiver = object : BroadcastReceiver() {
+        @SuppressLint("MissingPermission")
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != BluetoothDevice.ACTION_BOND_STATE_CHANGED) return
+            val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE) ?: return
+            val candidate = pendingBondCandidate ?: return
+            if (device.address != candidate.device.address) return
+
+            when (intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.BOND_NONE)) {
+                BluetoothDevice.BOND_BONDED -> {
+                    pendingBondCandidate = null
+                    emitDebug("BOND complete ${candidate.label}")
+                    connectGatt(candidate)
+                }
+                BluetoothDevice.BOND_NONE -> {
+                    pendingBondCandidate = null
+                    emitDebug("BOND failed or canceled ${candidate.label}")
+                }
+                BluetoothDevice.BOND_BONDING -> emitDebug("BOND awaiting PIN ${candidate.label}")
+            }
+        }
+    }
+
+    init {
+        val filter = IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+        if (Build.VERSION.SDK_INT >= 33) {
+            context.registerReceiver(bondStateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            context.registerReceiver(bondStateReceiver, filter)
+        }
+    }
 
     fun requiredPermissions(): Array<String> {
         return if (Build.VERSION.SDK_INT >= 31) {
@@ -113,7 +157,9 @@ class EdgezBleClient(private val context: Context) {
 
         return runCatching {
             writeOtaPacket(otaPacket(OTA_BEGIN, totalSize))
-            val chunkSize = (negotiatedMtu - 3 - OTA_DATA_HEADER_SIZE).coerceIn(20, 480)
+            // The ESP32 NimBLE transport uses 255-byte ACL buffers. Keep each encrypted
+            // ATT write within one buffer rather than relying on long-write reassembly.
+            val chunkSize = (negotiatedMtu - 3 - OTA_DATA_HEADER_SIZE).coerceIn(20, OTA_DATA_MAX_CHUNK_SIZE)
             val buffer = ByteArray(chunkSize)
             var sent = 0
             while (sent < totalSize) {
@@ -253,9 +299,24 @@ class EdgezBleClient(private val context: Context) {
         }
 
         close()
+        if (candidate.device.bondState != BluetoothDevice.BOND_BONDED) {
+            pendingBondCandidate = candidate
+            emitDebug("BOND start ${candidate.label}")
+            if (!candidate.device.createBond()) {
+                pendingBondCandidate = null
+                return Result.failure(IllegalStateException("BLE pairing could not start"))
+            }
+            return Result.success("Enter the device PIN in the Android pairing prompt")
+        }
+
+        connectGatt(candidate)
+        return Result.success("Connecting to ${candidate.label}")
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun connectGatt(candidate: BleCandidate) {
         emitDebug("CONNECT ${candidate.label}")
         gatt = candidate.device.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE)
-        return Result.success("Connecting to ${candidate.label}")
     }
 
     @SuppressLint("MissingPermission")
@@ -390,6 +451,50 @@ class EdgezBleClient(private val context: Context) {
             return Result.failure(error)
         }
         return sendFrame(packet)
+    }
+
+    /** Sends one realtime voice NetworkPacket on the dedicated FFF7 media characteristic. */
+    fun sendVoiceCallMessage(
+        message: ConversationMessage,
+        from: Long,
+        to: Long,
+        maxHop: Int = 0,
+        sequence: Int = 1,
+        messageIdHigh: Long = 0,
+        messageIdLow: Long = 0,
+        userIdHigh: Long,
+        userIdLow: Long,
+        groupIdHigh: Long = 0,
+        groupIdLow: Long = 0,
+    ): Result<String> {
+        val packet = runCatching {
+            EdgezUsbControlProto.encodeConversationMessage(
+                message, from, to, PacketMime.VOICE, maxHop, sequence, messageIdHigh, messageIdLow,
+                userIdHigh, userIdLow, groupIdHigh, groupIdLow,
+            )
+        }.getOrElse { return Result.failure(it) }
+        return sendVoicePacket(packet)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun sendVoicePacket(packet: ByteArray): Result<String> {
+        val activeGatt = gatt ?: return Result.failure(IllegalStateException("BLE is not connected"))
+        val voice = voiceRxCharacteristic ?: return Result.failure(
+            IllegalStateException("BLE voice characteristic FFF7 is unavailable; flash the FFF7/FFF8 firmware and reconnect"),
+        )
+        val frame = EDGEZ_VOICE_PROTOCOL_MAGIC + packet
+        val maxVoiceFrame = minOf(negotiatedMtu - 3, EDGEZ_MAX_PAYLOAD)
+        if (frame.size > maxVoiceFrame) {
+            return Result.failure(IllegalArgumentException("Voice packet too large: ${frame.size}/$maxVoiceFrame"))
+        }
+        val sent = if (Build.VERSION.SDK_INT >= 33) {
+            activeGatt.writeCharacteristic(voice, frame, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE) == BluetoothGatt.GATT_SUCCESS
+        } else {
+            voice.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+            voice.value = frame
+            activeGatt.writeCharacteristic(voice)
+        }
+        return if (sent) Result.success("BLE voice sent") else Result.failure(IllegalStateException("BLE voice write failed"))
     }
 
     fun sendConversationMessageForward(
@@ -647,6 +752,10 @@ class EdgezBleClient(private val context: Context) {
                 txCharacteristic = null
                 otaCharacteristic = null
                 otaStatusCharacteristic = null
+                voiceRxCharacteristic = null
+                voiceTxCharacteristic = null
+                notificationDescriptors.clear()
+                notificationDescriptorWriteInFlight = false
                 negotiatedMtu = 23
                 setForwardingEnabled(false)
                 rxLen = 0
@@ -668,6 +777,12 @@ class EdgezBleClient(private val context: Context) {
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             emitDebug("SERVICES status=$status")
             val service: BluetoothGattService? = gatt.getService(EDGEZ_SERVICE_UUID)
+            Log.i(
+                "EdgezBleClient",
+                "EdgeZ service characteristics=" + service?.characteristics?.joinToString {
+                    "${it.uuid} properties=0x${it.properties.toString(16)}"
+                },
+            )
             val rx = service?.getCharacteristic(EDGEZ_RX_UUID)
             val tx = service?.getCharacteristic(EDGEZ_TX_UUID)
             if (rx == null || tx == null) {
@@ -679,32 +794,24 @@ class EdgezBleClient(private val context: Context) {
             txCharacteristic = tx
             otaCharacteristic = service?.getCharacteristic(EDGEZ_OTA_UUID)
             otaStatusCharacteristic = service?.getCharacteristic(EDGEZ_OTA_STATUS_UUID)
-            gatt.setCharacteristicNotification(tx, true)
-            val descriptor = tx.getDescriptor(CCCD_UUID)
-            if (descriptor != null) {
-                if (Build.VERSION.SDK_INT >= 33) {
-                    gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
-                } else {
-                    descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                    gatt.writeDescriptor(descriptor)
-                }
+            voiceRxCharacteristic = service?.getCharacteristic(EDGEZ_VOICE_RX_UUID)
+            voiceTxCharacteristic = service?.getCharacteristic(EDGEZ_VOICE_TX_UUID)
+            if (voiceRxCharacteristic == null || voiceTxCharacteristic == null) {
+                val detail = "SERVICE voice missing rx=${voiceRxCharacteristic != null} tx=${voiceTxCharacteristic != null}; reconnect after clearing the Android GATT cache"
+                emitDebug(detail)
+                Log.w("EdgezBleClient", detail)
             }
+            notificationDescriptors.clear()
+            notificationDescriptorWriteInFlight = false
+            queueNotification(gatt, tx)
+            voiceTxCharacteristic?.let { queueNotification(gatt, it) }
             if (forwardEnabled) {
                 val forwardRx = service?.getCharacteristic(EDGEZ_FORWARD_RX_UUID)
                 val forwardTx = service?.getCharacteristic(EDGEZ_FORWARD_TX_UUID)
                 forwardRxCharacteristic = forwardRx
                 forwardTxCharacteristic = forwardTx
                 if (forwardRx != null && forwardTx != null) {
-                    gatt.setCharacteristicNotification(forwardTx, true)
-                    val forwardDescriptor = forwardTx.getDescriptor(CCCD_UUID)
-                    if (forwardDescriptor != null) {
-                        if (Build.VERSION.SDK_INT >= 33) {
-                            gatt.writeDescriptor(forwardDescriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
-                        } else {
-                            forwardDescriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                            gatt.writeDescriptor(forwardDescriptor)
-                        }
-                    }
+                    queueNotification(gatt, forwardTx)
                 } else {
                     emitDebug("SERVICE forward missing rx=${forwardRx != null} tx=${forwardTx != null}")
                     clearForwardState(log = false)
@@ -713,18 +820,15 @@ class EdgezBleClient(private val context: Context) {
                 clearForwardState(log = false)
                 emitDebug("SERVICE forward disabled by settings")
             }
-            otaStatusCharacteristic?.let { otaStatus ->
-                gatt.setCharacteristicNotification(otaStatus, true)
-                otaStatus.getDescriptor(CCCD_UUID)?.let { descriptor ->
-                    if (Build.VERSION.SDK_INT >= 33) {
-                        gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
-                    } else {
-                        descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                        gatt.writeDescriptor(descriptor)
-                    }
-                }
-            }
+            otaStatusCharacteristic?.let { queueNotification(gatt, it) }
+            writeNextNotificationDescriptor(gatt)
             emitDebug("SERVICE ready")
+        }
+
+        override fun onDescriptorWrite(gatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
+            notificationDescriptorWriteInFlight = false
+            if (status != BluetoothGatt.GATT_SUCCESS) emitDebug("CCCD write failed status=$status uuid=${descriptor.characteristic.uuid}")
+            writeNextNotificationDescriptor(gatt)
         }
 
         override fun onCharacteristicChanged(
@@ -734,6 +838,7 @@ class EdgezBleClient(private val context: Context) {
         ) {
             when (characteristic.uuid) {
                 txCharacteristic?.uuid -> handleBytes(value)
+                voiceTxCharacteristic?.uuid -> handleVoiceBytes(value)
                 if (forwardEnabled) forwardTxCharacteristic?.uuid else null -> handleForwardBytes(value)
                 otaStatusCharacteristic?.uuid -> emitDebug("OTA status=${value.joinToString("") { "%02x".format(it) }}")
                 else -> emitDebug("RX unknown char=${characteristic.uuid}")
@@ -748,6 +853,7 @@ class EdgezBleClient(private val context: Context) {
             val value = characteristic.value ?: return
             when (characteristic.uuid) {
                 txCharacteristic?.uuid -> handleBytes(value)
+                voiceTxCharacteristic?.uuid -> handleVoiceBytes(value)
                 if (forwardEnabled) forwardTxCharacteristic?.uuid else null -> handleForwardBytes(value)
                 otaStatusCharacteristic?.uuid -> emitDebug("OTA status=${value.joinToString("") { "%02x".format(it) }}")
                 else -> emitDebug("RX unknown char=${characteristic.uuid}")
@@ -803,6 +909,7 @@ class EdgezBleClient(private val context: Context) {
         const val OTA_END: Byte = 3
         const val OTA_ABORT: Byte = 4
         const val OTA_DATA_HEADER_SIZE = 5
+        const val OTA_DATA_MAX_CHUNK_SIZE = 220
         const val OTA_WRITE_TIMEOUT_MS = 15_000L
     }
 
@@ -908,6 +1015,47 @@ class EdgezBleClient(private val context: Context) {
 
     private fun emitDebug(line: String) {
         debugListeners.forEach { it(line) }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun queueNotification(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
+        gatt.setCharacteristicNotification(characteristic, true)
+        characteristic.getDescriptor(CCCD_UUID)?.let { notificationDescriptors.addLast(it) }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun writeNextNotificationDescriptor(gatt: BluetoothGatt) {
+        if (notificationDescriptorWriteInFlight) return
+        if (notificationDescriptors.isEmpty()) return
+        val descriptor: BluetoothGattDescriptor = notificationDescriptors.removeFirst()
+        notificationDescriptorWriteInFlight = true
+        val started = if (Build.VERSION.SDK_INT >= 33) {
+            gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) == BluetoothGatt.GATT_SUCCESS
+        } else {
+            descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+            gatt.writeDescriptor(descriptor)
+        }
+        if (!started) {
+            notificationDescriptorWriteInFlight = false
+            emitDebug("CCCD write start failed uuid=${descriptor.characteristic.uuid}")
+            writeNextNotificationDescriptor(gatt)
+        }
+    }
+
+    private fun handleVoiceBytes(bytes: ByteArray) {
+        if (bytes.size <= EDGEZ_VOICE_PROTOCOL_MAGIC.size ||
+            !bytes.copyOfRange(0, EDGEZ_VOICE_PROTOCOL_MAGIC.size).contentEquals(EDGEZ_VOICE_PROTOCOL_MAGIC)) {
+            emitDebug("RX voice invalid frame len=${bytes.size}")
+            return
+        }
+        val payload = bytes.copyOfRange(EDGEZ_VOICE_PROTOCOL_MAGIC.size, bytes.size)
+        if (payload.size > EDGEZ_MAX_PAYLOAD) {
+            emitDebug("RX voice too large len=${payload.size}")
+            return
+        }
+        val frame = ByteBuffer.allocate(EDGEZ_HEADER_LEN + payload.size).order(ByteOrder.LITTLE_ENDIAN)
+            .put(EDGEZ_MAGIC_0).put(EDGEZ_MAGIC_1).putShort(payload.size.toShort()).put(payload).array()
+        frameListeners.forEach { it(frame) }
     }
 
     private fun findMagicOffset(data: ByteArray, length: Int): Int {

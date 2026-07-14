@@ -60,6 +60,10 @@ fun ConversationScreen(
     onSendMessage: (String) -> Result<String>,
     onSendVoiceMessage: (ByteArray, Long, String, Int) -> Result<String>,
     onResendVoiceMessage: (ConversationEntry) -> Result<String>,
+    callState: VoiceCallState,
+    onStartCall: () -> Result<Unit>,
+    onAcceptCall: () -> Result<Unit>,
+    onEndCall: () -> Unit,
     onLoadOlderMessages: () -> Unit,
 ) {
     val userKey = user.userUuid.ifBlank { user.nodeNum.toString() }
@@ -149,6 +153,35 @@ fun ConversationScreen(
                             )
                         }
                     }
+                    if (callState.phase == VoiceCallPhase.IDLE) {
+                        Button(enabled = canSendVoice, onClick = {
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                                audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                status = "Allow microphone access, then tap Call"
+                            } else {
+                                val result = onStartCall()
+                                status = result.exceptionOrNull()?.message ?: "Calling ${user.displayName}"
+                            }
+                        }) { Text("Call") }
+                    }
+                }
+            }
+
+            if (callState.peer?.nodeNum == user.nodeNum && callState.phase != VoiceCallPhase.IDLE) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Call ${callState.phase.name.lowercase()}", modifier = Modifier.weight(1f))
+                    if (callState.phase == VoiceCallPhase.INCOMING) {
+                        Button(onClick = {
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                                audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                status = "Allow microphone access, then tap Answer"
+                            } else {
+                                val result = onAcceptCall()
+                                status = result.exceptionOrNull()?.message ?: "Call connected"
+                            }
+                        }) { Text("Answer") }
+                    }
+                    Button(onClick = onEndCall) { Text("Hang up") }
                 }
             }
 
@@ -432,6 +465,10 @@ private fun ConversationPreview() {
             onSendMessage = { Result.success("Sent") },
             onSendVoiceMessage = { _, _, _, _ -> Result.success("Voice sent") },
             onResendVoiceMessage = { Result.success("Voice resent") },
+            callState = VoiceCallState(),
+            onStartCall = { Result.success(Unit) },
+            onAcceptCall = { Result.success(Unit) },
+            onEndCall = {},
             onLoadOlderMessages = {},
         )
     }

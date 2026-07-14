@@ -333,6 +333,14 @@ fun EdgeZApp() {
     val beaconExecutor = remember { Executors.newSingleThreadExecutor() }
     val messageAckExecutor = remember { Executors.newSingleThreadExecutor() }
     val libp2pExecutor = remember { Executors.newSingleThreadExecutor() }
+    val voiceCallTransport = remember { AtomicReference<(HaLowUser, ByteArray) -> Result<Unit>>({ _, _ -> Result.failure(IllegalStateException("Voice call transport is not ready")) }) }
+    var voiceCallState by remember { mutableStateOf(VoiceCallState()) }
+    val voiceCall = remember {
+        VoiceCallSession(
+            onSend = { peer, payload -> voiceCallTransport.get().invoke(peer, payload) },
+            onState = { next -> mainHandler.post { voiceCallState = next } },
+        )
+    }
     val pendingHaLowInitKey = remember { AtomicReference<String?>(null) }
     val pendingVoiceMessages = remember { mutableMapOf<String, PendingVoiceMessage>() }
     val pendingBinaryMessages = remember { mutableMapOf<String, PendingConversationChunk>() }
@@ -794,6 +802,28 @@ fun EdgeZApp() {
         }
     }
 
+    fun sendVoiceCallFrame(peer: HaLowUser, payload: ByteArray): Result<Unit> = runCatching {
+        val identity = lastConnectionPreferences.getOrCreateUserIdentity()
+        val from = requireNotNull(outgoingFromNode()) { "Local HaLow node id unavailable" }
+        val groupId = conversationGroupId(peer)
+        val messageId = newMessageUuid()
+        val encrypted = encryptConversationPayload(identity, peer, payload, from,
+            groupIdHigh = groupId?.high ?: 0L, groupIdLow = groupId?.low ?: 0L)
+        val to = outgoingToNode(peer)
+        val maxHop = lastConnectionPreferences.getMeshMaxHop()
+        when (activeConnection) {
+            ActiveConnection.USB -> usbClient.sendConversationMessage(encrypted, from, to, PacketMime.VOICE, maxHop,
+                messageIdHigh = messageId.high, messageIdLow = messageId.low, userIdHigh = identity.userIdHigh, userIdLow = identity.userIdLow,
+                groupIdHigh = groupId?.high ?: 0L, groupIdLow = groupId?.low ?: 0L)
+            ActiveConnection.BLE -> bleClient.sendVoiceCallMessage(encrypted, from, to, maxHop,
+                messageIdHigh = messageId.high, messageIdLow = messageId.low, userIdHigh = identity.userIdHigh, userIdLow = identity.userIdLow,
+                groupIdHigh = groupId?.high ?: 0L, groupIdLow = groupId?.low ?: 0L)
+            ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+        }.getOrThrow()
+    }.map { Unit }
+
+    voiceCallTransport.set(::sendVoiceCallFrame)
+
     DisposableEffect(Unit) {
         connectionPrefs.registerOnSharedPreferenceChangeListener(preferenceListener)
         EdgeZBeaconRunner.attach(
@@ -1198,6 +1228,10 @@ fun EdgeZApp() {
                                                     groupIdHigh = groupMessageId?.high ?: 0L,
                                                     groupIdLow = groupMessageId?.low ?: 0L,
                                                 )
+                                                decodeVoiceCallPacket(payload)?.let { callPacket ->
+                                                    voiceCall.receive(resolvedSenderUser, callPacket)
+                                                    return@runCatching null
+                                                }
                                                 val chunk = requireNotNull(decodeVoiceChunk(payload)) { "Voice chunk is malformed" }
                                                 val key = "${senderNodeNum}:${chunk.groupId}"
                                                 val pending = pendingVoiceMessages.getOrPut(key) {
@@ -1766,6 +1800,10 @@ AppDestination.MAP -> MapScreen(
                             messages = conversations[conversationUserKey] ?: emptyList(),
                             onBack = { selectedConversationUser = null },
                             onLoadOlderMessages = { loadOlderMessages(conversationUser) },
+                            callState = voiceCallState,
+                            onStartCall = { voiceCall.start(conversationUser) },
+                            onAcceptCall = { voiceCall.accept() },
+                            onEndCall = { voiceCall.end() },
                         onSendMessage = onSend@{ text ->
                             val identity = lastConnectionPreferences.getOrCreateUserIdentity()
                             val fromNode = outgoingFromNode()
