@@ -33,6 +33,7 @@ private const val KEY_DEVICE_GEOFENCES = "device_geofences"
 private const val KEY_SELECTED_DEVICE_GEOFENCE = "selected_device_geofence"
 private const val KEY_DASHBOARD_WIDGET_ORDER = "dashboard_widget_order"
 private const val DEFAULT_MESH_ID = "edgez"
+private const val DEFAULT_MESH_PASSPHRASE = "edgez123"
 private const val DEFAULT_MESH_MAX_HOP = 2
 private const val DEFAULT_MESH_BANDWIDTH_MHZ = 1
 private const val DEFAULT_MESH_FREQUENCY_KHZ = 915500
@@ -118,7 +119,8 @@ class LastConnectionPreferences(context: Context) {
 
     fun getMeshId(): String = prefs.getString(KEY_MESH_ID, DEFAULT_MESH_ID) ?: DEFAULT_MESH_ID
 
-    fun getMeshPassphrase(): String = prefs.getString(KEY_MESH_PASSPHRASE, "") ?: ""
+    fun getMeshPassphrase(): String = prefs.getString(KEY_MESH_PASSPHRASE, DEFAULT_MESH_PASSPHRASE)
+        ?: DEFAULT_MESH_PASSPHRASE
 
     fun getMeshCountry(): String = normalizeMeshCountry(prefs.getString(KEY_MESH_COUNTRY, "US"))
 
