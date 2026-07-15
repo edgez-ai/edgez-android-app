@@ -1055,7 +1055,8 @@ fun EdgeZApp() {
                 )
             } == true
 
-            if (status == null && user == null && !rawBinaryPacket && !conversationAck) return
+            if (status == null && user == null && !rawBinaryPacket && !conversationAck &&
+                message?.topologyPeers.isNullOrEmpty()) return
             if (message != null && (conversationMessage != null || conversationAck || user != null || rawBinaryPacket)) {
                 if (!shouldProcessForwardedPacket(message, message.hop)) {
                     Log.d(TAG_USERS, "drop duplicate frame route=$route messageId=${formatMessageUuid(message.messageIdHigh, message.messageIdLow)}")
@@ -1106,6 +1107,13 @@ fun EdgeZApp() {
                     if (status != null) {
                         haLowStatus = status
                         EdgeZBeaconRunner.setHaLowStatus(status)
+                    }
+                    if (message != null && message.topologyPeers.isNotEmpty()) {
+                        edgeZDatabase.upsertTopology(
+                            message.from,
+                            message.topologyPeers,
+                            System.currentTimeMillis(),
+                        )
                     }
                     if (user != null) {
                         val previousUser = haLowUsers.values.firstOrNull { isSameConversationUser(it, user) }

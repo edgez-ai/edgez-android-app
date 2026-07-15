@@ -40,7 +40,7 @@ const val EDGEZ_MAGIC_0 = 'E'.code.toByte()
 const val EDGEZ_MAGIC_1 = 'Z'.code.toByte()
 const val EDGEZ_HEADER_LEN = 4
 const val EDGEZ_MAX_PAYLOAD = 512
-const val EDGEZ_NETWORK_PACKET_MAX_PAYLOAD = 350
+const val EDGEZ_NETWORK_PACKET_MAX_PAYLOAD = 420
 private const val SCRIPT_CONFIG_CHUNK_SIZE = 220
 private const val BEACON_AES_GCM_TAG_BITS = 128
 private const val BEACON_AES_GCM_NONCE_SIZE = 12
@@ -309,6 +309,7 @@ data class NetworkPacket(
     val halowStatus: HaLowInterfaceStatus? = null,
     val init: HaLowInitConfig? = null,
     val deviceSettings: DeviceSettings? = null,
+    val topologyPeers: List<TopologyPeer> = emptyList(),
 ) {
     val conversationMessage: ConversationMessage?
         get() = if (mime != PacketMime.UNSPECIFIED) {
@@ -341,7 +342,8 @@ data class NetworkPacket(
             beaconRaw == other.beaconRaw &&
             halowStatus == other.halowStatus &&
             init == other.init &&
-            deviceSettings == other.deviceSettings
+            deviceSettings == other.deviceSettings &&
+            topologyPeers == other.topologyPeers
     }
 
     override fun hashCode(): Int {
@@ -365,6 +367,7 @@ data class NetworkPacket(
         result = 31 * result + (halowStatus?.hashCode() ?: 0)
         result = 31 * result + (init?.hashCode() ?: 0)
         result = 31 * result + (deviceSettings?.hashCode() ?: 0)
+        result = 31 * result + topologyPeers.hashCode()
         return result
     }
 }
@@ -559,9 +562,10 @@ object EdgezUsbControlProto {
             marker,
         )
         return encodeNetworkPacketBuilder(
+            operation = UsbControl.Operation.BROADCAST,
             userIdHigh = userIdHigh,
             userIdLow = userIdLow,
-        ).setBeacon(beacon).build().toByteArray()
+        ).setPayload(ByteString.copyFromUtf8(beacon)).build().toByteArray()
     }
 
     fun encodeStatusRequest(): ByteArray {
@@ -683,7 +687,7 @@ object EdgezUsbControlProto {
             "NetworkPacket payload too large: ${conversationPayload.size}/$EDGEZ_NETWORK_PACKET_MAX_PAYLOAD"
         }
 
-        return encodeNetworkPacketBuilder(
+        val packet = encodeNetworkPacketBuilder(
             messageIdHigh = messageIdHigh,
             messageIdLow = messageIdLow,
             from = from,
@@ -695,7 +699,11 @@ object EdgezUsbControlProto {
             mime = mime,
             maxHop = maxHop,
             sequence = sequence,
-        ).setPayload(ByteString.copyFrom(conversationPayload)).build().toByteArray()
+        )
+        packet.setMsg(packet.msg.toBuilder()
+            .setPayload(ByteString.copyFrom(conversationPayload))
+            .build())
+        return packet.build().toByteArray()
     }
 
     fun encodeConversationAck(
@@ -770,12 +778,17 @@ object EdgezUsbControlProto {
             return null
         }
 
-        val packetPayload = if (packet.bodyCase == UsbControl.NetworkPacket.BodyCase.PAYLOAD) {
-            packet.payload.toByteArray()
+        val messageBody = if (packet.bodyCase == UsbControl.NetworkPacket.BodyCase.MSG) packet.msg else null
+        val packetPayload = if (messageBody != null) {
+            messageBody.payload.toByteArray()
         } else {
             ByteArray(0)
         }
-        val beaconRaw = if (packet.bodyCase == UsbControl.NetworkPacket.BodyCase.BEACON) packet.beacon else ""
+        val beaconRaw = if (packet.bodyCase == UsbControl.NetworkPacket.BodyCase.PAYLOAD) {
+            packet.payload.toStringUtf8()
+        } else {
+            ""
+        }
         val beacon = if (beaconRaw.isNotBlank()) {
             decodeBeaconString(beaconRaw.toByteArray(StandardCharsets.UTF_8), meshPassphrase)
         } else {
@@ -796,27 +809,33 @@ object EdgezUsbControlProto {
         } else {
             null
         }
+        val topologyPeers = if (packet.bodyCase == UsbControl.NetworkPacket.BodyCase.REPORT) {
+            packet.report.peersList.map { TopologyPeer(nodeNum = it.id, encodedRssi = it.rssi) }
+        } else {
+            emptyList()
+        }
 
         return NetworkPacket(
-            messageIdHigh = packet.messageIdHigh,
-            messageIdLow = packet.messageIdLow,
+            messageIdHigh = messageBody?.messageIdHigh ?: 0,
+            messageIdLow = messageBody?.messageIdLow ?: 0,
             from = packet.from,
             to = packet.to,
             operation = packet.operationValue,
             interfaceId = packet.interfaceValue,
-            sequence = packet.sequence,
-            userHigh = packet.userHigh,
-            userLow = packet.userLow,
-            groupIdHigh = packet.groupIdHigh,
-            groupIdLow = packet.groupIdLow,
-            mime = PacketMime.fromWireValue(packet.mimeValue),
-            maxHop = packet.maxHop,
+            sequence = messageBody?.sequence ?: 0,
+            userHigh = 0,
+            userLow = 0,
+            groupIdHigh = messageBody?.groupIdHigh ?: 0,
+            groupIdLow = messageBody?.groupIdLow ?: 0,
+            mime = PacketMime.fromWireValue(messageBody?.mimeValue ?: 0),
+            maxHop = 0,
             payload = packetPayload,
             beacon = beacon,
             beaconRaw = beaconRaw,
             halowStatus = halowStatus,
             init = init,
             deviceSettings = deviceSettings,
+            topologyPeers = topologyPeers,
         )
     }
 
@@ -894,6 +913,7 @@ object EdgezUsbControlProto {
         }
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun encodeNetworkPacketBuilder(
         operation: UsbControl.Operation = UsbControl.Operation.REQUEST,
         messageIdHigh: Long = 0,
@@ -910,28 +930,26 @@ object EdgezUsbControlProto {
     ): UsbControl.NetworkPacket.Builder {
         val generatedId = if (messageIdHigh == 0L && messageIdLow == 0L) newMessageId() else messageIdHigh to messageIdLow
         val builder = UsbControl.NetworkPacket.newBuilder()
-            .setMessageIdHigh(generatedId.first)
-            .setMessageIdLow(generatedId.second)
             .setOperation(operation)
             .setInterface(UsbControl.Interface.HALOW)
-            .setUserHigh(userIdHigh)
-            .setUserLow(userIdLow)
-            .setGroupIdHigh(groupIdHigh)
-            .setGroupIdLow(groupIdLow)
         if (from != 0L) {
             builder.setFrom(from)
         }
         if (to != 0L) {
             builder.setTo(to)
         }
-        if (mime != PacketMime.UNSPECIFIED) {
-            builder.setMime(mime.toProtoMime())
-        }
-        if (maxHop > 0) {
-            builder.setMaxHop(maxHop.coerceIn(0, 255))
-        }
-        if (sequence > 0) {
-            builder.setSequence(sequence)
+        if (messageIdHigh != 0L || messageIdLow != 0L ||
+            mime != PacketMime.UNSPECIFIED || sequence > 0 ||
+            operation == UsbControl.Operation.ACKNOWLEDGE) {
+            val message = UsbControl.MessageBody.newBuilder()
+                .setMessageIdHigh(generatedId.first)
+                .setMessageIdLow(generatedId.second)
+                .setSequence(sequence.coerceAtLeast(0))
+                .setMime(mime.toProtoMime())
+                .setGroupIdHigh(groupIdHigh)
+                .setGroupIdLow(groupIdLow)
+                .build()
+            builder.setMsg(message)
         }
         return builder
     }
@@ -960,7 +978,7 @@ object EdgezUsbControlProto {
             .setUserPublicKey(ByteString.copyFrom(userPublicKey.copyOf(minOf(userPublicKey.size, 32))))
             .setMarker(NodeMapMarker.fromId(normalizedMarker).toProtoMarkerColor())
         if (latitude != null && longitude != null) {
-            beacon.setAttitude(latitude.toFloat())
+            beacon.setLatitude(latitude.toFloat())
             beacon.setLongitude(longitude.toFloat())
         }
         val builtBeacon = beacon.build()
@@ -1129,37 +1147,30 @@ object EdgezUsbControlProto {
             userIdLow = userIdLow,
             userName = decodedUserName.name,
             userPublicKey = userPublicKey.toByteArray(),
-            latitude = attitude.toDouble().takeIf { attitude != 0f },
+            latitude = latitude.toDouble().takeIf { latitude != 0f },
             longitude = longitude.toDouble().takeIf { longitude != 0f },
             locationTimestampMs = 0,
             marker = decodedUserName.marker,
             deviceType = EdgeZDeviceType.fromProtoValue(deviceTypeValue),
             geoFence = if (hasGeoFence()) geoFence.toAppGeoFence() else null,
             sleeping = sleeping,
-            sensorData = if (hasSensorData()) sensorData.toAppSensorData() else null,
-            peers = peersList.map { TopologyPeer(nodeNum = it.id, encodedRssi = it.rssi) },
+            sensorData = sensorDataList.toAppSensorData(),
+            peers = emptyList(),
         )
     }
 
-    private fun UsbControl.SensorData.toAppSensorData(): EdgeZSensorData? {
-        val binaryLengthBytes = toByteArray().size
-        val hasNumericValues = latitude != 0f ||
-            longitude != 0f ||
-            altitude != 0f ||
-            temperature != 0f ||
-            humidity != 0f ||
-            pressure != 0f ||
-            vibrationAverage != 0f
-        if (!hasNumericValues) return null
+    private fun List<UsbControl.SensorData>.toAppSensorData(): EdgeZSensorData? {
+        if (isEmpty()) return null
+        fun value(type: UsbControl.SensorType): Double? = firstOrNull { it.type == type }
+            ?.takeIf { it.valueCase == UsbControl.SensorData.ValueCase.FLOAT_VALUE }
+            ?.floatValue
+            ?.toDouble()
         return EdgeZSensorData(
-            latitude = latitude.toDouble().takeIf { latitude != 0f },
-            longitude = longitude.toDouble().takeIf { longitude != 0f },
-            altitude = altitude.toDouble().takeIf { altitude != 0f },
-            temperature = temperature.toDouble().takeIf { temperature != 0f },
-            humidity = humidity.toDouble().takeIf { humidity != 0f },
-            pressure = pressure.toDouble().takeIf { pressure != 0f },
-            vibrationAverage = vibrationAverage.toDouble().takeIf { vibrationAverage != 0f },
-            binaryLengthBytes = binaryLengthBytes,
+            latitude = value(UsbControl.SensorType.SENSOR_LATITUDE),
+            longitude = value(UsbControl.SensorType.SENSOR_LONGITUDE),
+            temperature = value(UsbControl.SensorType.SENSOR_TEMPERATURE),
+            humidity = value(UsbControl.SensorType.SENSOR_HUMIDITY),
+            binaryLengthBytes = sumOf { it.serializedSize },
         )
     }
 

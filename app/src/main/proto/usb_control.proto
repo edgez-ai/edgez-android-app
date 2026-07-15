@@ -8,6 +8,7 @@ enum Operation {
   REQUEST = 1;
   RESPONSE = 2;
   ACKNOWLEDGE = 3;
+  STREAMING = 4;
   BROADCAST = 9;
 }
 
@@ -19,6 +20,7 @@ enum Interface {
   ETHERNET = 4;
   HALOW = 5;
   LORA = 6;
+  LIBP2P = 7;
 }
 
 enum Mime {
@@ -67,28 +69,33 @@ enum ScriptConfigAction {
   SCRIPT_CONFIG_REPORT = 5;
 }
 
-message NetworkPacket {
+message MessageBody {
   uint64 message_id_high = 1; // high 64 bits of message UUID
   uint64 message_id_low = 2;  // low 64 bits of message UUID
-  uint64 from = 3;
-  uint64 to = 4;
-  Operation operation = 5;
-  Interface interface = 6;  // self interface when option is request,broadcast, target interface for response. 
-  uint32 sequence = 7; // when a message need to split into chunks, use sequence to control it
-  uint64 user_high = 8;   // high 64 bits of self user UUID
-  uint64 user_low = 9;    // low 64 bits of self user UUID
-  Mime mime = 10;         // encrypted payload media type
-  uint32 max_hop = 11;    // hop limit for forwarding this packet
-  uint64 group_id_high = 12;
-  uint64 group_id_low = 13;
+  sint32 sequence = 3; // when a message need to split into chunks, use sequence to control it
+  Mime mime = 4;         // encrypted payload media type
+  bytes payload = 5;
+  uint64 group_id_high = 6; // omitted for direct messages
+  uint64 group_id_low = 7;  // omitted for direct messages
+}
 
+message Report {
+  repeated Peer peers = 1;
+}
+
+message NetworkPacket {
+  uint64 from = 1;
+  uint64 to = 2;
+  Operation operation = 3;
+  Interface interface = 4;  // self interface when option is request,broadcast, target interface for response.
   oneof body {
     bytes payload = 100;
-    string beacon = 101;
+    MessageBody msg = 101;
     HaLowInterfaceStatus status = 102;
     HaLowInitConfig init = 103;
     DeviceSettings device_settings = 104;
     ScriptConfig script_config = 105;
+    Report report = 107;
   }
 }
 
@@ -120,19 +127,27 @@ message GeoFence {
   uint32 geo_index = 6;
 }
 
+enum SensorType {
+  SENSOR_UNKNOWN = 0;
+  SENSOR_TEMPERATURE = 1;
+  SENSOR_HUMIDITY = 2;
+  SENSOR_LATITUDE = 3;
+  SENSOR_LONGITUDE = 4;
+}
+
 message SensorData {
-  float latitude = 4;
-  float longitude = 5;
-  float altitude = 6;
-  float temperature = 7;
-  float humidity = 8;
-  float pressure = 9;
-  float vibration_average = 10;
+  SensorType type  = 1;
+  oneof value {
+    bool bool_value = 2;
+    sint32 int_value = 3;
+    float float_value = 4;
+  }
 }
 
 message Peer {
   uint64 id = 1;
   sint32 rssi = 2;
+  repeated SensorData sensor_data = 3;
 }
 
 message Beacon {
@@ -140,15 +155,13 @@ message Beacon {
   uint64 user_id_low = 2;
   string user_name = 3;
   bytes user_public_key = 4;
-  float attitude = 5;
+  float latitude = 5;
   float longitude = 6;
   MarkerColor marker = 7;
   DeviceType device_type = 8;
-  uint32 beacon_interval_seconds = 9;
   bool sleeping = 10;
   GeoFence geo_fence = 100;
-  SensorData sensor_data = 101;
-  repeated Peer peers = 999;
+  repeated SensorData sensor_data = 101;  // only for beacon and sensor type
 }
 
 
@@ -211,8 +224,8 @@ message DeviceSettings {
   string upstream_wifi_ssid = 20;
   string upstream_wifi_passphrase = 21;
   uint64 beacon_unicast = 22;
-  bool sleep_mode_enabled = 23;
   DeviceType device_type = 24;
+  bool sleep_mode_enabled = 25;
 }
 
 message ScriptConfig {
