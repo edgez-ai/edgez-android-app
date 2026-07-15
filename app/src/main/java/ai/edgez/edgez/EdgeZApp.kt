@@ -340,6 +340,7 @@ fun EdgeZApp() {
     var voiceCallState by remember { mutableStateOf(VoiceCallState()) }
     val voiceCall = remember {
         VoiceCallSession(
+            context = context.applicationContext,
             onSend = { peer, payload, sequence -> voiceCallTransport.get().invoke(peer, payload, sequence) },
             onState = { next ->
                 EdgeZBeaconRunner.setVoiceCallActive(next.phase != VoiceCallPhase.IDLE)

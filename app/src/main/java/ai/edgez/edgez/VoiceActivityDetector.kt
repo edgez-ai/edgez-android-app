@@ -15,17 +15,31 @@ internal data class VoiceActivityDecision(
  * noise floor avoids continuously transmitting stable background noise.
  */
 internal class VoiceActivityDetector(
-    private val minimumSpeechRms: Double = 400.0,
-    private val noiseMultiplier: Double = 2.5,
+    private val minimumSpeechRms: Double = 40.0,
+    private val noiseMultiplier: Double = 1.8,
     private val hangoverFrames: Int = 5,
+    private val calibrationFrames: Int = 10,
 ) {
     private var noiseRms = minimumSpeechRms / noiseMultiplier
     private var remainingHangoverFrames = 0
+    private var framesObserved = 0
+    private var calibrationMinimumRms = Double.POSITIVE_INFINITY
 
     fun analyze(samples: ShortArray): VoiceActivityDecision {
         if (samples.isEmpty()) return VoiceActivityDecision(false, false)
 
         val rms = calculateRms(samples)
+        if (framesObserved < calibrationFrames) {
+            calibrationMinimumRms = kotlin.math.min(calibrationMinimumRms, rms)
+            framesObserved++
+            if (framesObserved == calibrationFrames) {
+                // The minimum is resistant to a short sound during startup and
+                // represents this handset's processed microphone noise floor.
+                noiseRms = calibrationMinimumRms.coerceAtLeast(1.0)
+            }
+            return VoiceActivityDecision(false, false)
+        }
+
         val speechThreshold = max(minimumSpeechRms, noiseRms * noiseMultiplier)
         if (rms >= speechThreshold) {
             val speechStarted = remainingHangoverFrames == 0

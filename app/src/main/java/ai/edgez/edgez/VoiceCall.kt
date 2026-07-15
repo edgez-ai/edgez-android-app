@@ -1,10 +1,17 @@
 package ai.edgez.edgez
 
+import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
+import android.media.audiofx.AutomaticGainControl
+import android.media.audiofx.NoiseSuppressor
+import android.os.Build
 import android.util.Log
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -50,14 +57,21 @@ fun decodeVoiceCallPacket(payload: ByteArray): VoiceCallPacket? {
 }
 
 class VoiceCallSession(
+    context: Context,
     private val onSend: (HaLowUser, ByteArray, Int) -> Result<Unit>,
     private val onState: (VoiceCallState) -> Unit,
 ) {
+    private val audioManager = context.getSystemService(AudioManager::class.java)
     private val executor = Executors.newSingleThreadExecutor()
     private val sending = AtomicBoolean(false)
     private var state = VoiceCallState()
     private var sequence = 1
     private var player: AudioTrack? = null
+    private var callAudioConfigured = false
+    private var previousAudioMode = AudioManager.MODE_NORMAL
+    private var previousSpeakerphoneOn = false
+    private var previousCommunicationDevice: AudioDeviceInfo? = null
+    private var audioFocusRequest: AudioFocusRequest? = null
 
     fun start(peer: HaLowUser): Result<Unit> {
         if (state.phase != VoiceCallPhase.IDLE) return Result.failure(IllegalStateException("A call is already active"))
@@ -71,6 +85,7 @@ class VoiceCallSession(
         if (state.phase != VoiceCallPhase.INCOMING) return Result.failure(IllegalStateException("No incoming call"))
         return send(CALL_ACCEPT).onSuccess {
             state = state.copy(phase = VoiceCallPhase.ACTIVE)
+            configureCallAudio()
             publishState()
             startCapture()
         }
@@ -93,6 +108,7 @@ class VoiceCallSession(
             }
             CALL_ACCEPT -> if (state.phase == VoiceCallPhase.OUTGOING && packet.callId == state.callId) {
                 state = state.copy(phase = VoiceCallPhase.ACTIVE)
+                configureCallAudio()
                 publishState()
                 startCapture()
             }
@@ -120,6 +136,12 @@ class VoiceCallSession(
             val minBuffer = AudioRecord.getMinBufferSize(CALL_SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
             val recorder = AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, CALL_SAMPLE_RATE,
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuffer, CALL_SAMPLES_PER_FRAME * 4))
+            val automaticGainControl = if (AutomaticGainControl.isAvailable()) {
+                AutomaticGainControl.create(recorder.audioSessionId)?.also { it.enabled = true }
+            } else null
+            val noiseSuppressor = if (NoiseSuppressor.isAvailable()) {
+                NoiseSuppressor.create(recorder.audioSessionId)?.also { it.enabled = true }
+            } else null
             val pcm = ShortArray(CALL_SAMPLES_PER_FRAME)
             val voiceDetector = VoiceActivityDetector()
             var preRollFrame: ShortArray? = null
@@ -157,6 +179,8 @@ class VoiceCallSession(
                 }
             } finally {
                 if (recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) recorder.stop()
+                automaticGainControl?.release()
+                noiseSuppressor?.release()
                 recorder.release()
             }
         }
@@ -169,23 +193,122 @@ class VoiceCallSession(
     }
 
     private fun play(audio: ByteArray) {
-        val track = player ?: AudioTrack.Builder()
-            .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION).build())
-            .setAudioFormat(AudioFormat.Builder().setSampleRate(CALL_SAMPLE_RATE).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
-            .setBufferSizeInBytes(CALL_SAMPLES_PER_FRAME * 8)
-            .setTransferMode(AudioTrack.MODE_STREAM)
-            .build().also { it.play(); player = it }
+        val track = player ?: buildPlaybackTrack().also { player = it }
         val pcm = decodeImaAdpcm(audio, CALL_SAMPLES_PER_FRAME) ?: run {
             Log.w(TAG_VOICE_CALL, "RX ADPCM frame malformed bytes=${audio.size}")
             return
         }
-        track.write(pcm, 0, pcm.size, AudioTrack.WRITE_NON_BLOCKING)
+        val written = track.write(pcm, 0, pcm.size, AudioTrack.WRITE_NON_BLOCKING)
+        if (written < 0) {
+            Log.w(TAG_VOICE_CALL, "AudioTrack write failed: $written")
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun buildPlaybackTrack(): AudioTrack {
+        val legacySpeakerPath = Build.VERSION.SDK_INT < Build.VERSION_CODES.S
+        val attributes = AudioAttributes.Builder()
+            .setUsage(if (legacySpeakerPath) AudioAttributes.USAGE_MEDIA else AudioAttributes.USAGE_VOICE_COMMUNICATION)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+            .apply {
+                if (legacySpeakerPath) setLegacyStreamType(AudioManager.STREAM_MUSIC)
+            }
+            .build()
+        val format = AudioFormat.Builder()
+            .setSampleRate(CALL_SAMPLE_RATE)
+            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+            .build()
+        val minimumBuffer = AudioTrack.getMinBufferSize(
+            CALL_SAMPLE_RATE,
+            AudioFormat.CHANNEL_OUT_MONO,
+            AudioFormat.ENCODING_PCM_16BIT,
+        )
+        val track = AudioTrack.Builder()
+            .setAudioAttributes(attributes)
+            .setAudioFormat(format)
+            .setBufferSizeInBytes(maxOf(minimumBuffer, CALL_SAMPLES_PER_FRAME * 8))
+            .setTransferMode(AudioTrack.MODE_STREAM)
+            .build()
+        val speaker = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+        val preferred = speaker != null && track.setPreferredDevice(speaker)
+        track.setVolume(AudioTrack.getMaxVolume())
+        track.play()
+        Log.i(
+            TAG_VOICE_CALL,
+            "Playback started legacy=$legacySpeakerPath preferredSpeaker=$preferred " +
+                "buffer=${maxOf(minimumBuffer, CALL_SAMPLES_PER_FRAME * 8)} state=${track.state}",
+        )
+        return track
+    }
+
+    @Suppress("DEPRECATION")
+    private fun configureCallAudio() {
+        if (callAudioConfigured) return
+        previousAudioMode = audioManager.mode
+        previousSpeakerphoneOn = audioManager.isSpeakerphoneOn
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            previousCommunicationDevice = audioManager.communicationDevice
+        }
+
+        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+        val focusAttributes = AudioAttributes.Builder()
+            .setUsage(
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                    AudioAttributes.USAGE_MEDIA
+                } else {
+                    AudioAttributes.USAGE_VOICE_COMMUNICATION
+                },
+            )
+            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+            .build()
+        audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
+            .setAudioAttributes(focusAttributes)
+            .setOnAudioFocusChangeListener { }
+            .build()
+            .also(audioManager::requestAudioFocus)
+        val routed = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            audioManager.availableCommunicationDevices
+                .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                ?.let(audioManager::setCommunicationDevice) == true
+        } else {
+            false
+        }
+        if (!routed) {
+            audioManager.isSpeakerphoneOn = true
+        }
+        callAudioConfigured = true
+        Log.i(TAG_VOICE_CALL, "Call audio configured speaker=${routed || audioManager.isSpeakerphoneOn}")
+    }
+
+    @Suppress("DEPRECATION")
+    private fun restoreCallAudio() {
+        if (!callAudioConfigured) return
+        audioFocusRequest?.let(audioManager::abandonAudioFocusRequest)
+        audioFocusRequest = null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val previousDevice = previousCommunicationDevice
+            if (previousDevice != null &&
+                audioManager.availableCommunicationDevices.any { it.id == previousDevice.id }
+            ) {
+                audioManager.setCommunicationDevice(previousDevice)
+            } else {
+                audioManager.clearCommunicationDevice()
+            }
+            previousCommunicationDevice = null
+        } else {
+            audioManager.isSpeakerphoneOn = previousSpeakerphoneOn
+        }
+        audioManager.mode = previousAudioMode
+        callAudioConfigured = false
     }
 
     private fun reset() {
         sending.set(false)
         player?.run { pause(); flush(); release() }
         player = null
+        restoreCallAudio()
         state = VoiceCallState()
         publishState()
     }
