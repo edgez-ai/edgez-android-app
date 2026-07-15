@@ -121,6 +121,8 @@ class VoiceCallSession(
             val recorder = AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, CALL_SAMPLE_RATE,
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuffer, CALL_SAMPLES_PER_FRAME * 4))
             val pcm = ShortArray(CALL_SAMPLES_PER_FRAME)
+            val voiceDetector = VoiceActivityDetector()
+            var preRollFrame: ShortArray? = null
             try {
                 if (recorder.state != AudioRecord.STATE_INITIALIZED) {
                     Log.e(TAG_VOICE_CALL, "AudioRecord initialization failed minBuffer=$minBuffer")
@@ -137,8 +139,17 @@ class VoiceCallSession(
                         offset += read
                     }
                     if (offset == pcm.size && state.phase == VoiceCallPhase.ACTIVE) {
-                        send(CALL_AUDIO, encodeImaAdpcm(pcm)).onFailure {
-                            Log.w(TAG_VOICE_CALL, "TX audio failed", it)
+                        val decision = voiceDetector.analyze(pcm)
+                        if (decision.speechStarted) {
+                            preRollFrame?.let { frame -> sendAudioFrame(frame) }
+                            preRollFrame = null
+                        }
+                        if (decision.shouldSend) {
+                            sendAudioFrame(pcm)
+                        } else {
+                            // Retain only the most recent silent frame so speech
+                            // resumes with up to 40 ms of pre-roll, not a backlog.
+                            preRollFrame = pcm.copyOf()
                         }
                     } else if (offset <= 0) {
                         Log.w(TAG_VOICE_CALL, "AudioRecord read failed: $offset state=${recorder.recordingState}")
@@ -148,6 +159,12 @@ class VoiceCallSession(
                 if (recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) recorder.stop()
                 recorder.release()
             }
+        }
+    }
+
+    private fun sendAudioFrame(pcm: ShortArray) {
+        send(CALL_AUDIO, encodeImaAdpcm(pcm)).onFailure {
+            Log.w(TAG_VOICE_CALL, "TX audio failed", it)
         }
     }
 
