@@ -25,6 +25,7 @@ private const val KEY_USER_PRIVATE_KEY = "user_private_key"
 private const val KEY_USER_PUBLIC_KEY = "user_public_key"
 private const val KEY_SHARE_LOCATION = "share_location"
 private const val KEY_AUTO_REPLAY_RECEIVED_VOICE = "auto_replay_received_voice"
+private const val KEY_AUTO_ANSWER_VOICE_CALLS = "auto_answer_voice_calls"
 private const val KEY_SELECTED_BLE_ADDRESS = "selected_ble_address"
 private const val KEY_SELECTED_BLE_LABEL = "selected_ble_label"
 private const val KEY_BLE_AUTO_CONNECT = "ble_auto_connect"
@@ -222,6 +223,8 @@ class LastConnectionPreferences(context: Context) {
 
     fun getAutoReplayReceivedVoice(): Boolean = prefs.getBoolean(KEY_AUTO_REPLAY_RECEIVED_VOICE, false)
 
+    fun getAutoAnswerVoiceCalls(): Boolean = prefs.getBoolean(KEY_AUTO_ANSWER_VOICE_CALLS, false)
+
     fun getSelectedBleAddress(): String = prefs.getString(KEY_SELECTED_BLE_ADDRESS, "") ?: ""
 
     fun getSelectedBleLabel(): String = prefs.getString(KEY_SELECTED_BLE_LABEL, "") ?: ""
@@ -290,6 +293,12 @@ class LastConnectionPreferences(context: Context) {
     fun setAutoReplayReceivedVoice(enabled: Boolean) {
         prefs.edit()
             .putBoolean(KEY_AUTO_REPLAY_RECEIVED_VOICE, enabled)
+            .apply()
+    }
+
+    fun setAutoAnswerVoiceCalls(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(KEY_AUTO_ANSWER_VOICE_CALLS, enabled)
             .apply()
     }
 

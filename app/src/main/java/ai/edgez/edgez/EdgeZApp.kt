@@ -342,6 +342,13 @@ fun EdgeZApp() {
         VoiceCallSession(
             context = context.applicationContext,
             onSend = { peer, payload, sequence -> voiceCallTransport.get().invoke(peer, payload, sequence) },
+            shouldAutoAnswer = {
+                lastConnectionPreferences.getAutoAnswerVoiceCalls() &&
+                    ContextCompat.checkSelfPermission(
+                        context.applicationContext,
+                        Manifest.permission.RECORD_AUDIO,
+                    ) == PackageManager.PERMISSION_GRANTED
+            },
             onState = { next ->
                 EdgeZBeaconRunner.setVoiceCallActive(next.phase != VoiceCallPhase.IDLE)
                 mainHandler.post { voiceCallState = next }

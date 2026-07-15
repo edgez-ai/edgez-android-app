@@ -341,6 +341,7 @@ private fun SettingsContent(
     var uartI2cSensorDropdownExpanded by remember { mutableStateOf(false) }
     var rs485SensorDropdownExpanded by remember { mutableStateOf(false) }
     var autoReplayReceivedVoice by rememberSaveable { mutableStateOf(connectionPreferences.getAutoReplayReceivedVoice()) }
+    var autoAnswerVoiceCalls by rememberSaveable { mutableStateOf(connectionPreferences.getAutoAnswerVoiceCalls()) }
     var selectedBleAddress by rememberSaveable { mutableStateOf(connectionPreferences.getSelectedBleAddress()) }
     var selectedBleLabel by rememberSaveable { mutableStateOf(connectionPreferences.getSelectedBleLabel()) }
     var bleAutoConnect by rememberSaveable { mutableStateOf(connectionPreferences.getBleAutoConnect()) }
@@ -481,6 +482,7 @@ private fun SettingsContent(
         userName = userIdentity.name
         userMarker = connectionPreferences.getUserMarker()
         autoReplayReceivedVoice = connectionPreferences.getAutoReplayReceivedVoice()
+        autoAnswerVoiceCalls = connectionPreferences.getAutoAnswerVoiceCalls()
         deviceGeoFences = loadDeviceGeoFences()
         selectedDeviceGeoFenceKey = connectionPreferences.getSelectedDeviceGeoFenceKey() ?: ""
         onShareLocationChange(connectionPreferences.getShareLocation())
@@ -1973,6 +1975,30 @@ private fun SettingsContent(
                                 autoReplayReceivedVoice = enabled
                                 connectionPreferences.setAutoReplayReceivedVoice(enabled)
                                 status = if (enabled) "Auto replay enabled" else "Auto replay disabled"
+                            },
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Auto-answer voice calls", style = MaterialTheme.typography.titleSmall)
+                            Text("Answer incoming calls automatically", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Switch(
+                            checked = autoAnswerVoiceCalls,
+                            onCheckedChange = { enabled ->
+                                autoAnswerVoiceCalls = enabled
+                                connectionPreferences.setAutoAnswerVoiceCalls(enabled)
+                                if (enabled && context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                                    activity?.requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 2004)
+                                    status = "Allow microphone access for auto-answer"
+                                } else {
+                                    status = if (enabled) "Auto-answer enabled" else "Auto-answer disabled"
+                                }
                             },
                         )
                     }

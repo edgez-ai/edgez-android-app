@@ -60,6 +60,7 @@ class VoiceCallSession(
     context: Context,
     private val onSend: (HaLowUser, ByteArray, Int) -> Result<Unit>,
     private val onState: (VoiceCallState) -> Unit,
+    private val shouldAutoAnswer: () -> Boolean = { false },
 ) {
     private val audioManager = context.getSystemService(AudioManager::class.java)
     private val executor = Executors.newSingleThreadExecutor()
@@ -105,6 +106,12 @@ class VoiceCallSession(
             CALL_INVITE -> if (state.phase == VoiceCallPhase.IDLE) {
                 state = VoiceCallState(peer, packet.callId, VoiceCallPhase.INCOMING)
                 publishState()
+                if (shouldAutoAnswer()) {
+                    Log.i(TAG_VOICE_CALL, "Auto-answering incoming call")
+                    accept().onFailure {
+                        Log.w(TAG_VOICE_CALL, "Auto-answer failed", it)
+                    }
+                }
             }
             CALL_ACCEPT -> if (state.phase == VoiceCallPhase.OUTGOING && packet.callId == state.callId) {
                 state = state.copy(phase = VoiceCallPhase.ACTIVE)
