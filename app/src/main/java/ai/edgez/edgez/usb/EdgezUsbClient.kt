@@ -789,10 +789,16 @@ object EdgezUsbControlProto {
         } else {
             ""
         }
-        val beacon = if (beaconRaw.isNotBlank()) {
-            decodeBeaconString(beaconRaw.toByteArray(StandardCharsets.UTF_8), meshPassphrase)
-        } else {
-            null
+        val beacon = when (packet.bodyCase) {
+            UsbControl.NetworkPacket.BodyCase.BEACON -> packet.beacon.toAppBeacon()
+            UsbControl.NetworkPacket.BodyCase.PAYLOAD -> {
+                if (beaconRaw.isNotBlank()) {
+                    decodeBeaconString(beaconRaw.toByteArray(StandardCharsets.UTF_8), meshPassphrase)
+                } else {
+                    null
+                }
+            }
+            else -> null
         }
         val halowStatus = if (packet.bodyCase == UsbControl.NetworkPacket.BodyCase.STATUS) {
             packet.status.toAppStatus()

@@ -95,6 +95,7 @@ message NetworkPacket {
     HaLowInitConfig init = 103;
     DeviceSettings device_settings = 104;
     ScriptConfig script_config = 105;
+    Beacon beacon = 106; // beacon heard from the management Vendor IE
     Report report = 107;
   }
 }

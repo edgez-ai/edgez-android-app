@@ -2605,6 +2605,25 @@ public final class UsbControl {
     ai.edgez.halow.UsbControl.ScriptConfig getScriptConfig();
 
     /**
+     * <pre>
+     * beacon heard from the management Vendor IE
+     * </pre>
+     *
+     * <code>.ai.edgez.halow.Beacon beacon = 106;</code>
+     * @return Whether the beacon field is set.
+     */
+    boolean hasBeacon();
+    /**
+     * <pre>
+     * beacon heard from the management Vendor IE
+     * </pre>
+     *
+     * <code>.ai.edgez.halow.Beacon beacon = 106;</code>
+     * @return The beacon.
+     */
+    ai.edgez.halow.UsbControl.Beacon getBeacon();
+
+    /**
      * <code>.ai.edgez.halow.Report report = 107;</code>
      * @return Whether the report field is set.
      */
@@ -2636,6 +2655,7 @@ public final class UsbControl {
       INIT(103),
       DEVICE_SETTINGS(104),
       SCRIPT_CONFIG(105),
+      BEACON(106),
       REPORT(107),
       BODY_NOT_SET(0);
       private final int value;
@@ -2658,6 +2678,7 @@ public final class UsbControl {
           case 103: return INIT;
           case 104: return DEVICE_SETTINGS;
           case 105: return SCRIPT_CONFIG;
+          case 106: return BEACON;
           case 107: return REPORT;
           case 0: return BODY_NOT_SET;
           default: return null;
@@ -3130,6 +3151,78 @@ public final class UsbControl {
      */
     private void clearScriptConfig() {
       if (bodyCase_ == 105) {
+        bodyCase_ = 0;
+        body_ = null;
+      }
+    }
+
+    public static final int BEACON_FIELD_NUMBER = 106;
+    /**
+     * <pre>
+     * beacon heard from the management Vendor IE
+     * </pre>
+     *
+     * <code>.ai.edgez.halow.Beacon beacon = 106;</code>
+     */
+    @java.lang.Override
+    public boolean hasBeacon() {
+      return bodyCase_ == 106;
+    }
+    /**
+     * <pre>
+     * beacon heard from the management Vendor IE
+     * </pre>
+     *
+     * <code>.ai.edgez.halow.Beacon beacon = 106;</code>
+     */
+    @java.lang.Override
+    public ai.edgez.halow.UsbControl.Beacon getBeacon() {
+      if (bodyCase_ == 106) {
+         return (ai.edgez.halow.UsbControl.Beacon) body_;
+      }
+      return ai.edgez.halow.UsbControl.Beacon.getDefaultInstance();
+    }
+    /**
+     * <pre>
+     * beacon heard from the management Vendor IE
+     * </pre>
+     *
+     * <code>.ai.edgez.halow.Beacon beacon = 106;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void setBeacon(ai.edgez.halow.UsbControl.Beacon value) {
+      value.getClass();  // minimal bytecode null check
+      body_ = value;
+      bodyCase_ = 106;
+    }
+    /**
+     * <pre>
+     * beacon heard from the management Vendor IE
+     * </pre>
+     *
+     * <code>.ai.edgez.halow.Beacon beacon = 106;</code>
+     */
+    @java.lang.SuppressWarnings("ReturnValueIgnored")
+    private void mergeBeacon(ai.edgez.halow.UsbControl.Beacon value) {
+      value.getClass();  // minimal bytecode null check
+      if (bodyCase_ == 106 &&
+          body_ != ai.edgez.halow.UsbControl.Beacon.getDefaultInstance()) {
+        body_ = ai.edgez.halow.UsbControl.Beacon.newBuilder((ai.edgez.halow.UsbControl.Beacon) body_)
+            .mergeFrom(value).buildPartial();
+      } else {
+        body_ = value;
+      }
+      bodyCase_ = 106;
+    }
+    /**
+     * <pre>
+     * beacon heard from the management Vendor IE
+     * </pre>
+     *
+     * <code>.ai.edgez.halow.Beacon beacon = 106;</code>
+     */
+    private void clearBeacon() {
+      if (bodyCase_ == 106) {
         bodyCase_ = 0;
         body_ = null;
       }
@@ -3741,6 +3834,78 @@ public final class UsbControl {
       }
 
       /**
+       * <pre>
+       * beacon heard from the management Vendor IE
+       * </pre>
+       *
+       * <code>.ai.edgez.halow.Beacon beacon = 106;</code>
+       */
+      @java.lang.Override
+      public boolean hasBeacon() {
+        return instance.hasBeacon();
+      }
+      /**
+       * <pre>
+       * beacon heard from the management Vendor IE
+       * </pre>
+       *
+       * <code>.ai.edgez.halow.Beacon beacon = 106;</code>
+       */
+      @java.lang.Override
+      public ai.edgez.halow.UsbControl.Beacon getBeacon() {
+        return instance.getBeacon();
+      }
+      /**
+       * <pre>
+       * beacon heard from the management Vendor IE
+       * </pre>
+       *
+       * <code>.ai.edgez.halow.Beacon beacon = 106;</code>
+       */
+      public Builder setBeacon(ai.edgez.halow.UsbControl.Beacon value) {
+        copyOnWrite();
+        instance.setBeacon(value);
+        return this;
+      }
+      /**
+       * <pre>
+       * beacon heard from the management Vendor IE
+       * </pre>
+       *
+       * <code>.ai.edgez.halow.Beacon beacon = 106;</code>
+       */
+      public Builder setBeacon(
+          ai.edgez.halow.UsbControl.Beacon.Builder builderForValue) {
+        copyOnWrite();
+        instance.setBeacon(builderForValue.build());
+        return this;
+      }
+      /**
+       * <pre>
+       * beacon heard from the management Vendor IE
+       * </pre>
+       *
+       * <code>.ai.edgez.halow.Beacon beacon = 106;</code>
+       */
+      public Builder mergeBeacon(ai.edgez.halow.UsbControl.Beacon value) {
+        copyOnWrite();
+        instance.mergeBeacon(value);
+        return this;
+      }
+      /**
+       * <pre>
+       * beacon heard from the management Vendor IE
+       * </pre>
+       *
+       * <code>.ai.edgez.halow.Beacon beacon = 106;</code>
+       */
+      public Builder clearBeacon() {
+        copyOnWrite();
+        instance.clearBeacon();
+        return this;
+      }
+
+      /**
        * <code>.ai.edgez.halow.Report report = 107;</code>
        */
       @java.lang.Override
@@ -3815,11 +3980,12 @@ public final class UsbControl {
               ai.edgez.halow.UsbControl.HaLowInitConfig.class,
               ai.edgez.halow.UsbControl.DeviceSettings.class,
               ai.edgez.halow.UsbControl.ScriptConfig.class,
+              ai.edgez.halow.UsbControl.Beacon.class,
               ai.edgez.halow.UsbControl.Report.class,
             };
             java.lang.String info =
-                "\u0000\u000b\u0001\u0000\u0001k\u000b\u0000\u0000\u0000\u0001\u0003\u0002\u0003\u0003" +
-                "\f\u0004\fd=\u0000e<\u0000f<\u0000g<\u0000h<\u0000i<\u0000k<\u0000";
+                "\u0000\f\u0001\u0000\u0001k\f\u0000\u0000\u0000\u0001\u0003\u0002\u0003\u0003\f\u0004" +
+                "\fd=\u0000e<\u0000f<\u0000g<\u0000h<\u0000i<\u0000j<\u0000k<\u0000";
             return newMessageInfo(DEFAULT_INSTANCE, info, objects);
         }
         // fall through
