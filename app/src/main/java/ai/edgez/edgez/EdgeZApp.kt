@@ -760,7 +760,8 @@ fun EdgeZApp() {
                     val iterator = forwardPacketCache.entries.iterator()
                     repeat(forwardPacketCache.size - FORWARD_CACHE_SIZE) {
                         if (!iterator.hasNext()) return@repeat
-                        forwardPacketCache.remove(iterator.next().key)
+                        iterator.next()
+                        iterator.remove()
                     }
                 }
             }
@@ -777,7 +778,8 @@ fun EdgeZApp() {
                         val iterator = forwardPacketCache.entries.iterator()
                         repeat(forwardPacketCache.size - FORWARD_CACHE_SIZE) {
                             if (!iterator.hasNext()) return@repeat
-                            forwardPacketCache.remove(iterator.next().key)
+                            iterator.next()
+                            iterator.remove()
                         }
                     }
                     return true
