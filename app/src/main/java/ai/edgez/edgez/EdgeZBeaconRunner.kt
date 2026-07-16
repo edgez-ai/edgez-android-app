@@ -171,13 +171,14 @@ object EdgeZBeaconRunner {
             status.supported &&
             status.stackInitialized &&
             status.meshMode
+        val canSendUserSettings = canSendTransportBeacon && DeviceModeState.userModeConfirmed
         val canPublishLibp2pBeacon = LastConnectionPreferences(context).getLibp2pMeshEnabled() &&
             (status == null || (status.supported && status.stackInitialized && status.meshMode))
         if (voiceCallActive && !canPublishLibp2pBeacon) {
             Log.d(TAG_BEACON, "periodic device_settings skipped during voice call")
             return
         }
-        if (!canSendTransportBeacon && !canPublishLibp2pBeacon) {
+        if (!canSendUserSettings && !canPublishLibp2pBeacon) {
             return
         }
 
@@ -224,7 +225,10 @@ object EdgeZBeaconRunner {
                     marker,
                 )
             }.getOrNull() ?: return@execute
-            val transportResult = if (voiceCallActive) {
+            val transportResult = if (!canSendUserSettings) {
+                Log.d(TAG_BEACON, "periodic device_settings skipped until user mode is confirmed")
+                null
+            } else if (voiceCallActive) {
                 Log.d(TAG_BEACON, "periodic device_settings skipped during voice call")
                 null
             } else {

@@ -1001,6 +1001,15 @@ fun EdgeZApp() {
             val meshPassphrase = lastConnectionPreferences.getMeshPassphrase()
             val inferredHop = if (route == ROUTE_LIBP2P || route == ROUTE_BLE_FORWARD) 1 else 0
             val parsed = decodeHaLowSyncFrame(frame, meshPassphrase) ?: EdgezUsbControlProto.decodeNetworkPacket(frame, meshPassphrase)
+            if (route != ROUTE_LIBP2P) {
+                parsed?.deviceSettings?.let { settings ->
+                    DeviceModeState.updateFromDeviceType(settings.deviceType)
+                    Log.d(
+                        TAG_USERS,
+                        "device mode confirmed type=${settings.deviceType.label} deviceMode=${settings.deviceType.isDeviceProfile}",
+                    )
+                }
+            }
             if (route == ROUTE_LIBP2P) {
                 parsed?.let {
                     Log.d(

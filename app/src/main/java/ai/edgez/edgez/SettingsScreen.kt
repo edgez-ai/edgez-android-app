@@ -1010,7 +1010,7 @@ private fun SettingsContent(
                 if (!isLoadingDeviceSettings) return@runOnUiThread
                 isLoadingDeviceSettings = false
                 if (!provisionMode && bleReady) {
-                    DeviceModeState.enabled = deviceSettings.deviceType.isDeviceProfile
+                    DeviceModeState.updateFromDeviceType(deviceSettings.deviceType)
                     if (deviceSettings.deviceType.isDeviceProfile) {
                         showResetDeviceModeDialog = true
                         status = "This device is provisioned in device mode"
