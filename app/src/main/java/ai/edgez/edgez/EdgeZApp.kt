@@ -2715,7 +2715,9 @@ private fun DashboardSensorCard(
     onMoveWidget: (String, Int) -> Unit,
 ) {
     val sample = if (item.display.widget == DashboardDeviceWidget.BINARY_IMAGE) {
-        item.samples.lastOrNull()
+        item.samples.lastOrNull { sample ->
+            !sample.data.binaryImagePath.isNullOrBlank()
+        }
     } else {
         dashboardSampleForRange(item.samples, item.display.range)
     }
@@ -2780,7 +2782,9 @@ private fun DashboardSensorCard(
                             item.user.displayName,
                             style = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
                         )
-                        Text(item.display.range.label, style = MaterialTheme.typography.bodySmall)
+                        if (item.display.widget != DashboardDeviceWidget.BINARY_IMAGE) {
+                            Text(item.display.range.label, style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -2864,7 +2868,6 @@ private fun DashboardBinaryImageRow(
             .fillMaxWidth()
             .height(if (compact) 130.dp else 170.dp),
     )
-    Text("Image size: ${bitmap.width}x${bitmap.height}", style = MaterialTheme.typography.bodySmall)
     Text("Updated ${formatDashboardSensorAge(timestampMs)}", style = MaterialTheme.typography.bodySmall)
 }
 
