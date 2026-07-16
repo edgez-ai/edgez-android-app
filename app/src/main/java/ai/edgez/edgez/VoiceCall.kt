@@ -9,6 +9,7 @@ import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.AutomaticGainControl
 import android.media.audiofx.NoiseSuppressor
 import android.os.Build
@@ -143,6 +144,9 @@ class VoiceCallSession(
             val minBuffer = AudioRecord.getMinBufferSize(CALL_SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
             val recorder = AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, CALL_SAMPLE_RATE,
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuffer, CALL_SAMPLES_PER_FRAME * 4))
+            val echoCanceler = if (AcousticEchoCanceler.isAvailable()) {
+                AcousticEchoCanceler.create(recorder.audioSessionId)?.also { it.enabled = true }
+            } else null
             val automaticGainControl = if (AutomaticGainControl.isAvailable()) {
                 AutomaticGainControl.create(recorder.audioSessionId)?.also { it.enabled = true }
             } else null
@@ -159,7 +163,11 @@ class VoiceCallSession(
                     return@execute
                 }
                 recorder.startRecording()
-                Log.i(TAG_VOICE_CALL, "Microphone capture started")
+                Log.i(
+                    TAG_VOICE_CALL,
+                    "Microphone capture started aec=${echoCanceler?.enabled == true} " +
+                        "agc=${automaticGainControl?.enabled == true} ns=${noiseSuppressor?.enabled == true}",
+                )
                 while (sending.get()) {
                     var offset = 0
                     while (offset < pcm.size && sending.get()) {
@@ -186,6 +194,7 @@ class VoiceCallSession(
                 }
             } finally {
                 if (recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) recorder.stop()
+                echoCanceler?.release()
                 automaticGainControl?.release()
                 noiseSuppressor?.release()
                 recorder.release()

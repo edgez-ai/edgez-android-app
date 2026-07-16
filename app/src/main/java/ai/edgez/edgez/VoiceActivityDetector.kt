@@ -23,20 +23,32 @@ internal class VoiceActivityDetector(
     private var noiseRms = minimumSpeechRms / noiseMultiplier
     private var remainingHangoverFrames = 0
     private var framesObserved = 0
-    private var calibrationMinimumRms = Double.POSITIVE_INFINITY
+    private val calibrationRms = DoubleArray(calibrationFrames.coerceAtLeast(0))
+    private val calibrationSeedFrames = minOf(3, calibrationFrames)
 
     fun analyze(samples: ShortArray): VoiceActivityDecision {
         if (samples.isEmpty()) return VoiceActivityDecision(false, false)
 
         val rms = calculateRms(samples)
         if (framesObserved < calibrationFrames) {
-            calibrationMinimumRms = kotlin.math.min(calibrationMinimumRms, rms)
-            framesObserved++
-            if (framesObserved == calibrationFrames) {
-                // The minimum is resistant to a short sound during startup and
-                // represents this handset's processed microphone noise floor.
-                noiseRms = calibrationMinimumRms.coerceAtLeast(1.0)
+            if (framesObserved >= calibrationSeedFrames) {
+                val calibrationThreshold = max(minimumSpeechRms, noiseRms * noiseMultiplier)
+                if (rms >= calibrationThreshold) {
+                    val speechStarted = remainingHangoverFrames == 0
+                    remainingHangoverFrames = hangoverFrames
+                    return VoiceActivityDecision(true, speechStarted)
+                }
+                if (remainingHangoverFrames > 0) {
+                    remainingHangoverFrames--
+                    return VoiceActivityDecision(true, false)
+                }
             }
+
+            calibrationRms[framesObserved++] = rms
+            // The median is resistant to one short sound or one unusually
+            // quiet frame during the three-frame startup seed.
+            val observed = calibrationRms.copyOf(framesObserved).sortedArray()
+            noiseRms = observed[framesObserved / 2].coerceAtLeast(1.0)
             return VoiceActivityDecision(false, false)
         }
 
@@ -59,9 +71,14 @@ internal class VoiceActivityDetector(
     }
 
     private fun calculateRms(samples: ShortArray): Double {
+        // Remove the microphone's DC offset before measuring energy. Several
+        // handsets expose a stable non-zero bias which is not audible speech.
+        var sum = 0.0
+        for (sample in samples) sum += sample
+        val mean = sum / samples.size
         var sumSquares = 0.0
         for (sample in samples) {
-            val value = sample.toDouble()
+            val value = sample - mean
             sumSquares += value * value
         }
         return sqrt(sumSquares / samples.size)
