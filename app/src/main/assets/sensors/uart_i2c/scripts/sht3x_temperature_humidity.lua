@@ -1,14 +1,11 @@
 local result = {}
+local SENSOR_TEMPERATURE = 1
+local SENSOR_HUMIDITY = 2
 
 local i2c_address = 0x44
 local i2c_rx_size = 6
 local i2c_read_delay = 0.5
 local i2c_repeatability = "high"
-
-local i2c_temp_object = 3303
-local i2c_temp_resource = 5700
-local i2c_humidity_object = 3304
-local i2c_humidity_resource = 5700
 
 local i2c_log_cfg = { quiet = false }
 
@@ -112,19 +109,15 @@ end
 
 if i2c_result.temperature ~= nil then
   table.insert(result, {
-    object = i2c_temp_object,
-    instance = 0,
-    resource = i2c_temp_resource,
-    value = i2c_result.temperature,
+    type = SENSOR_TEMPERATURE,
+    float_value = i2c_result.temperature,
   })
 end
 
 if i2c_result.humidity ~= nil then
   table.insert(result, {
-    object = i2c_humidity_object,
-    instance = 0,
-    resource = i2c_humidity_resource,
-    value = i2c_result.humidity,
+    type = SENSOR_HUMIDITY,
+    float_value = i2c_result.humidity,
   })
 end
 

@@ -4,52 +4,23 @@
         interface="uart_i2c"
         key="1002-1"
         id="1002"
-        version="1"
+        version="2"
         name="SHT3x Temperature/Humidity"
-        script="uart_i2c/scripts/sht3x_temperature_humidity.lua">
-        <lwm2m-object
-            object="3303"
-            instance="0"
-            resource="5700"
-            type="sensor"
-            name="Temperature"
-            device_class="temperature"
-            state_class="measurement"
-            unit_of_measurement="°C"
-            icon="mdi:thermometer"
-            suggested_display_precision="1" />
-        <lwm2m-object
-            object="3304"
-            instance="0"
-            resource="5700"
-            type="sensor"
-            name="Humidity"
-            device_class="humidity"
-            state_class="measurement"
-            unit_of_measurement="%"
-            icon="mdi:water-percent"
-            suggested_display_precision="1" />
-    </sensor>
+        image="ic_sensor_sht3x"
+        description="Digital I2C sensor for temperature and relative humidity measurements. Uses address 0x44 by default and validates readings with CRC."
+        purchase_url="https://www.adafruit.com/product/2857"
+        script="uart_i2c/scripts/sht3x_temperature_humidity.lua" />
 
     <sensor
         interface="uart_i2c"
         key="1003-1"
         id="1003"
-        version="1"
+        version="2"
         name="Random Temperature (Sample)"
-        script="uart_i2c/scripts/random_temperature_sample.lua">
-        <lwm2m-object
-            object="3303"
-            instance="0"
-            resource="5700"
-            type="sensor"
-            name="Temperature"
-            device_class="temperature"
-            state_class="measurement"
-            unit_of_measurement="°C"
-            icon="mdi:thermometer"
-            suggested_display_precision="1" />
-    </sensor>
+        image="ic_sensor_random_temperature"
+        description="Virtual test sensor that generates a random temperature value. No external hardware is required."
+        purchase_url=""
+        script="uart_i2c/scripts/random_temperature_sample.lua" />
 
     <sensor
         interface="uart_i2c"
@@ -57,6 +28,9 @@
         id="1004"
         version="1"
         name="VC0706 UART Camera"
+        image="ic_sensor_vc0706_camera"
+        description="UART JPEG camera using the VC0706 command protocol. Captures still images and transfers the JPEG data through the script global buffer."
+        purchase_url="https://www.adafruit.com/product/397"
         script="uart_i2c/scripts/vc0706_camera.lua" />
 
     <sensor
@@ -65,30 +39,10 @@
         id="2002"
         version="1"
         name="Flow Meter RS485"
-        script="rs485/scripts/flow_meter_rs485.lua">
-        <lwm2m-object
-            object="3346"
-            instance="0"
-            resource="5700"
-            type="sensor"
-            name="Flow Rate"
-            device_class="volume_flow_rate"
-            state_class="measurement"
-            unit_of_measurement="m³/h"
-            icon="mdi:water"
-            suggested_display_precision="2" />
-        <lwm2m-object
-            object="3424"
-            instance="0"
-            resource="1"
-            type="sensor"
-            name="Total Volume"
-            device_class="water"
-            state_class="total_increasing"
-            unit_of_measurement="m³"
-            icon="mdi:counter"
-            suggested_display_precision="3" />
-    </sensor>
+        image="ic_sensor_flow_meter"
+        description="Industrial Modbus RTU flow meter that reports instantaneous flow rate and accumulated volume over RS485."
+        purchase_url="https://www.amazon.com/s?k=rs485+modbus+flow+meter"
+        script="rs485/scripts/flow_meter_rs485.lua" />
 
     <sensor
         interface="rs485"
@@ -96,17 +50,8 @@
         id="2003"
         version="1"
         name="RS485 Vibration Sensor"
-        script="rs485/scripts/vibration_sensor_rs485.lua">
-        <lwm2m-object
-            object="0"
-            instance="0"
-            resource="10"
-            type="sensor"
-            name="Pass-by Vibration Score"
-            device_class="vibration"
-            state_class="measurement"
-            unit_of_measurement=""
-            icon="mdi:vibrate"
-            suggested_display_precision="3" />
-    </sensor>
+        image="ic_sensor_vibration"
+        description="Modbus RTU vibration sensor used to calculate a pass-by score from velocity and displacement measurements."
+        purchase_url="https://www.amazon.com/s?k=rs485+modbus+vibration+sensor"
+        script="rs485/scripts/vibration_sensor_rs485.lua" />
 </sensors>

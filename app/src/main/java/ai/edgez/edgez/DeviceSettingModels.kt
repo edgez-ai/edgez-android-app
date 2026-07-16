@@ -71,6 +71,9 @@ data class DeviceSensorDefinition(
     val version: Int,
     val name: String,
     val script: String,
+    val image: String = "",
+    val description: String = "",
+    val purchaseUrl: String = "",
 ) {
     val label: String
         get() = if (key.isBlank()) name else "$name [id=$id, v=$version]"
@@ -143,6 +146,9 @@ object DeviceSensorCatalog {
         val key = parser.getAttributeValue(null, "key").orEmpty().ifBlank { "$id-$version" }
         val name = parser.getAttributeValue(null, "name").orEmpty().ifBlank { key }
         val scriptPath = parser.getAttributeValue(null, "script").orEmpty()
+        val image = parser.getAttributeValue(null, "image").orEmpty()
+        val description = parser.getAttributeValue(null, "description").orEmpty()
+        val purchaseUrl = parser.getAttributeValue(null, "purchase_url").orEmpty()
         if (id <= 0 || version <= 0 || scriptPath.isBlank()) return null
 
         val script = runCatching {
@@ -156,6 +162,9 @@ object DeviceSensorCatalog {
             version = version,
             name = name,
             script = script,
+            image = image,
+            description = description,
+            purchaseUrl = purchaseUrl,
         )
     }
 
