@@ -23,6 +23,8 @@ private const val CALL_SAMPLE_RATE = 8_000
 private const val TAG_VOICE_CALL = "EdgeZVoiceCall"
 private const val CALL_FRAME_MS = 40
 private const val CALL_SAMPLES_PER_FRAME = CALL_SAMPLE_RATE * CALL_FRAME_MS / 1_000
+private const val PLAYBACK_PREFILL_FRAMES = 2
+private const val PLAYBACK_REPRIME_GAP_MS = CALL_FRAME_MS * 4L
 private val CALL_MAGIC = byteArrayOf('E'.code.toByte(), 'V'.code.toByte(), 'C'.code.toByte(), '2'.code.toByte())
 
 private const val CALL_INVITE: Byte = 1
@@ -69,6 +71,8 @@ class VoiceCallSession(
     private var state = VoiceCallState()
     private var sequence = 1
     private var player: AudioTrack? = null
+    private var playbackFramesBuffered = 0
+    private var lastPlaybackFrameAtMs = 0L
     private var callAudioConfigured = false
     private var previousAudioMode = AudioManager.MODE_NORMAL
     private var previousSpeakerphoneOn = false
@@ -208,15 +212,39 @@ class VoiceCallSession(
         }
     }
 
+    @Synchronized
     private fun play(audio: ByteArray) {
         val track = player ?: buildPlaybackTrack().also { player = it }
         val pcm = decodeImaAdpcm(audio, CALL_SAMPLES_PER_FRAME) ?: run {
             Log.w(TAG_VOICE_CALL, "RX ADPCM frame malformed bytes=${audio.size}")
             return
         }
-        val written = track.write(pcm, 0, pcm.size, AudioTrack.WRITE_NON_BLOCKING)
-        if (written < 0) {
-            Log.w(TAG_VOICE_CALL, "AudioTrack write failed: $written")
+
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (lastPlaybackFrameAtMs > 0L && now - lastPlaybackFrameAtMs > PLAYBACK_REPRIME_GAP_MS) {
+            if (track.playState == AudioTrack.PLAYSTATE_PLAYING) track.pause()
+            track.flush()
+            playbackFramesBuffered = 0
+            Log.d(TAG_VOICE_CALL, "Playback re-priming after ${now - lastPlaybackFrameAtMs}ms gap")
+        }
+        lastPlaybackFrameAtMs = now
+
+        var offset = 0
+        while (offset < pcm.size) {
+            val written = track.write(pcm, offset, pcm.size - offset, AudioTrack.WRITE_BLOCKING)
+            if (written <= 0) {
+                Log.w(TAG_VOICE_CALL, "AudioTrack write failed: $written offset=$offset")
+                return
+            }
+            offset += written
+        }
+
+        if (track.playState != AudioTrack.PLAYSTATE_PLAYING) {
+            playbackFramesBuffered++
+            if (playbackFramesBuffered >= PLAYBACK_PREFILL_FRAMES) {
+                track.play()
+                Log.d(TAG_VOICE_CALL, "Playback primed frames=$playbackFramesBuffered")
+            }
         }
     }
 
@@ -250,10 +278,9 @@ class VoiceCallSession(
             .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
         val preferred = speaker != null && track.setPreferredDevice(speaker)
         track.setVolume(AudioTrack.getMaxVolume())
-        track.play()
         Log.i(
             TAG_VOICE_CALL,
-            "Playback started legacy=$legacySpeakerPath preferredSpeaker=$preferred " +
+            "Playback created legacy=$legacySpeakerPath preferredSpeaker=$preferred " +
                 "buffer=${maxOf(minimumBuffer, CALL_SAMPLES_PER_FRAME * 8)} state=${track.state}",
         )
         return track
@@ -322,11 +349,22 @@ class VoiceCallSession(
 
     private fun reset() {
         sending.set(false)
-        player?.run { pause(); flush(); release() }
-        player = null
+        releasePlayback()
         restoreCallAudio()
         state = VoiceCallState()
         publishState()
+    }
+
+    @Synchronized
+    private fun releasePlayback() {
+        player?.run {
+            if (playState == AudioTrack.PLAYSTATE_PLAYING) pause()
+            flush()
+            release()
+        }
+        player = null
+        playbackFramesBuffered = 0
+        lastPlaybackFrameAtMs = 0L
     }
 
     private fun publishState() = onState(state)

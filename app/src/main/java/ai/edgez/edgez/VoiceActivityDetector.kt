@@ -16,8 +16,8 @@ internal data class VoiceActivityDecision(
  */
 internal class VoiceActivityDetector(
     private val minimumSpeechRms: Double = 40.0,
-    private val noiseMultiplier: Double = 1.8,
-    private val hangoverFrames: Int = 5,
+    private val noiseMultiplier: Double = 1.6,
+    private val hangoverFrames: Int = 8,
     private val calibrationFrames: Int = 10,
 ) {
     private var noiseRms = minimumSpeechRms / noiseMultiplier
