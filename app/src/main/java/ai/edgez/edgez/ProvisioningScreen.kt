@@ -202,6 +202,7 @@ private fun ProvisioningContent(
     val provisionMode = true
     val context = LocalContext.current
     val connectionPreferences = remember { LastConnectionPreferences(context.applicationContext) }
+    val settingsBleAddress = remember { connectionPreferences.getSelectedBleAddress() }
     fun newDeviceIdentity(name: String = "EdgeZ Device"): UserIdentity {
         val uuid = UUID.randomUUID()
         val keyPair = X25519KeyGenerator.generateKeyPair()
@@ -414,6 +415,9 @@ private fun ProvisioningContent(
         bleReady = false
         val result = bleClient.startScan { candidate ->
             activity?.runOnUiThread {
+                if (candidate.device.address.equals(settingsBleAddress, ignoreCase = true)) {
+                    return@runOnUiThread
+                }
                 if (bleCandidates.none { it.device.address == candidate.device.address }) {
                     bleCandidates = (bleCandidates + candidate).sortedBy { it.label }
                 }
@@ -1215,6 +1219,9 @@ private fun ProvisioningContent(
                                     bleReady = false
                                     val result = bleClient.startScan { candidate ->
                                         activity?.runOnUiThread {
+                                            if (candidate.device.address.equals(settingsBleAddress, ignoreCase = true)) {
+                                                return@runOnUiThread
+                                            }
                                             if (bleCandidates.none { it.device.address == candidate.device.address }) {
                                                 bleCandidates = (bleCandidates + candidate).sortedBy { it.label }
                                             }

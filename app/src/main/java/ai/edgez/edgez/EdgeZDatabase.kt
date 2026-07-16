@@ -569,6 +569,33 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
         )
     }
 
+    fun updateLatestSensorBinaryData(
+        peerUserUuid: String,
+        nodeNum: Long,
+        expectedLength: Int,
+        binaryLength: Int,
+        binaryImagePath: String?,
+    ): Boolean {
+        if (expectedLength <= 0 || binaryLength <= 0) return false
+        val updated = writableDatabase.update(
+            TABLE_SENSOR_DATA,
+            ContentValues().apply {
+                put("sensor_data_length", binaryLength)
+                put("binary_image_path", binaryImagePath?.takeIf { it.isNotBlank() })
+            },
+            "id = (SELECT id FROM $TABLE_SENSOR_DATA " +
+                "WHERE peer_user_uuid = ? AND node_num = ? AND sensor_data_length = ? " +
+                "ORDER BY timestamp_ms DESC, id DESC LIMIT 1)",
+            arrayOf(peerUserUuid, nodeNum.toString(), expectedLength.toString()),
+        )
+        Log.d(
+            TAG_USERS,
+            "update sensor binary rows=$updated peer=$peerUserUuid node=0x%012x expected=$expectedLength received=$binaryLength path=${binaryImagePath.orEmpty()}"
+                .format(nodeNum),
+        )
+        return updated > 0
+    }
+
     fun getSensorData(peerUserUuid: String, limit: Int = 120): List<SensorSample> {
         val samples = mutableListOf<SensorSample>()
         readableDatabase.query(

@@ -306,11 +306,12 @@ private data class PendingRawBinarySequenceMessage(
         chunks[sequence] = bytes
     }
 
-    fun completeBySequence(): Boolean {
+    fun completeBySequence(expectedLength: Int?): Boolean {
         if (chunks.isEmpty()) return false
         val sorted = chunks.keys.sorted()
         val start = sorted.first()
-        return (start..sorted.last()).all { it in chunks }
+        val contiguous = (start..sorted.last()).all { it in chunks }
+        return contiguous && expectedLength != null && chunks.values.sumOf { it.size } >= expectedLength
     }
 
     fun bytes(): ByteArray {
@@ -360,7 +361,7 @@ fun EdgeZApp() {
     val pendingBinaryMessages = remember { mutableMapOf<String, PendingConversationChunk>() }
     val pendingRawBinaryChunks = remember { mutableMapOf<String, PendingConversationChunk>() }
     val pendingRawBinarySequenceMessages = remember { mutableMapOf<String, PendingRawBinarySequenceMessage>() }
-    val requestedGlobalBuffers = remember { mutableSetOf<String>() }
+    val requestedGlobalBuffers = remember { mutableMapOf<Long, Int>() }
     val forwardPacketCache = remember { LinkedHashMap<ForwardPacketKey, Int>(FORWARD_CACHE_SIZE * 2) }
     var libp2pBridgeHolder by remember { mutableStateOf<Libp2pMeshBridge?>(null) }
     var libp2pMeshConnected by remember { mutableStateOf(false) }
@@ -396,13 +397,13 @@ fun EdgeZApp() {
         reconnectAttemptRunning.set(false)
     }
 
-    fun connectSelectedBleFromPreferences(): Boolean {
-        if (!lastConnectionPreferences.getBleAutoConnect() || !bleClient.hasPermissions()) return false
+    fun connectSelectedBleFromPreferences(ignoreAutoConnectSetting: Boolean = false): Boolean {
+        if ((!ignoreAutoConnectSetting && !lastConnectionPreferences.getBleAutoConnect()) || !bleClient.hasPermissions()) return false
         val selectedAddress = lastConnectionPreferences.getSelectedBleAddress()
         if (selectedAddress.isBlank()) return false
         val didStartConnect = AtomicBoolean(false)
         return bleClient.startScan { candidate ->
-            if (candidate.device.address == selectedAddress && didStartConnect.compareAndSet(false, true)) {
+            if (candidate.device.address.equals(selectedAddress, ignoreCase = true) && didStartConnect.compareAndSet(false, true)) {
                 bleClient.stopScan()
                 bleClient.connect(candidate)
             }
@@ -560,10 +561,24 @@ fun EdgeZApp() {
     }
 
     fun openDeviceProvisioning() {
-        disconnectTransport(activeConnection)
+        val previousConnection = activeConnection
+        disconnectTransport(previousConnection)
+        if (previousConnection != ActiveConnection.BLE) {
+            bleClient.close()
+        }
         provisionMode = true
         DeviceModeState.enabled = true
         currentDestination = AppDestination.NODES
+    }
+
+    fun restoreSettingsBleAfterProvision() {
+        provisionMode = false
+        DeviceModeState.enabled = false
+        mainHandler.post {
+            if (activeConnection == ActiveConnection.NONE) {
+                connectSelectedBleFromPreferences(ignoreAutoConnectSetting = true)
+            }
+        }
     }
 
     fun syncLibp2pMesh() {
@@ -1002,9 +1017,13 @@ fun EdgeZApp() {
                 ?.and(0x0000ffffffffffffL)
                 ?.takeIf { it > 0x00000000ffffffffL && it != HALOW_BROADCAST_NODE_48 }
                 ?: return
-            val requestKey = "$sensorNode:$expectedLength"
             val shouldRequest = synchronized(requestedGlobalBuffers) {
-                requestedGlobalBuffers.add(requestKey)
+                if (requestedGlobalBuffers[sensorNode] == expectedLength) {
+                    false
+                } else {
+                    requestedGlobalBuffers[sensorNode] = expectedLength
+                    true
+                }
             }
             if (!shouldRequest) return
 
@@ -1032,7 +1051,9 @@ fun EdgeZApp() {
                     )
                 }.onFailure {
                     synchronized(requestedGlobalBuffers) {
-                        requestedGlobalBuffers.remove(requestKey)
+                        if (requestedGlobalBuffers[sensorNode] == expectedLength) {
+                            requestedGlobalBuffers.remove(sensorNode)
+                        }
                     }
                     Log.w(TAG_USERS, "global buffer pull request failed sensor=0x%012x".format(sensorNode), it)
                 }
@@ -1263,6 +1284,9 @@ fun EdgeZApp() {
                         } else {
                             val senderNodeNum = if (resolvedSenderUser.deviceType == EdgeZDeviceType.GROUP) message.from else resolvedSenderUser.nodeNum
                             if (rawBinaryPacket) {
+                                val expectedBinaryLength = synchronized(requestedGlobalBuffers) {
+                                    requestedGlobalBuffers[senderNodeNum]
+                                }
                                 val rawConversationChunk = decodeConversationChunk(message.payload)
                                 val rawBinaryPayload = if (rawConversationChunk != null) {
                                     val key = "${senderNodeNum}:${rawConversationChunk.groupId}"
@@ -1282,7 +1306,7 @@ fun EdgeZApp() {
                                         PendingRawBinarySequenceMessage()
                                     }
                                     pending.put(message.sequence, message.payload)
-                                    if (pending.completeBySequence()) {
+                                    if (pending.completeBySequence(expectedBinaryLength)) {
                                         pendingRawBinarySequenceMessages.remove(key)
                                         pending.bytes()
                                     } else {
@@ -1291,20 +1315,37 @@ fun EdgeZApp() {
                                 }
 
                                 rawBinaryPayload?.let {
+                                    synchronized(requestedGlobalBuffers) {
+                                        if (requestedGlobalBuffers[senderNodeNum] == expectedBinaryLength) {
+                                            requestedGlobalBuffers.remove(senderNodeNum)
+                                        }
+                                    }
                                     val binaryImagePath = if (detectBinaryMime(it).startsWith("image/")) {
                                         saveBinaryMessage(context.applicationContext, it)
                                     } else {
                                         null
                                     }
-                                    edgeZDatabase.insertSensorData(
-                                        conversationKey(resolvedSenderUser),
-                                        resolvedSenderUser.nodeNum,
-                                        System.currentTimeMillis(),
-                                        EdgeZSensorData(
-                                            binaryLengthBytes = it.size,
-                                            binaryImagePath = binaryImagePath,
-                                        ),
-                                    )
+                                    val senderKey = conversationKey(resolvedSenderUser)
+                                    val updated = expectedBinaryLength?.let { expectedLength ->
+                                        edgeZDatabase.updateLatestSensorBinaryData(
+                                            senderKey,
+                                            resolvedSenderUser.nodeNum,
+                                            expectedLength,
+                                            it.size,
+                                            binaryImagePath,
+                                        )
+                                    } == true
+                                    if (!updated) {
+                                        edgeZDatabase.insertSensorData(
+                                            senderKey,
+                                            resolvedSenderUser.nodeNum,
+                                            System.currentTimeMillis(),
+                                            EdgeZSensorData(
+                                                binaryLengthBytes = it.size,
+                                                binaryImagePath = binaryImagePath,
+                                            ),
+                                        )
+                                    }
                                 }
                             }
                             val shouldUseConversationCrypto = isUserConversationCrypto(resolvedSenderUser)
@@ -1913,13 +1954,11 @@ AppDestination.MAP -> MapScreen(
                             disconnectTransport(connection)
                         },
                         onProvisionCancel = {
-                            provisionMode = false
-                            DeviceModeState.enabled = false
+                            restoreSettingsBleAfterProvision()
                             currentDestination = AppDestination.PROFILE
                         },
                         onProvisionComplete = {
-                            provisionMode = false
-                            DeviceModeState.enabled = false
+                            restoreSettingsBleAfterProvision()
                         },
                     )
                 } else if (conversationUser != null) {
