@@ -306,7 +306,7 @@ local function reset_camera()
 end
 
 local function set_resolution()
-  local args = string.char(0x04, 0x01, 0x00, 0x19, 0x22)
+  local args = string.char(0x04, 0x01, 0x00, 0x19, 0x11)
   local ok, err = send_command(CMD_SET_DOWNSIZE, args, "SET_DOWNSIZE_160x120")
   if not ok then
     return false, err
