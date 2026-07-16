@@ -391,8 +391,9 @@ local function run_action()
   elseif cam_action == "capture" then
     local set_ok, set_err = set_resolution()
     if not set_ok then
-      uart_safe_close()
-      return false, "failed to set resolution before capture: " .. tostring(set_err)
+      camera_log("Set resolution was not acknowledged; continuing capture with current camera resolution: " .. tostring(set_err))
+    else
+      camera_log("Resolution acknowledged before capture")
     end
 
     local captured_len, cap_err = capture_image()
