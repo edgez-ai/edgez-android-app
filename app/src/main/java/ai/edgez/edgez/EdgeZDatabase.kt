@@ -23,7 +23,7 @@ data class SensorSample(
     val data: EdgeZSensorData,
 )
 
-const val MESH_TOPOLOGY_WINDOW_MS = 15L * 60L * 1000L
+const val MESH_TOPOLOGY_WINDOW_MS = 5L * 60L * 1000L
 
 data class MeshTopologyObservation(
     val reporterNodeNum: Long,

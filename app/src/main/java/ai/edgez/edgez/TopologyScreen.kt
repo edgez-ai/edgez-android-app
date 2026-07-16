@@ -75,7 +75,7 @@ fun TopologyScreen(
                     Column {
                         Text("Mesh topology", fontWeight = FontWeight.SemiBold)
                         Text(
-                            "Graph from beacons heard in the last 15 minutes",
+                            "Graph from beacons heard in the last 5 minutes",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -146,7 +146,7 @@ private fun TopologySummary(nodeCount: Int, linkCount: Int) {
         ) {
             TopologyMetric("Nodes", nodeCount.toString())
             TopologyMetric("Links", linkCount.toString())
-            TopologyMetric("Window", "15 min")
+            TopologyMetric("Window", "5 min")
         }
     }
 }
