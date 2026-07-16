@@ -1105,7 +1105,7 @@ fun EdgeZApp() {
                             val retryMs = globalBufferResponse.retryAfterMs
                                 .takeIf { it > 0 }
                                 ?.coerceAtMost(30_000L)
-                                ?: 3_000L
+                                ?: 2_000L
                             Log.i(
                                 TAG_USERS,
                                 "global buffer busy sensor=0x%012x retryMs=%d".format(sensorNode, retryMs),
