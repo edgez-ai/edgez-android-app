@@ -59,6 +59,7 @@ private const val TAG = "EdgezUsbClient"
 private const val USB_READ_TIMEOUT_MS = 200
 private const val BEACON_MARKER_SEPARATOR = "|m="
 private val GLOBAL_BUFFER_REQUEST_MAGIC = byteArrayOf('G'.code.toByte(), 'B'.code.toByte(), 'R'.code.toByte(), 1)
+private val GLOBAL_BUFFER_RESPONSE_MAGIC = byteArrayOf('G'.code.toByte(), 'B'.code.toByte(), 'S'.code.toByte(), 1)
 
 data class UsbCandidate(
     val device: UsbDevice,
@@ -373,6 +374,24 @@ data class NetworkPacket(
     }
 }
 
+enum class GlobalBufferStatus(val wireValue: Int) {
+    ACCEPTED(0),
+    BUSY(1),
+    NOT_FOUND(2),
+    ERROR(3),
+    ;
+
+    companion object {
+        fun fromWire(value: Int): GlobalBufferStatus = entries.firstOrNull { it.wireValue == value } ?: ERROR
+    }
+}
+
+data class GlobalBufferResponse(
+    val status: GlobalBufferStatus,
+    val retryAfterMs: Long,
+    val availableLength: Long,
+)
+
 enum class PacketMime(val wireValue: Int) {
     UNSPECIFIED(0),
     TEXT(1),
@@ -419,6 +438,23 @@ private fun UsbInterface.describeClass(): String {
 }
 
 object EdgezUsbControlProto {
+    fun decodeGlobalBufferResponse(packet: NetworkPacket): GlobalBufferResponse? {
+        if (packet.operation != UsbControl.Operation.RESPONSE.number ||
+            packet.mime != PacketMime.BINARY ||
+            packet.payload.size < 16 ||
+            !packet.payload.copyOfRange(0, GLOBAL_BUFFER_RESPONSE_MAGIC.size)
+                .contentEquals(GLOBAL_BUFFER_RESPONSE_MAGIC)) {
+            return null
+        }
+        val payload = ByteBuffer.wrap(packet.payload).order(ByteOrder.BIG_ENDIAN)
+        payload.position(4)
+        val status = GlobalBufferStatus.fromWire(payload.get().toInt() and 0xff)
+        payload.position(8)
+        val retryAfterMs = payload.int.toLong() and 0xffffffffL
+        val availableLength = payload.int.toLong() and 0xffffffffL
+        return GlobalBufferResponse(status, retryAfterMs, availableLength)
+    }
+
     fun encodeRequest(
         action: Int,
         bleEnabled: Boolean = false,

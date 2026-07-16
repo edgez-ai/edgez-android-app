@@ -65,6 +65,7 @@ import ai.edgez.edgez.usb.EdgezUsbClient
 import ai.edgez.edgez.usb.EdgezUsbControlProto
 import ai.edgez.edgez.usb.ConversationMessage
 import ai.edgez.edgez.usb.HaLowInterfaceStatus
+import ai.edgez.edgez.usb.GlobalBufferStatus
 import ai.edgez.edgez.usb.PacketMime
 import ai.edgez.halow.UsbControl
 import java.io.ByteArrayOutputStream
@@ -362,6 +363,7 @@ fun EdgeZApp() {
     val pendingRawBinaryChunks = remember { mutableMapOf<String, PendingConversationChunk>() }
     val pendingRawBinarySequenceMessages = remember { mutableMapOf<String, PendingRawBinarySequenceMessage>() }
     val requestedGlobalBuffers = remember { mutableMapOf<Long, Int>() }
+    val globalBufferRetryNodes = remember { mutableSetOf<Long>() }
     val forwardPacketCache = remember { LinkedHashMap<ForwardPacketKey, Int>(FORWARD_CACHE_SIZE * 2) }
     var libp2pBridgeHolder by remember { mutableStateOf<Libp2pMeshBridge?>(null) }
     var libp2pMeshConnected by remember { mutableStateOf(false) }
@@ -1054,6 +1056,7 @@ fun EdgeZApp() {
                         if (requestedGlobalBuffers[sensorNode] == expectedLength) {
                             requestedGlobalBuffers.remove(sensorNode)
                         }
+                        globalBufferRetryNodes.remove(sensorNode)
                     }
                     Log.w(TAG_USERS, "global buffer pull request failed sensor=0x%012x".format(sensorNode), it)
                 }
@@ -1087,6 +1090,46 @@ fun EdgeZApp() {
                 } ?: Log.w(TAG_USERS, "libp2p rx parse failed route=$route ${summarizeLibp2pPayload(frame)}")
             }
             val message = parsed?.copy(hop = inferredHop.coerceAtLeast(parsed.hop))
+            val globalBufferResponse = message?.let(EdgezUsbControlProto::decodeGlobalBufferResponse)
+            if (globalBufferResponse != null) {
+                val sensorNode = message.from
+                val expectedLength = synchronized(requestedGlobalBuffers) {
+                    requestedGlobalBuffers[sensorNode]
+                }
+                when (globalBufferResponse.status) {
+                    GlobalBufferStatus.BUSY -> if (expectedLength != null) {
+                        val scheduleRetry = synchronized(requestedGlobalBuffers) {
+                            globalBufferRetryNodes.add(sensorNode)
+                        }
+                        if (scheduleRetry) {
+                            val retryMs = globalBufferResponse.retryAfterMs
+                                .takeIf { it > 0 }
+                                ?.coerceAtMost(30_000L)
+                                ?: 3_000L
+                            Log.i(
+                                TAG_USERS,
+                                "global buffer busy sensor=0x%012x retryMs=%d".format(sensorNode, retryMs),
+                            )
+                            mainHandler.postDelayed({
+                                val retryLength = synchronized(requestedGlobalBuffers) {
+                                    globalBufferRetryNodes.remove(sensorNode)
+                                    requestedGlobalBuffers.remove(sensorNode)
+                                }
+                                if (retryLength != null) {
+                                    requestGlobalBuffer(sensorNode, retryLength)
+                                }
+                            }, retryMs)
+                        }
+                    }
+                    GlobalBufferStatus.NOT_FOUND,
+                    GlobalBufferStatus.ERROR -> synchronized(requestedGlobalBuffers) {
+                        requestedGlobalBuffers.remove(sensorNode)
+                        globalBufferRetryNodes.remove(sensorNode)
+                    }
+                    GlobalBufferStatus.ACCEPTED -> Unit
+                }
+                return
+            }
             val status = message?.halowStatus ?: decodeHaLowStatusFrame(frame, meshPassphrase)
             val user = message?.toHaLowUser(route)
             val localIdentity = lastConnectionPreferences.getOrCreateUserIdentity()
@@ -1319,6 +1362,7 @@ fun EdgeZApp() {
                                         if (requestedGlobalBuffers[senderNodeNum] == expectedBinaryLength) {
                                             requestedGlobalBuffers.remove(senderNodeNum)
                                         }
+                                        globalBufferRetryNodes.remove(senderNodeNum)
                                     }
                                     val binaryImagePath = if (detectBinaryMime(it).startsWith("image/")) {
                                         saveBinaryMessage(context.applicationContext, it)
