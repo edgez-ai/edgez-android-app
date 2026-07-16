@@ -1,5 +1,8 @@
 local result = {}
 
+-- usb_control.proto SensorType.SENSOR_LENGTH
+local SENSOR_LENGTH = 5
+
 local SERIAL_NUM = 0x00
 
 local CMD_GET_VERSION = 0x11
@@ -422,13 +425,11 @@ if not ok then
   error(message)
 end
 
-table.insert(result, {
-  action = cam_action,
-  status = "ok",
-  message = tostring(message or "success"),
-  output = extra and extra.output or nil,
-  bytes = extra and extra.bytes or nil,
-  persist_buffer = extra and extra.persist_buffer or nil,
-})
+if extra and extra.bytes then
+  table.insert(result, {
+    type = SENSOR_LENGTH,
+    int_value = extra.bytes,
+  })
+end
 
 return result

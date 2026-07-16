@@ -465,6 +465,18 @@ class EdgezBleClient(private val context: Context) {
         return sendFrame(packet)
     }
 
+    fun sendGlobalBufferRequest(
+        from: Long,
+        to: Long,
+        expectedLength: Int,
+        maxHop: Int = 0,
+    ): Result<String> {
+        val packet = runCatching {
+            EdgezUsbControlProto.encodeGlobalBufferRequest(from, to, expectedLength, maxHop)
+        }.getOrElse { return Result.failure(it) }
+        return sendFrame(packet)
+    }
+
     /** Sends one realtime voice NetworkPacket on the dedicated FFF7 media characteristic. */
     fun sendVoiceCallMessage(
         message: ConversationMessage,

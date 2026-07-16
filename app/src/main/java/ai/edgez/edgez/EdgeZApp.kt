@@ -360,6 +360,7 @@ fun EdgeZApp() {
     val pendingBinaryMessages = remember { mutableMapOf<String, PendingConversationChunk>() }
     val pendingRawBinaryChunks = remember { mutableMapOf<String, PendingConversationChunk>() }
     val pendingRawBinarySequenceMessages = remember { mutableMapOf<String, PendingRawBinarySequenceMessage>() }
+    val requestedGlobalBuffers = remember { mutableSetOf<String>() }
     val forwardPacketCache = remember { LinkedHashMap<ForwardPacketKey, Int>(FORWARD_CACHE_SIZE * 2) }
     var libp2pBridgeHolder by remember { mutableStateOf<Libp2pMeshBridge?>(null) }
     var libp2pMeshConnected by remember { mutableStateOf(false) }
@@ -993,6 +994,51 @@ fun EdgeZApp() {
             }
         }
 
+        fun requestGlobalBuffer(sensorNode: Long, expectedLength: Int) {
+            if (sensorNode == 0L || expectedLength <= 0) return
+            val source = currentActiveConnection
+            if (source == ActiveConnection.NONE) return
+            val fromNode = outgoingFromNode()
+                ?.and(0x0000ffffffffffffL)
+                ?.takeIf { it > 0x00000000ffffffffL && it != HALOW_BROADCAST_NODE_48 }
+                ?: return
+            val requestKey = "$sensorNode:$expectedLength"
+            val shouldRequest = synchronized(requestedGlobalBuffers) {
+                requestedGlobalBuffers.add(requestKey)
+            }
+            if (!shouldRequest) return
+
+            val maxHop = lastConnectionPreferences.getMeshMaxHop()
+            messageAckExecutor.execute {
+                val result = when (source) {
+                    ActiveConnection.USB -> usbClient.sendGlobalBufferRequest(
+                        fromNode,
+                        sensorNode,
+                        expectedLength,
+                        maxHop,
+                    )
+                    ActiveConnection.BLE -> bleClient.sendGlobalBufferRequest(
+                        fromNode,
+                        sensorNode,
+                        expectedLength,
+                        maxHop,
+                    )
+                    ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+                }
+                result.onSuccess {
+                    Log.i(
+                        TAG_USERS,
+                        "global buffer pull requested sensor=0x%012x expected=%d".format(sensorNode, expectedLength),
+                    )
+                }.onFailure {
+                    synchronized(requestedGlobalBuffers) {
+                        requestedGlobalBuffers.remove(requestKey)
+                    }
+                    Log.w(TAG_USERS, "global buffer pull request failed sensor=0x%012x".format(sensorNode), it)
+                }
+            }
+        }
+
         fun handleMeshFrame(route: String, frame: ByteArray) {
             if (LIBP2P_RUNTIME_ENABLED && route == ROUTE_BLE_FORWARD && !lastConnectionPreferences.getLibp2pMeshEnabled()) {
                 Log.d(TAG_USERS, "ignore BLE forward frame while libp2p disabled route=$route bytes=${frame.size}")
@@ -1043,6 +1089,9 @@ fun EdgeZApp() {
                 return
             }
             val sensorData = message?.beaconSensorData()
+            sensorData?.binaryLengthBytes
+                ?.takeIf { it > 0 }
+                ?.let { requestGlobalBuffer(message.from, it) }
             val conversationMessage = message?.conversationMessage
             val conversationAck = message?.let {
                 val localNode = haLowStatus?.macAddress?.takeIf { node -> node != 0L }

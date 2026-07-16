@@ -58,6 +58,7 @@ private const val USB_CONTROL_STATUS_OK = 1
 private const val TAG = "EdgezUsbClient"
 private const val USB_READ_TIMEOUT_MS = 200
 private const val BEACON_MARKER_SEPARATOR = "|m="
+private val GLOBAL_BUFFER_REQUEST_MAGIC = byteArrayOf('G'.code.toByte(), 'B'.code.toByte(), 'R'.code.toByte(), 1)
 
 data class UsbCandidate(
     val device: UsbDevice,
@@ -706,6 +707,30 @@ object EdgezUsbControlProto {
         return packet.build().toByteArray()
     }
 
+    fun encodeGlobalBufferRequest(
+        from: Long,
+        to: Long,
+        expectedLength: Int,
+        maxHop: Int = 0,
+    ): ByteArray {
+        require(from != 0L && to != 0L) { "Global buffer request requires source and target nodes" }
+        require(expectedLength > 0) { "Global buffer request requires a positive length" }
+        val request = ByteBuffer.allocate(8).order(ByteOrder.BIG_ENDIAN)
+            .put(GLOBAL_BUFFER_REQUEST_MAGIC)
+            .putInt(expectedLength)
+            .array()
+        val packet = encodeNetworkPacketBuilder(
+            operation = UsbControl.Operation.REQUEST,
+            from = from,
+            to = to,
+            mime = PacketMime.BINARY,
+            maxHop = maxHop,
+            sequence = 1,
+        )
+        packet.setMsg(packet.msg.toBuilder().setPayload(ByteString.copyFrom(request)).build())
+        return packet.build().toByteArray()
+    }
+
     fun encodeConversationAck(
         messageIdHigh: Long,
         messageIdLow: Long,
@@ -1171,12 +1196,15 @@ object EdgezUsbControlProto {
             ?.takeIf { it.valueCase == UsbControl.SensorData.ValueCase.FLOAT_VALUE }
             ?.floatValue
             ?.toDouble()
+        fun intValue(type: UsbControl.SensorType): Int? = firstOrNull { it.type == type }
+            ?.takeIf { it.valueCase == UsbControl.SensorData.ValueCase.INT_VALUE }
+            ?.intValue
         return EdgeZSensorData(
             latitude = value(UsbControl.SensorType.SENSOR_LATITUDE),
             longitude = value(UsbControl.SensorType.SENSOR_LONGITUDE),
             temperature = value(UsbControl.SensorType.SENSOR_TEMPERATURE),
             humidity = value(UsbControl.SensorType.SENSOR_HUMIDITY),
-            binaryLengthBytes = sumOf { it.serializedSize },
+            binaryLengthBytes = intValue(UsbControl.SensorType.SENSOR_LENGTH),
         )
     }
 
@@ -1528,6 +1556,19 @@ class EdgezUsbClient(private val context: Context) {
         }.getOrElse { error ->
             return Result.failure(error)
         }
+        return sendFrame(packet, timeoutMs)
+    }
+
+    fun sendGlobalBufferRequest(
+        from: Long,
+        to: Long,
+        expectedLength: Int,
+        maxHop: Int = 0,
+        timeoutMs: Int = 1500,
+    ): Result<String> {
+        val packet = runCatching {
+            EdgezUsbControlProto.encodeGlobalBufferRequest(from, to, expectedLength, maxHop)
+        }.getOrElse { return Result.failure(it) }
         return sendFrame(packet, timeoutMs)
     }
 

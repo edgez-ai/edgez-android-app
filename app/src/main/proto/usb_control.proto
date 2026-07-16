@@ -134,6 +134,7 @@ enum SensorType {
   SENSOR_HUMIDITY = 2;
   SENSOR_LATITUDE = 3;
   SENSOR_LONGITUDE = 4;
+  SENSOR_LENGTH = 5;
 }
 
 message SensorData {

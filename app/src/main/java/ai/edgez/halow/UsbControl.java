@@ -1160,6 +1160,10 @@ public final class UsbControl {
      * <code>SENSOR_LONGITUDE = 4;</code>
      */
     SENSOR_LONGITUDE(4),
+    /**
+     * <code>SENSOR_LENGTH = 5;</code>
+     */
+    SENSOR_LENGTH(5),
     UNRECOGNIZED(-1),
     ;
 
@@ -1183,6 +1187,10 @@ public final class UsbControl {
      * <code>SENSOR_LONGITUDE = 4;</code>
      */
     public static final int SENSOR_LONGITUDE_VALUE = 4;
+    /**
+     * <code>SENSOR_LENGTH = 5;</code>
+     */
+    public static final int SENSOR_LENGTH_VALUE = 5;
 
 
     @java.lang.Override
@@ -1211,6 +1219,7 @@ public final class UsbControl {
         case 2: return SENSOR_HUMIDITY;
         case 3: return SENSOR_LATITUDE;
         case 4: return SENSOR_LONGITUDE;
+        case 5: return SENSOR_LENGTH;
         default: return null;
       }
     }

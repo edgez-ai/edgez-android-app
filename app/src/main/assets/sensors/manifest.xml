@@ -26,7 +26,7 @@
         interface="uart_i2c"
         key="1004-1"
         id="1004"
-        version="1"
+        version="2"
         name="VC0706 UART Camera"
         image="sensor_vc0706_camera"
         description="UART JPEG camera using the VC0706 command protocol. Captures still images and transfers the JPEG data through the script global buffer."
