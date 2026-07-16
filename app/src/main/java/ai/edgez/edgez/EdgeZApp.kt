@@ -96,6 +96,8 @@ private const val ROUTE_BLE = "BLE"
 private const val ROUTE_BLE_VOICE = "BLE_VOICE"
 private const val ROUTE_BLE_FORWARD = "BLE_FORWARD"
 private const val ROUTE_LIBP2P = "LIBP2P"
+private val GLOBAL_BUFFER_BLE_MAGIC = byteArrayOf('G'.code.toByte(), 'B'.code.toByte(), 'D'.code.toByte(), 1)
+private const val GLOBAL_BUFFER_RECOVERY_IDLE_MS = 1_200L
 private const val FORWARD_CACHE_SIZE = 1024
 private const val EDGEZ_NETWORK_PACKET_MAX_PAYLOAD = 350
 private const val LIBP2P_NO_TOPIC_PEER_QUEUE_DELAY_MS = 10_000L
@@ -284,14 +286,24 @@ private data class PendingVoiceMessage(
 
 private data class PendingConversationChunk(
     val chunks: Array<ByteArray?>,
+    var updatedAtMs: Long = System.currentTimeMillis(),
+    var recoveryInFlight: Int? = null,
+    var recoveryRequestedAtMs: Long = 0L,
 ) {
     fun put(index: Int, bytes: ByteArray) {
         if (index in chunks.indices) {
             chunks[index] = bytes
+            updatedAtMs = System.currentTimeMillis()
+            if (recoveryInFlight == index) {
+                recoveryInFlight = null
+                recoveryRequestedAtMs = 0L
+            }
         }
     }
 
     fun complete(): Boolean = chunks.all { it != null }
+
+    fun firstMissing(): Int? = chunks.indexOfFirst { it == null }.takeIf { it >= 0 }
 
     fun bytes(): ByteArray {
         val out = ByteArrayOutputStream()
@@ -299,6 +311,12 @@ private data class PendingConversationChunk(
         return out.toByteArray()
     }
 }
+
+private data class GlobalBufferRecoveryRequest(
+    val groupId: Long,
+    val chunkIndex: Int,
+    val expectedLength: Int,
+)
 
 private data class PendingRawBinarySequenceMessage(
     val chunks: MutableMap<Int, ByteArray> = LinkedHashMap(),
@@ -364,6 +382,7 @@ fun EdgeZApp() {
     val pendingRawBinarySequenceMessages = remember { mutableMapOf<String, PendingRawBinarySequenceMessage>() }
     val requestedGlobalBuffers = remember { mutableMapOf<Long, Int>() }
     val globalBufferRetryNodes = remember { mutableSetOf<Long>() }
+    val globalBufferRecoveryRequests = remember { mutableMapOf<Long, GlobalBufferRecoveryRequest>() }
     val forwardPacketCache = remember { LinkedHashMap<ForwardPacketKey, Int>(FORWARD_CACHE_SIZE * 2) }
     var libp2pBridgeHolder by remember { mutableStateOf<Libp2pMeshBridge?>(null) }
     var libp2pMeshConnected by remember { mutableStateOf(false) }
@@ -1065,6 +1084,64 @@ fun EdgeZApp() {
             }
         }
 
+        fun requestGlobalBufferChunk(
+            sensorNode: Long,
+            groupId: Long,
+            chunkIndex: Int,
+            expectedLength: Int,
+        ) {
+            if (sensorNode == 0L || groupId == 0L || chunkIndex < 0 || expectedLength <= 0) return
+            val source = currentActiveConnection
+            if (source == ActiveConnection.NONE) return
+            val fromNode = outgoingFromNode()
+                ?.and(0x0000ffffffffffffL)
+                ?.takeIf { it > 0x00000000ffffffffL && it != HALOW_BROADCAST_NODE_48 }
+                ?: return
+            val request = GlobalBufferRecoveryRequest(groupId, chunkIndex, expectedLength)
+            synchronized(requestedGlobalBuffers) {
+                globalBufferRecoveryRequests[sensorNode] = request
+            }
+            val maxHop = lastConnectionPreferences.getMeshMaxHop()
+            messageAckExecutor.execute {
+                val result = when (source) {
+                    ActiveConnection.USB -> usbClient.sendGlobalBufferChunkRequest(
+                        fromNode, sensorNode, groupId, chunkIndex, maxHop,
+                    )
+                    ActiveConnection.BLE -> bleClient.sendGlobalBufferChunkRequest(
+                        fromNode, sensorNode, groupId, chunkIndex, maxHop,
+                    )
+                    ActiveConnection.NONE -> Result.failure(IllegalStateException("No active connection"))
+                }
+                result.onSuccess {
+                    Log.i(
+                        TAG_USERS,
+                        "global buffer missing chunk requested sensor=0x%012x group=%016x chunk=%d"
+                            .format(sensorNode, groupId, chunkIndex),
+                    )
+                }.onFailure {
+                    synchronized(requestedGlobalBuffers) {
+                        if (globalBufferRecoveryRequests[sensorNode] == request) {
+                            globalBufferRecoveryRequests.remove(sensorNode)
+                        }
+                    }
+                    synchronized(pendingRawBinaryChunks) {
+                        pendingRawBinaryChunks["$sensorNode:$groupId"]?.let { pending ->
+                            if (pending.recoveryInFlight == chunkIndex) {
+                                pending.recoveryInFlight = null
+                                pending.recoveryRequestedAtMs = 0L
+                            }
+                        }
+                    }
+                    Log.w(
+                        TAG_USERS,
+                        "global buffer missing chunk request failed sensor=0x%012x chunk=%d"
+                            .format(sensorNode, chunkIndex),
+                        it,
+                    )
+                }
+            }
+        }
+
         fun handleMeshFrame(route: String, frame: ByteArray) {
             if (LIBP2P_RUNTIME_ENABLED && route == ROUTE_BLE_FORWARD && !lastConnectionPreferences.getLibp2pMeshEnabled()) {
                 Log.d(TAG_USERS, "ignore BLE forward frame while libp2p disabled route=$route bytes=${frame.size}")
@@ -1098,8 +1175,32 @@ fun EdgeZApp() {
                 val expectedLength = synchronized(requestedGlobalBuffers) {
                     requestedGlobalBuffers[sensorNode]
                 }
+                val recoveryRequest = synchronized(requestedGlobalBuffers) {
+                    globalBufferRecoveryRequests[sensorNode]
+                }
                 when (globalBufferResponse.status) {
-                    GlobalBufferStatus.BUSY -> if (expectedLength != null) {
+                    GlobalBufferStatus.BUSY -> if (recoveryRequest != null) {
+                        val retryMs = globalBufferResponse.retryAfterMs
+                            .takeIf { it > 0 }
+                            ?.coerceAtMost(30_000L)
+                            ?: 2_000L
+                        Log.i(
+                            TAG_USERS,
+                            "global buffer recovery busy sensor=0x%012x chunk=%d retryMs=%d"
+                                .format(sensorNode, recoveryRequest.chunkIndex, retryMs),
+                        )
+                        mainHandler.postDelayed({
+                            val retry = synchronized(requestedGlobalBuffers) {
+                                globalBufferRecoveryRequests[sensorNode]
+                                    ?.takeIf { it == recoveryRequest }
+                            }
+                            retry?.let {
+                                requestGlobalBufferChunk(
+                                    sensorNode, it.groupId, it.chunkIndex, it.expectedLength,
+                                )
+                            }
+                        }, retryMs)
+                    } else if (expectedLength != null) {
                         val scheduleRetry = synchronized(requestedGlobalBuffers) {
                             globalBufferRetryNodes.add(sensorNode)
                         }
@@ -1124,9 +1225,17 @@ fun EdgeZApp() {
                         }
                     }
                     GlobalBufferStatus.NOT_FOUND,
-                    GlobalBufferStatus.ERROR -> synchronized(requestedGlobalBuffers) {
-                        requestedGlobalBuffers.remove(sensorNode)
-                        globalBufferRetryNodes.remove(sensorNode)
+                    GlobalBufferStatus.ERROR -> {
+                        synchronized(requestedGlobalBuffers) {
+                            requestedGlobalBuffers.remove(sensorNode)
+                            globalBufferRetryNodes.remove(sensorNode)
+                            globalBufferRecoveryRequests.remove(sensorNode)
+                        }
+                        recoveryRequest?.let {
+                            synchronized(pendingRawBinaryChunks) {
+                                pendingRawBinaryChunks.remove("$sensorNode:${it.groupId}")
+                            }
+                        }
                     }
                     GlobalBufferStatus.ACCEPTED -> Unit
                 }
@@ -1683,6 +1792,57 @@ fun EdgeZApp() {
             handleMeshFrame(ROUTE_BLE, frame)
         }
 
+        fun scheduleGlobalBufferRecovery(sensorNode: Long, groupId: Long) {
+            mainHandler.postDelayed({
+                var retryIdleCheck = false
+                var missingChunk: Int? = null
+                var expectedLength: Int? = null
+                synchronized(pendingRawBinaryChunks) {
+                    val pending = pendingRawBinaryChunks["$sensorNode:$groupId"]
+                    if (pending != null && !pending.complete()) {
+                        val now = System.currentTimeMillis()
+                        val idleMs = now - pending.updatedAtMs
+                        if (idleMs < GLOBAL_BUFFER_RECOVERY_IDLE_MS) {
+                            retryIdleCheck = true
+                        } else {
+                            if (pending.recoveryInFlight != null &&
+                                now - pending.recoveryRequestedAtMs >= 5_000L) {
+                                pending.recoveryInFlight = null
+                                pending.recoveryRequestedAtMs = 0L
+                            }
+                            if (pending.recoveryInFlight == null) {
+                                missingChunk = pending.firstMissing()
+                                if (missingChunk != null) {
+                                    pending.recoveryInFlight = missingChunk
+                                    pending.recoveryRequestedAtMs = now
+                                }
+                            }
+                        }
+                    }
+                }
+                if (retryIdleCheck) {
+                    scheduleGlobalBufferRecovery(sensorNode, groupId)
+                    return@postDelayed
+                }
+                val chunkIndex = missingChunk ?: return@postDelayed
+                expectedLength = synchronized(requestedGlobalBuffers) {
+                    requestedGlobalBuffers[sensorNode]
+                }
+                val length = expectedLength
+                if (length == null || length <= 0) {
+                    synchronized(pendingRawBinaryChunks) {
+                        pendingRawBinaryChunks["$sensorNode:$groupId"]?.let {
+                            it.recoveryInFlight = null
+                            it.recoveryRequestedAtMs = 0L
+                        }
+                    }
+                    return@postDelayed
+                }
+                requestGlobalBufferChunk(sensorNode, groupId, chunkIndex, length)
+                scheduleGlobalBufferRecovery(sensorNode, groupId)
+            }, GLOBAL_BUFFER_RECOVERY_IDLE_MS)
+        }
+
         val removeUsbFrameListener = usbClient.addFrameListener { frame ->
             handleTransportFrame(ActiveConnection.USB, frame)
         }
@@ -1693,7 +1853,80 @@ fun EdgeZApp() {
         }
         val removeBleVoiceFrameListener = bleClient.addVoiceFrameListener { payload ->
             if (currentActiveConnection == ActiveConnection.BLE) {
-                runCatching {
+                val isGlobalBufferMedia = payload.size > GLOBAL_BUFFER_BLE_MAGIC.size + 6 &&
+                    payload.copyOfRange(0, GLOBAL_BUFFER_BLE_MAGIC.size).contentEquals(GLOBAL_BUFFER_BLE_MAGIC)
+                if (isGlobalBufferMedia) runCatching {
+                    val buffer = ByteBuffer.wrap(payload).order(ByteOrder.BIG_ENDIAN)
+                    buffer.position(GLOBAL_BUFFER_BLE_MAGIC.size)
+                    var from = 0L
+                    repeat(6) { from = (from shl 8) or (buffer.get().toLong() and 0xff) }
+                    val chunkPayload = ByteArray(buffer.remaining()).also(buffer::get)
+                    val chunk = requireNotNull(decodeConversationChunk(chunkPayload)) {
+                        "Global-buffer media chunk is malformed"
+                    }
+                    val assembled = synchronized(pendingRawBinaryChunks) {
+                        val key = "$from:${chunk.groupId}"
+                        val pending = pendingRawBinaryChunks.getOrPut(key) {
+                            PendingConversationChunk(chunks = arrayOfNulls(chunk.totalChunks))
+                        }
+                        require(pending.chunks.size == chunk.totalChunks) {
+                            "Global-buffer chunk count changed during transfer"
+                        }
+                        pending.put(chunk.index, chunk.bytes)
+                        if (pending.complete()) {
+                            pendingRawBinaryChunks.remove(key)
+                            pending.bytes()
+                        } else {
+                            null
+                        }
+                    }
+                    scheduleGlobalBufferRecovery(from, chunk.groupId)
+                    assembled?.let { bytes ->
+                        val expectedLength = synchronized(requestedGlobalBuffers) {
+                            requestedGlobalBuffers[from]
+                        }
+                        val binaryImagePath = if (detectBinaryMime(bytes).startsWith("image/")) {
+                            saveBinaryMessage(context.applicationContext, bytes)
+                        } else {
+                            null
+                        }
+                        val sender = requireNotNull(haLowUsers[from]) {
+                            "Unknown global-buffer sender 0x%012x".format(from)
+                        }
+                        val senderKey = conversationKey(sender)
+                        val updated = expectedLength?.let { length ->
+                            edgeZDatabase.updateLatestSensorBinaryData(
+                                senderKey,
+                                from,
+                                length,
+                                bytes.size,
+                                binaryImagePath,
+                            )
+                        } == true
+                        if (!updated) {
+                            edgeZDatabase.insertSensorData(
+                                senderKey,
+                                from,
+                                System.currentTimeMillis(),
+                                EdgeZSensorData(
+                                    binaryLengthBytes = bytes.size,
+                                    binaryImagePath = binaryImagePath,
+                                ),
+                            )
+                        }
+                        synchronized(requestedGlobalBuffers) {
+                            requestedGlobalBuffers.remove(from)
+                            globalBufferRetryNodes.remove(from)
+                            globalBufferRecoveryRequests.remove(from)
+                        }
+                        Log.i(
+                            TAG_USERS,
+                            "global buffer BLE media complete sensor=0x%012x bytes=%d chunks=%d"
+                                .format(from, bytes.size, chunk.totalChunks),
+                        )
+                    }
+                }.onFailure { Log.w(TAG_USERS, "Global buffer BLE media RX failed", it) }
+                else runCatching {
                     require(payload.size >= 6 + 4 + 12 + 1) { "Compact voice frame is too short" }
                     val buffer = ByteBuffer.wrap(payload).order(ByteOrder.BIG_ENDIAN)
                     var from = 0L

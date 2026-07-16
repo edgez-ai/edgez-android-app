@@ -59,6 +59,7 @@ private const val TAG = "EdgezUsbClient"
 private const val USB_READ_TIMEOUT_MS = 200
 private const val BEACON_MARKER_SEPARATOR = "|m="
 private val GLOBAL_BUFFER_REQUEST_MAGIC = byteArrayOf('G'.code.toByte(), 'B'.code.toByte(), 'R'.code.toByte(), 1)
+private val GLOBAL_BUFFER_CHUNK_REQUEST_MAGIC = byteArrayOf('G'.code.toByte(), 'B'.code.toByte(), 'R'.code.toByte(), 2)
 private val GLOBAL_BUFFER_RESPONSE_MAGIC = byteArrayOf('G'.code.toByte(), 'B'.code.toByte(), 'S'.code.toByte(), 1)
 
 data class UsbCandidate(
@@ -754,6 +755,33 @@ object EdgezUsbControlProto {
         val request = ByteBuffer.allocate(8).order(ByteOrder.BIG_ENDIAN)
             .put(GLOBAL_BUFFER_REQUEST_MAGIC)
             .putInt(expectedLength)
+            .array()
+        val packet = encodeNetworkPacketBuilder(
+            operation = UsbControl.Operation.REQUEST,
+            from = from,
+            to = to,
+            mime = PacketMime.BINARY,
+            maxHop = maxHop,
+            sequence = 1,
+        )
+        packet.setMsg(packet.msg.toBuilder().setPayload(ByteString.copyFrom(request)).build())
+        return packet.build().toByteArray()
+    }
+
+    fun encodeGlobalBufferChunkRequest(
+        from: Long,
+        to: Long,
+        groupId: Long,
+        chunkIndex: Int,
+        maxHop: Int = 0,
+    ): ByteArray {
+        require(from != 0L && to != 0L) { "Global buffer chunk request requires source and target nodes" }
+        require(groupId != 0L) { "Global buffer chunk request requires a transfer group" }
+        require(chunkIndex in 0..0xffff) { "Global buffer chunk index is out of range" }
+        val request = ByteBuffer.allocate(14).order(ByteOrder.BIG_ENDIAN)
+            .put(GLOBAL_BUFFER_CHUNK_REQUEST_MAGIC)
+            .putLong(groupId)
+            .putShort(chunkIndex.toShort())
             .array()
         val packet = encodeNetworkPacketBuilder(
             operation = UsbControl.Operation.REQUEST,
@@ -1604,6 +1632,22 @@ class EdgezUsbClient(private val context: Context) {
     ): Result<String> {
         val packet = runCatching {
             EdgezUsbControlProto.encodeGlobalBufferRequest(from, to, expectedLength, maxHop)
+        }.getOrElse { return Result.failure(it) }
+        return sendFrame(packet, timeoutMs)
+    }
+
+    fun sendGlobalBufferChunkRequest(
+        from: Long,
+        to: Long,
+        groupId: Long,
+        chunkIndex: Int,
+        maxHop: Int = 0,
+        timeoutMs: Int = 1500,
+    ): Result<String> {
+        val packet = runCatching {
+            EdgezUsbControlProto.encodeGlobalBufferChunkRequest(
+                from, to, groupId, chunkIndex, maxHop,
+            )
         }.getOrElse { return Result.failure(it) }
         return sendFrame(packet, timeoutMs)
     }
