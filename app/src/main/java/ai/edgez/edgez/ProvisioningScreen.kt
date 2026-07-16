@@ -1541,6 +1541,12 @@ private fun ProvisioningContent(
                             status = "UART/I2C sensor set to ${selectedSensor.label}"
                         },
                     )
+                    if (deviceSensorsEnabled) {
+                        Spacer(Modifier.height(8.dp))
+                        SensorInfoCard(
+                            sensor = uartI2cSensorOptions.firstOrNull { it.key == deviceUartI2cSensorType },
+                        )
+                    }
                     Spacer(Modifier.height(8.dp))
                     SensorTypeDropdown(
                         label = "RS485 connector",
@@ -1554,6 +1560,12 @@ private fun ProvisioningContent(
                             status = "RS485 sensor set to ${selectedSensor.label}"
                         },
                     )
+                    if (deviceSensorsEnabled) {
+                        Spacer(Modifier.height(8.dp))
+                        SensorInfoCard(
+                            sensor = rs485SensorOptions.firstOrNull { it.key == deviceRs485SensorType },
+                        )
+                    }
                 }
             }
 

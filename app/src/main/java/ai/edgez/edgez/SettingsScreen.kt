@@ -1604,6 +1604,10 @@ private fun SettingsContent(
                         },
                     )
                     Spacer(Modifier.height(8.dp))
+                    SensorInfoCard(
+                        sensor = uartI2cSensorOptions.firstOrNull { it.key == deviceUartI2cSensorType },
+                    )
+                    Spacer(Modifier.height(8.dp))
                     SensorTypeDropdown(
                         label = "RS485 connector",
                         selectedKey = deviceRs485SensorType,
@@ -1614,6 +1618,10 @@ private fun SettingsContent(
                             deviceRs485SensorType = selectedSensor.key
                             status = "RS485 sensor set to ${selectedSensor.label}"
                         },
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    SensorInfoCard(
+                        sensor = rs485SensorOptions.firstOrNull { it.key == deviceRs485SensorType },
                     )
                     Spacer(Modifier.height(10.dp))
                     Button(onClick = { sendDeviceSettingsToDevice() }) {
