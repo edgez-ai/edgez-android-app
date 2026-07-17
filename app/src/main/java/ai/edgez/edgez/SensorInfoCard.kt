@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -64,7 +65,21 @@ fun SensorInfoCard(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text(sensor.name, style = MaterialTheme.typography.titleSmall)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(sensor.name, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                    if (sensor.isBundled) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_usb),
+                            contentDescription = "Built-in driver",
+                            modifier = Modifier.size(12.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
                 if (sensor.description.isNotBlank()) {
                     Text(sensor.description, style = MaterialTheme.typography.bodySmall)
                 }

@@ -72,6 +72,7 @@ data class DeviceSensorDefinition(
     val script: String,
     val image: String = "",
     val imagePath: String = "",
+    val isBundled: Boolean = false,
     val description: String = "",
     val purchaseUrl: String = "",
     val globalBufferSize: Int = 4096,
@@ -132,7 +133,7 @@ object DeviceSensorCatalog {
                         .use { it.readText() }
                 }.getOrNull().orEmpty(),
                 connector = connector,
-            )
+            )?.copy(isBundled = true)
         }
     }
 
