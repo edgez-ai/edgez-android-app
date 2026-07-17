@@ -98,6 +98,8 @@ private const val ROUTE_BLE_FORWARD = "BLE_FORWARD"
 private const val ROUTE_LIBP2P = "LIBP2P"
 private val GLOBAL_BUFFER_BLE_MAGIC = byteArrayOf('G'.code.toByte(), 'B'.code.toByte(), 'D'.code.toByte(), 1)
 private const val GLOBAL_BUFFER_RECOVERY_IDLE_MS = 1_200L
+private const val GLOBAL_BUFFER_INITIAL_RESPONSE_TIMEOUT_MS = 2_000L
+private const val GLOBAL_BUFFER_CHUNK_REQUEST_TIMEOUT_MS = 2_000L
 private const val FORWARD_CACHE_SIZE = 1024
 private const val EDGEZ_NETWORK_PACKET_MAX_PAYLOAD = 350
 private const val LIBP2P_NO_TOPIC_PEER_QUEUE_DELAY_MS = 10_000L
@@ -1072,6 +1074,22 @@ fun EdgeZApp() {
                         TAG_USERS,
                         "global buffer pull requested sensor=0x%012x expected=%d".format(sensorNode, expectedLength),
                     )
+                    /* The initial media burst is best effort, like realtime
+                     * voice. If no chunk arrives, repeat the reliable control
+                     * request so the app can learn a transfer group. */
+                    mainHandler.postDelayed({
+                        val receivedAnyChunk = synchronized(pendingRawBinaryChunks) {
+                            pendingRawBinaryChunks.keys.any { it.startsWith("$sensorNode:") }
+                        }
+                        val retryLength = synchronized(requestedGlobalBuffers) {
+                            if (!receivedAnyChunk && requestedGlobalBuffers[sensorNode] == expectedLength) {
+                                requestedGlobalBuffers.remove(sensorNode)
+                            } else {
+                                null
+                            }
+                        }
+                        retryLength?.let { requestGlobalBuffer(sensorNode, it) }
+                    }, GLOBAL_BUFFER_INITIAL_RESPONSE_TIMEOUT_MS)
                 }.onFailure {
                     synchronized(requestedGlobalBuffers) {
                         if (requestedGlobalBuffers[sensorNode] == expectedLength) {
@@ -1432,9 +1450,6 @@ fun EdgeZApp() {
                                 "conversation sender missing user=$senderUserUuid from=0x%012x to=0x%012x known=${haLowUsers.size}"
                                     .format(message.from, message.to),
                             )
-                            if (rawBinaryPacket && (route != ROUTE_LIBP2P || currentActiveConnection != ActiveConnection.NONE)) {
-                                sendConversationAck(currentActiveConnection, route, message)
-                            }
                         } else {
                             val senderNodeNum = if (resolvedSenderUser.deviceType == EdgeZDeviceType.GROUP) message.from else resolvedSenderUser.nodeNum
                             if (rawBinaryPacket) {
@@ -1776,10 +1791,6 @@ fun EdgeZApp() {
                                 if (route != ROUTE_LIBP2P || currentActiveConnection != ActiveConnection.NONE) {
                                     sendConversationAck(currentActiveConnection, route, message)
                                 }
-                            } else if (rawBinaryPacket) {
-                                if (route != ROUTE_LIBP2P || currentActiveConnection != ActiveConnection.NONE) {
-                                    sendConversationAck(currentActiveConnection, route, message)
-                                }
                             }
                         }
                     }
@@ -1806,7 +1817,7 @@ fun EdgeZApp() {
                             retryIdleCheck = true
                         } else {
                             if (pending.recoveryInFlight != null &&
-                                now - pending.recoveryRequestedAtMs >= 5_000L) {
+                                now - pending.recoveryRequestedAtMs >= GLOBAL_BUFFER_CHUNK_REQUEST_TIMEOUT_MS) {
                                 pending.recoveryInFlight = null
                                 pending.recoveryRequestedAtMs = 0L
                             }
@@ -1873,6 +1884,11 @@ fun EdgeZApp() {
                             "Global-buffer chunk count changed during transfer"
                         }
                         pending.put(chunk.index, chunk.bytes)
+                        synchronized(requestedGlobalBuffers) {
+                            globalBufferRecoveryRequests[from]
+                                ?.takeIf { it.groupId == chunk.groupId && it.chunkIndex == chunk.index }
+                                ?.let { globalBufferRecoveryRequests.remove(from) }
+                        }
                         if (pending.complete()) {
                             pendingRawBinaryChunks.remove(key)
                             pending.bytes()
