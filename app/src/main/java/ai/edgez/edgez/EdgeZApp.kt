@@ -2615,6 +2615,7 @@ AppDestination.MAP -> MapScreen(
                     disconnectTransport(connection)
                 },
             )
+            AppDestination.DRIVERS -> DriversScreen()
         }
     }
 }
@@ -2625,6 +2626,7 @@ private enum class AppDestination(
 ) {
     PROFILE("Dashboard", R.drawable.ic_account_box),
     MAP("Map", R.drawable.ic_map),
+    DRIVERS("Drivers", R.drawable.ic_usb),
     TOPOLOGY("Topology", R.drawable.ic_halow_mesh),
     NODES("Nodes", R.drawable.ic_halow_mesh),
     SETTINGS("Settings", R.drawable.ic_usb),
