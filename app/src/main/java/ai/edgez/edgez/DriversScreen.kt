@@ -1,12 +1,7 @@
 package ai.edgez.edgez
 
-import android.annotation.SuppressLint
-import android.webkit.JavascriptInterface
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import androidx.activity.compose.BackHandler
-import androidx.annotation.Keep
-import androidx.compose.foundation.layout.Box
+import android.net.Uri
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,19 +13,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 
 private const val EDGEZ_MARKETPLACE_URL = "https://www.edgez.ai/mobile/marketplace"
 private const val EDGEZ_EDITOR_URL = "https://www.edgez.ai/mobile/editor"
@@ -38,7 +24,6 @@ private const val EDGEZ_EDITOR_URL = "https://www.edgez.ai/mobile/editor"
 @Composable
 fun DriversScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    var webViewUrl by rememberSaveable { mutableStateOf<String?>(null) }
     val uartI2cDrivers = remember(context) {
         DeviceSensorCatalog.sensorDefinitionsFor(context, DeviceSensorConnector.UART_I2C)
             .filter { it.key.isNotBlank() }
@@ -46,21 +31,6 @@ fun DriversScreen(modifier: Modifier = Modifier) {
     val rs485Drivers = remember(context) {
         DeviceSensorCatalog.sensorDefinitionsFor(context, DeviceSensorConnector.RS485)
             .filter { it.key.isNotBlank() }
-    }
-
-    webViewUrl?.let { url ->
-        Dialog(
-            onDismissRequest = { webViewUrl = null },
-            properties = DialogProperties(
-                usePlatformDefaultWidth = false,
-                decorFitsSystemWindows = false,
-            ),
-        ) {
-            DriversWebViewScreen(
-                url = url,
-                onBack = { webViewUrl = null },
-            )
-        }
     }
 
     Scaffold(modifier = modifier.fillMaxSize()) { padding ->
@@ -80,13 +50,13 @@ fun DriversScreen(modifier: Modifier = Modifier) {
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Button(
-                        onClick = { webViewUrl = EDGEZ_MARKETPLACE_URL },
+                        onClick = { openCustomTab(context, EDGEZ_MARKETPLACE_URL) },
                         modifier = Modifier.weight(1f),
                     ) {
                         Text("Marketplace")
                     }
                     Button(
-                        onClick = { webViewUrl = EDGEZ_EDITOR_URL },
+                        onClick = { openCustomTab(context, EDGEZ_EDITOR_URL) },
                         modifier = Modifier.weight(1f),
                     ) {
                         Text("Editor")
@@ -109,55 +79,9 @@ fun DriversScreen(modifier: Modifier = Modifier) {
     }
 }
 
-@SuppressLint("SetJavaScriptEnabled")
-@Composable
-private fun DriversWebViewScreen(
-    url: String,
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val context = LocalContext.current
-    val onBackState by rememberUpdatedState(onBack)
-    val webView = remember(context, url) {
-        WebView(context).apply {
-            webViewClient = WebViewClient()
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            addJavascriptInterface(
-                EdgeZMobileBridge {
-                    post { onBackState() }
-                },
-                "EdgeZMobile",
-            )
-            loadUrl(url)
-        }
-    }
-    val navigateBack = {
-        if (webView.canGoBack()) webView.goBack() else onBack()
-    }
-
-    BackHandler(onBack = navigateBack)
-    DisposableEffect(webView) {
-        onDispose {
-            webView.stopLoading()
-            webView.destroy()
-        }
-    }
-
-    Box(modifier = modifier.fillMaxSize()) {
-        AndroidView(
-            factory = { webView },
-            modifier = Modifier.fillMaxSize(),
-        )
-    }
-}
-
-@Keep
-private class EdgeZMobileBridge(
-    private val onCloseWebView: () -> Unit,
-) {
-    @JavascriptInterface
-    fun closeWebView() {
-        onCloseWebView()
-    }
+private fun openCustomTab(context: android.content.Context, url: String) {
+    CustomTabsIntent.Builder()
+        .setShowTitle(false)
+        .build()
+        .launchUrl(context, Uri.parse(url))
 }

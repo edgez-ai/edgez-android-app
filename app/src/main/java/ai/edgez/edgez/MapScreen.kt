@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -460,14 +461,14 @@ fun MapScreen(
                 Box(modifier = Modifier.fillMaxSize()) {
                     MapContent()
                     if (onBack != null) {
-                        Button(
+                        FilledIconButton(
                             onClick = onBack,
                             modifier = Modifier
-                                .align(Alignment.TopStart)
+                                .align(Alignment.TopEnd)
                                 .windowInsetsPadding(WindowInsets.statusBars)
                                 .padding(16.dp),
                         ) {
-                            Text("Back")
+                            Text("✕", style = MaterialTheme.typography.titleMedium)
                         }
                     }
                 }
