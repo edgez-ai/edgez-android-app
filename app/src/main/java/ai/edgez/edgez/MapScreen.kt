@@ -15,18 +15,17 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -41,6 +40,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import app.organicmaps.sdk.Framework
 import app.organicmaps.sdk.MapController
 import app.organicmaps.sdk.MapRenderingListener
@@ -92,7 +93,6 @@ private data class GeoFenceLine(
     val points: List<GeoFenceLinePoint>,
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MapScreen(
     users: List<HaLowUser>,
@@ -449,22 +449,29 @@ fun MapScreen(
     if (previewMode) {
         MapContent(modifier)
     } else {
-        Scaffold(
-            modifier = modifier.fillMaxSize(),
-            topBar = {
-                if (onBack != null) {
-                    TopAppBar(
-                        title = { Text("Map") },
-                        navigationIcon = {
-                            TextButton(onClick = onBack) {
-                                Text("Back")
-                            }
-                        },
-                    )
+        Dialog(
+            onDismissRequest = { onBack?.invoke() },
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = false,
+            ),
+        ) {
+            Surface(modifier = modifier.fillMaxSize()) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    MapContent()
+                    if (onBack != null) {
+                        Button(
+                            onClick = onBack,
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .windowInsetsPadding(WindowInsets.statusBars)
+                                .padding(16.dp),
+                        ) {
+                            Text("Back")
+                        }
+                    }
                 }
-            },
-        ) { padding ->
-            MapContent(Modifier.padding(padding))
+            }
         }
     }
 }

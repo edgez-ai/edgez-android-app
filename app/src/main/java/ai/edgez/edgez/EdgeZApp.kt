@@ -2587,9 +2587,9 @@ private enum class AppDestination(
 ) {
     PROFILE("Dashboard", R.drawable.ic_account_box),
     MAP("Map", R.drawable.ic_map),
-    DRIVERS("Drivers", R.drawable.ic_usb),
     TOPOLOGY("Topology", R.drawable.ic_halow_mesh),
     NODES("Nodes", R.drawable.ic_halow_mesh),
+    DRIVERS("Drivers", R.drawable.ic_usb),
     SETTINGS("Settings", R.drawable.ic_usb),
 }
 

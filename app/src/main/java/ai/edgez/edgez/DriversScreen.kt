@@ -1,9 +1,12 @@
 package ai.edgez.edgez
 
 import android.annotation.SuppressLint
+import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
+import androidx.annotation.Keep
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,23 +14,23 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 
 private const val EDGEZ_MARKETPLACE_URL = "https://www.edgez.ai/mobile/marketplace"
 private const val EDGEZ_EDITOR_URL = "https://www.edgez.ai/mobile/editor"
@@ -46,12 +49,18 @@ fun DriversScreen(modifier: Modifier = Modifier) {
     }
 
     webViewUrl?.let { url ->
-        DriversWebViewScreen(
-            url = url,
-            onBack = { webViewUrl = null },
-            modifier = modifier,
-        )
-        return
+        Dialog(
+            onDismissRequest = { webViewUrl = null },
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = false,
+            ),
+        ) {
+            DriversWebViewScreen(
+                url = url,
+                onBack = { webViewUrl = null },
+            )
+        }
     }
 
     Scaffold(modifier = modifier.fillMaxSize()) { padding ->
@@ -101,7 +110,6 @@ fun DriversScreen(modifier: Modifier = Modifier) {
 }
 
 @SuppressLint("SetJavaScriptEnabled")
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DriversWebViewScreen(
     url: String,
@@ -109,11 +117,18 @@ private fun DriversWebViewScreen(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    val webView = remember(context) {
+    val onBackState by rememberUpdatedState(onBack)
+    val webView = remember(context, url) {
         WebView(context).apply {
             webViewClient = WebViewClient()
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
+            addJavascriptInterface(
+                EdgeZMobileBridge {
+                    post { onBackState() }
+                },
+                "EdgeZMobile",
+            )
             loadUrl(url)
         }
     }
@@ -129,24 +144,20 @@ private fun DriversWebViewScreen(
         }
     }
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        topBar = {
-            TopAppBar(
-                title = {},
-                navigationIcon = {
-                    TextButton(onClick = navigateBack) {
-                        Text("Back")
-                    }
-                },
-            )
-        },
-    ) { padding ->
+    Box(modifier = modifier.fillMaxSize()) {
         AndroidView(
             factory = { webView },
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
+            modifier = Modifier.fillMaxSize(),
         )
+    }
+}
+
+@Keep
+private class EdgeZMobileBridge(
+    private val onCloseWebView: () -> Unit,
+) {
+    @JavascriptInterface
+    fun closeWebView() {
+        onCloseWebView()
     }
 }
