@@ -1,6 +1,7 @@
 package ai.edgez.edgez
 
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -14,8 +15,10 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -32,6 +35,9 @@ fun SensorInfoCard(
         .takeIf { it.isNotBlank() }
         ?.let { context.resources.getIdentifier(it, "drawable", context.packageName) }
         ?: 0
+    val installedImage = remember(sensor.imagePath) {
+        sensor.imagePath.takeIf { it.isNotBlank() }?.let(BitmapFactory::decodeFile)
+    }
 
     OutlinedCard(modifier = modifier.fillMaxWidth()) {
         Row(
@@ -41,7 +47,13 @@ fun SensorInfoCard(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (imageResource != 0) {
+            if (installedImage != null) {
+                Image(
+                    bitmap = installedImage.asImageBitmap(),
+                    contentDescription = sensor.name,
+                    modifier = Modifier.size(104.dp),
+                )
+            } else if (imageResource != 0) {
                 Image(
                     painter = painterResource(imageResource),
                     contentDescription = sensor.name,

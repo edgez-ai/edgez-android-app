@@ -71,6 +71,7 @@ data class DeviceSensorDefinition(
     val name: String,
     val script: String,
     val image: String = "",
+    val imagePath: String = "",
     val description: String = "",
     val purchaseUrl: String = "",
     val globalBufferSize: Int = 4096,

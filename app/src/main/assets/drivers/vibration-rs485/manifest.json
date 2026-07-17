@@ -7,6 +7,7 @@
   "name": "RS485 Vibration Sensor",
   "interface": "rs485",
   "description": "Modbus RTU vibration sensor used to calculate a pass-by score from velocity and displacement measurements.",
+  "image": "sensor_vibration",
   "entrypoint": "driver.lua",
   "globalBufferSize": 4096,
   "bufferMimeType": "application/x-lua"

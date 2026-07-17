@@ -7,6 +7,7 @@
   "name": "Random Temperature (Sample)",
   "interface": "uart_i2c",
   "description": "Virtual test sensor that generates a random temperature value. No external hardware is required.",
+  "image": "sensor_random_temperature",
   "entrypoint": "driver.lua",
   "globalBufferSize": 4096,
   "bufferMimeType": "application/x-lua"

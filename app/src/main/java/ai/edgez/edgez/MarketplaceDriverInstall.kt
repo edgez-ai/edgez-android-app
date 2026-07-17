@@ -40,6 +40,7 @@ data class MarketplaceDriver(
     val connector: DeviceSensorConnector,
     val script: String,
     val description: String,
+    val imageUrl: String,
     val globalBufferSize: Int,
 )
 
@@ -86,6 +87,7 @@ fun fetchMarketplaceDriver(request: MarketplaceDriverInstallRequest): Marketplac
             connector = connector,
             script = script,
             description = bundle.optString("description"),
+            imageUrl = bundle.optString("imageUrl"),
             globalBufferSize = bundle.optInt("globalBufferSize", 4096).coerceAtLeast(0),
         )
     } finally {
@@ -118,6 +120,9 @@ fun installMarketplaceDriver(context: Context, driver: MarketplaceDriver) {
     if (target.exists() && !target.delete()) throw IllegalStateException("Unable to replace the installed driver")
     if (!temporary.renameTo(target)) throw IllegalStateException("Unable to save the installed driver")
     File(directory, "driver.lua").writeText(driver.script)
+    downloadDriverImage(driver.imageUrl, File(directory, "image"))?.let { imageName ->
+        target.writeText(JSONObject(target.readText()).put("image", imageName).toString())
+    }
 }
 
 fun installedMarketplaceDriverDefinitions(
@@ -132,6 +137,7 @@ fun installedMarketplaceDriverDefinitions(
                     manifest = JSONObject(File(versionDirectory, "manifest.json").readText()),
                     script = File(versionDirectory, "driver.lua").readText(),
                     connector = connector,
+                    imagePath = File(versionDirectory, "image").takeIf { it.isFile }?.absolutePath.orEmpty(),
                 )
             }.getOrNull()
         }
@@ -142,6 +148,7 @@ fun parseDriverBundle(
     manifest: JSONObject,
     script: String,
     connector: DeviceSensorConnector,
+    imagePath: String = "",
 ): DeviceSensorDefinition? {
     if (manifest.optString("format") != "edgez-driver/v1" || manifest.optString("interface") != connector.assetFolder) {
         return null
@@ -156,7 +163,26 @@ fun parseDriverBundle(
         version = version,
         name = manifest.optString("name").ifBlank { key },
         script = script,
+        image = manifest.optString("image"),
+        imagePath = imagePath,
         description = manifest.optString("description"),
         globalBufferSize = manifest.optInt("globalBufferSize", 4096).coerceAtLeast(0),
     )
+}
+
+private fun downloadDriverImage(imageUrl: String, target: File): String? {
+    if (!imageUrl.startsWith("https://")) return null
+    return runCatching {
+        val connection = (URL(imageUrl).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 10_000
+            readTimeout = 15_000
+        }
+        try {
+            if (connection.responseCode !in 200..299) return@runCatching null
+            connection.inputStream.use { input -> target.outputStream().use { output -> input.copyTo(output) } }
+            "image"
+        } finally {
+            connection.disconnect()
+        }
+    }.getOrNull()
 }

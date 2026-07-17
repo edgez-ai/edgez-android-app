@@ -7,6 +7,7 @@
   "name": "VC0706 UART Camera",
   "interface": "uart_i2c",
   "description": "UART JPEG camera using the VC0706 command protocol. Captures still images and transfers the JPEG data through the script global buffer.",
+  "image": "sensor_vc0706_camera",
   "entrypoint": "driver.lua",
   "globalBufferSize": 32768,
   "bufferMimeType": "image/jpeg"

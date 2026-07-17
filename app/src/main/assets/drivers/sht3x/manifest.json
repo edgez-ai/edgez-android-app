@@ -7,6 +7,7 @@
   "name": "SHT3x Temperature/Humidity",
   "interface": "uart_i2c",
   "description": "Digital I2C sensor for temperature and relative humidity measurements. Uses address 0x44 by default and validates readings with CRC.",
+  "image": "sensor_sht3x",
   "entrypoint": "driver.lua",
   "globalBufferSize": 4096,
   "bufferMimeType": "application/x-lua"

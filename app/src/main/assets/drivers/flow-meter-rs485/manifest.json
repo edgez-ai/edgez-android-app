@@ -7,6 +7,7 @@
   "name": "Flow Meter RS485",
   "interface": "rs485",
   "description": "Industrial Modbus RTU flow meter that reports instantaneous flow rate and accumulated volume over RS485.",
+  "image": "sensor_flow_meter",
   "entrypoint": "driver.lua",
   "globalBufferSize": 4096,
   "bufferMimeType": "application/x-lua"
