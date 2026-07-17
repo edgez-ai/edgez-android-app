@@ -29,12 +29,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 
-private const val EDGEZ_DRIVERS_URL = "https://www.edgez.ai"
+private const val EDGEZ_MARKETPLACE_URL = "https://www.edgez.ai/mobile/marketplace"
+private const val EDGEZ_EDITOR_URL = "https://www.edgez.ai/mobile/editor"
 
 @Composable
 fun DriversScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    var webViewTitle by rememberSaveable { mutableStateOf<String?>(null) }
+    var webViewUrl by rememberSaveable { mutableStateOf<String?>(null) }
     val uartI2cDrivers = remember(context) {
         DeviceSensorCatalog.sensorDefinitionsFor(context, DeviceSensorConnector.UART_I2C)
             .filter { it.key.isNotBlank() }
@@ -44,10 +45,10 @@ fun DriversScreen(modifier: Modifier = Modifier) {
             .filter { it.key.isNotBlank() }
     }
 
-    webViewTitle?.let { title ->
+    webViewUrl?.let { url ->
         DriversWebViewScreen(
-            title = title,
-            onBack = { webViewTitle = null },
+            url = url,
+            onBack = { webViewUrl = null },
             modifier = modifier,
         )
         return
@@ -70,13 +71,13 @@ fun DriversScreen(modifier: Modifier = Modifier) {
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Button(
-                        onClick = { webViewTitle = "Marketplace" },
+                        onClick = { webViewUrl = EDGEZ_MARKETPLACE_URL },
                         modifier = Modifier.weight(1f),
                     ) {
                         Text("Marketplace")
                     }
                     Button(
-                        onClick = { webViewTitle = "Editor" },
+                        onClick = { webViewUrl = EDGEZ_EDITOR_URL },
                         modifier = Modifier.weight(1f),
                     ) {
                         Text("Editor")
@@ -103,7 +104,7 @@ fun DriversScreen(modifier: Modifier = Modifier) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DriversWebViewScreen(
-    title: String,
+    url: String,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -113,7 +114,7 @@ private fun DriversWebViewScreen(
             webViewClient = WebViewClient()
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
-            loadUrl(EDGEZ_DRIVERS_URL)
+            loadUrl(url)
         }
     }
     val navigateBack = {
@@ -132,7 +133,7 @@ private fun DriversWebViewScreen(
         modifier = modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
-                title = { Text(title) },
+                title = {},
                 navigationIcon = {
                     TextButton(onClick = navigateBack) {
                         Text("Back")
