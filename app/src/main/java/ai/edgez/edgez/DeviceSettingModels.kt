@@ -1,9 +1,8 @@
 package ai.edgez.edgez
 
 import android.content.Context
-import android.util.Xml
-import org.xmlpull.v1.XmlPullParser
 import java.util.UUID
+import org.json.JSONObject
 
 enum class GeoFenceAlertCondition(val protoValue: Int, val label: String) {
     UNSPECIFIED(0, "Unspecified"),
@@ -108,67 +107,32 @@ object DeviceSensorCatalog {
     )
 
     fun sensorDefinitionsFor(context: Context, connector: DeviceSensorConnector): List<DeviceSensorDefinition> {
-        val definitions = (readManifestDefinitions(context, connector) + installedMarketplaceDriverDefinitions(context, connector))
+        val definitions = (readBundledDriverDefinitions(context, connector) + installedMarketplaceDriverDefinitions(context, connector))
             .associateBy { it.key }
             .values
             .sortedWith(compareBy<DeviceSensorDefinition> { it.name.lowercase() }.thenBy { it.key })
         return listOf(noneSensor) + definitions
     }
 
-    private fun readManifestDefinitions(
+    private fun readBundledDriverDefinitions(
         context: Context,
         connector: DeviceSensorConnector,
     ): List<DeviceSensorDefinition> {
-        return runCatching {
-            context.assets.open("sensors/manifest.xml").use { input ->
-                val parser = Xml.newPullParser()
-                parser.setInput(input, Charsets.UTF_8.name())
-                val definitions = mutableListOf<DeviceSensorDefinition>()
-                var event = parser.eventType
-                while (event != XmlPullParser.END_DOCUMENT) {
-                    if (event == XmlPullParser.START_TAG && parser.name == "sensor") {
-                        parseSensorDefinition(context, connector, parser)?.let { definitions += it }
-                    }
-                    event = parser.next()
-                }
-                definitions
-            }
-        }.getOrDefault(emptyList())
-    }
-
-    private fun parseSensorDefinition(
-        context: Context,
-        connector: DeviceSensorConnector,
-        parser: XmlPullParser,
-    ): DeviceSensorDefinition? {
-        val sensorInterface = parser.getAttributeValue(null, "interface").orEmpty()
-        if (sensorInterface != connector.assetFolder) return null
-
-        val id = parser.getAttributeValue(null, "id")?.toIntOrNull() ?: 0
-        val version = parser.getAttributeValue(null, "version")?.toIntOrNull() ?: 0
-        val key = parser.getAttributeValue(null, "key").orEmpty().ifBlank { "$id-$version" }
-        val name = parser.getAttributeValue(null, "name").orEmpty().ifBlank { key }
-        val scriptPath = parser.getAttributeValue(null, "script").orEmpty()
-        val image = parser.getAttributeValue(null, "image").orEmpty()
-        val description = parser.getAttributeValue(null, "description").orEmpty()
-        val purchaseUrl = parser.getAttributeValue(null, "purchase_url").orEmpty()
-        if (id <= 0 || version <= 0 || scriptPath.isBlank()) return null
-
-        val script = runCatching {
-            context.assets.open("sensors/$scriptPath").bufferedReader().use { it.readText() }
-        }.getOrDefault("")
-        if (script.isBlank()) return null
-
-        return DeviceSensorDefinition(
-            key = key,
-            id = id,
-            version = version,
-            name = name,
-            script = script,
-            image = image,
-            description = description,
-            purchaseUrl = purchaseUrl,
-        )
+        return context.assets.list("drivers").orEmpty().mapNotNull { bundleDirectory ->
+            parseDriverBundle(
+                manifest = runCatching {
+                    context.assets.open("drivers/$bundleDirectory/manifest.json")
+                        .bufferedReader()
+                        .use { JSONObject(it.readText()) }
+                }.getOrNull() ?: return@mapNotNull null,
+                script = runCatching {
+                    context.assets.open("drivers/$bundleDirectory/driver.lua")
+                        .bufferedReader()
+                        .use { it.readText() }
+                }.getOrNull().orEmpty(),
+                connector = connector,
+            )
+        }
     }
 
     fun definitionFor(

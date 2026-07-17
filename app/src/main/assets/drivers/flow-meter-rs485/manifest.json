@@ -1,0 +1,13 @@
+{
+  "format": "edgez-driver/v1",
+  "driverId": "ai.edgez.flow-meter-rs485",
+  "key": "2002-1",
+  "scriptId": 2002,
+  "version": 1,
+  "name": "Flow Meter RS485",
+  "interface": "rs485",
+  "description": "Industrial Modbus RTU flow meter that reports instantaneous flow rate and accumulated volume over RS485.",
+  "entrypoint": "driver.lua",
+  "globalBufferSize": 4096,
+  "bufferMimeType": "application/x-lua"
+}

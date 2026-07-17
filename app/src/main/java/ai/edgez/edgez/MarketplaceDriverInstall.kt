@@ -32,7 +32,9 @@ data class MarketplaceDriverInstallRequest(
 data class MarketplaceDriver(
     val itemId: String,
     val slug: String,
-    val internalId: Int,
+    val driverId: String,
+    val key: String,
+    val scriptId: Int,
     val version: Int,
     val name: String,
     val connector: DeviceSensorConnector,
@@ -55,29 +57,36 @@ fun fetchMarketplaceDriver(request: MarketplaceDriverInstallRequest): Marketplac
         if (item.optString("id") != request.itemId || item.optString("slug") != request.slug || item.optString("type") != "driver") {
             throw IllegalStateException("Marketplace driver does not match the requested install link")
         }
-        val source = item.optJSONObject("source")?.optJSONObject("driver")
-            ?: throw IllegalStateException("Marketplace item does not include a driver")
-        val connector = when (source.optString("interface")) {
+        val bundle = item.optJSONObject("driverBundle")
+            ?: throw IllegalStateException("Marketplace item does not include a driver bundle")
+        if (bundle.optString("format") != "edgez-driver/v1") {
+            throw IllegalStateException("Unsupported marketplace driver format")
+        }
+        val connector = when (bundle.optString("interface")) {
             "uart_i2c" -> DeviceSensorConnector.UART_I2C
             "rs485" -> DeviceSensorConnector.RS485
             else -> throw IllegalStateException("Unsupported driver interface")
         }
-        val internalId = source.optInt("internal_id", 0)
-        val version = source.optInt("version", 0)
-        val script = source.optString("script")
-        if (internalId <= 0 || version <= 0 || script.isBlank()) {
+        val driverId = bundle.optString("driverId")
+        val key = bundle.optString("key")
+        val scriptId = bundle.optInt("scriptId", 0)
+        val version = bundle.optInt("version", 0)
+        val script = bundle.optString("script")
+        if (driverId.isBlank() || key.isBlank() || scriptId <= 0 || version <= 0 || script.isBlank()) {
             throw IllegalStateException("Marketplace driver is incomplete")
         }
         return MarketplaceDriver(
             itemId = request.itemId,
             slug = request.slug,
-            internalId = internalId,
+            driverId = driverId,
+            key = key,
+            scriptId = scriptId,
             version = version,
-            name = source.optString("name").ifBlank { item.optString("title", request.slug) },
+            name = bundle.optString("name").ifBlank { item.optString("title", request.slug) },
             connector = connector,
             script = script,
-            description = item.optString("shortDescription"),
-            globalBufferSize = source.optInt("global_buffer_size", 4096).coerceAtLeast(0),
+            description = bundle.optString("description"),
+            globalBufferSize = bundle.optInt("globalBufferSize", 4096).coerceAtLeast(0),
         )
     } finally {
         connection.disconnect()
@@ -85,50 +94,69 @@ fun fetchMarketplaceDriver(request: MarketplaceDriverInstallRequest): Marketplac
 }
 
 fun installMarketplaceDriver(context: Context, driver: MarketplaceDriver) {
-    val directory = File(context.filesDir, "marketplace-drivers")
+    val directory = File(context.filesDir, "drivers/${driver.driverId}/${driver.version}")
     if (!directory.exists() && !directory.mkdirs()) {
         throw IllegalStateException("Unable to create the driver storage directory")
     }
-    val target = File(directory, "${driver.itemId}.json")
-    val temporary = File(directory, "${driver.itemId}.tmp")
+    val target = File(directory, "manifest.json")
+    val temporary = File(directory, "manifest.tmp")
     val payload = JSONObject().apply {
-        put("itemId", driver.itemId)
-        put("slug", driver.slug)
-        put("internalId", driver.internalId)
+        put("format", "edgez-driver/v1")
+        put("driverId", driver.driverId)
+        put("key", driver.key)
+        put("scriptId", driver.scriptId)
         put("version", driver.version)
         put("name", driver.name)
-        put("connector", driver.connector.assetFolder)
-        put("script", driver.script)
+        put("interface", driver.connector.assetFolder)
+        put("entrypoint", "driver.lua")
         put("description", driver.description)
         put("globalBufferSize", driver.globalBufferSize)
+        put("marketplaceItemId", driver.itemId)
+        put("marketplaceSlug", driver.slug)
     }
     temporary.writeText(payload.toString())
     if (target.exists() && !target.delete()) throw IllegalStateException("Unable to replace the installed driver")
     if (!temporary.renameTo(target)) throw IllegalStateException("Unable to save the installed driver")
+    File(directory, "driver.lua").writeText(driver.script)
 }
 
 fun installedMarketplaceDriverDefinitions(
     context: Context,
     connector: DeviceSensorConnector,
 ): List<DeviceSensorDefinition> {
-    val directory = File(context.filesDir, "marketplace-drivers")
-    return directory.listFiles { file -> file.extension == "json" }.orEmpty().mapNotNull { file ->
-        runCatching {
-            val driver = JSONObject(file.readText())
-            if (driver.optString("connector") != connector.assetFolder) return@runCatching null
-            val internalId = driver.optInt("internalId", 0)
-            val version = driver.optInt("version", 0)
-            val script = driver.optString("script")
-            if (internalId <= 0 || version <= 0 || script.isBlank()) return@runCatching null
-            DeviceSensorDefinition(
-                key = "$internalId-$version",
-                id = internalId,
-                version = version,
-                name = driver.optString("name").ifBlank { driver.optString("slug") },
-                script = script,
-                description = driver.optString("description"),
-                globalBufferSize = driver.optInt("globalBufferSize", 4096).coerceAtLeast(0),
-            )
-        }.getOrNull()
+    val directory = File(context.filesDir, "drivers")
+    return directory.listFiles(File::isDirectory).orEmpty().flatMap { driverDirectory ->
+        driverDirectory.listFiles(File::isDirectory).orEmpty().mapNotNull { versionDirectory ->
+            runCatching {
+                parseDriverBundle(
+                    manifest = JSONObject(File(versionDirectory, "manifest.json").readText()),
+                    script = File(versionDirectory, "driver.lua").readText(),
+                    connector = connector,
+                )
+            }.getOrNull()
+        }
     }
+}
+
+fun parseDriverBundle(
+    manifest: JSONObject,
+    script: String,
+    connector: DeviceSensorConnector,
+): DeviceSensorDefinition? {
+    if (manifest.optString("format") != "edgez-driver/v1" || manifest.optString("interface") != connector.assetFolder) {
+        return null
+    }
+    val scriptId = manifest.optInt("scriptId", 0)
+    val version = manifest.optInt("version", 0)
+    val key = manifest.optString("key").ifBlank { "$scriptId-$version" }
+    if (scriptId <= 0 || version <= 0 || script.isBlank()) return null
+    return DeviceSensorDefinition(
+        key = key,
+        id = scriptId,
+        version = version,
+        name = manifest.optString("name").ifBlank { key },
+        script = script,
+        description = manifest.optString("description"),
+        globalBufferSize = manifest.optInt("globalBufferSize", 4096).coerceAtLeast(0),
+    )
 }

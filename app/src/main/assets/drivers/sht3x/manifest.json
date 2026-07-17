@@ -1,0 +1,13 @@
+{
+  "format": "edgez-driver/v1",
+  "driverId": "ai.edgez.sht3x",
+  "key": "1002-1",
+  "scriptId": 1002,
+  "version": 2,
+  "name": "SHT3x Temperature/Humidity",
+  "interface": "uart_i2c",
+  "description": "Digital I2C sensor for temperature and relative humidity measurements. Uses address 0x44 by default and validates readings with CRC.",
+  "entrypoint": "driver.lua",
+  "globalBufferSize": 4096,
+  "bufferMimeType": "application/x-lua"
+}

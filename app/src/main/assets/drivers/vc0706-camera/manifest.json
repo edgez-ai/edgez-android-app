@@ -1,0 +1,13 @@
+{
+  "format": "edgez-driver/v1",
+  "driverId": "ai.edgez.vc0706-camera",
+  "key": "1004-1",
+  "scriptId": 1004,
+  "version": 2,
+  "name": "VC0706 UART Camera",
+  "interface": "uart_i2c",
+  "description": "UART JPEG camera using the VC0706 command protocol. Captures still images and transfers the JPEG data through the script global buffer.",
+  "entrypoint": "driver.lua",
+  "globalBufferSize": 32768,
+  "bufferMimeType": "image/jpeg"
+}

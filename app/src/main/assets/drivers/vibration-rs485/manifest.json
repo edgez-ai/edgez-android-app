@@ -1,0 +1,13 @@
+{
+  "format": "edgez-driver/v1",
+  "driverId": "ai.edgez.vibration-rs485",
+  "key": "2003-1",
+  "scriptId": 2003,
+  "version": 1,
+  "name": "RS485 Vibration Sensor",
+  "interface": "rs485",
+  "description": "Modbus RTU vibration sensor used to calculate a pass-by score from velocity and displacement measurements.",
+  "entrypoint": "driver.lua",
+  "globalBufferSize": 4096,
+  "bufferMimeType": "application/x-lua"
+}

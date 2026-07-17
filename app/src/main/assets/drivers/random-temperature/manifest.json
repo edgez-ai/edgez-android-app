@@ -1,0 +1,13 @@
+{
+  "format": "edgez-driver/v1",
+  "driverId": "ai.edgez.random-temperature",
+  "key": "1003-1",
+  "scriptId": 1003,
+  "version": 2,
+  "name": "Random Temperature (Sample)",
+  "interface": "uart_i2c",
+  "description": "Virtual test sensor that generates a random temperature value. No external hardware is required.",
+  "entrypoint": "driver.lua",
+  "globalBufferSize": 4096,
+  "bufferMimeType": "application/x-lua"
+}
