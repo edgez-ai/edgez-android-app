@@ -9,6 +9,7 @@ import android.location.LocationManager
 import android.net.Uri
 import android.util.Log
 import android.view.MotionEvent
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
@@ -18,11 +19,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -88,12 +92,14 @@ private data class GeoFenceLine(
     val points: List<GeoFenceLinePoint>,
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MapScreen(
     users: List<HaLowUser>,
     gpsCursorMarker: String = NodeMapMarker.DEFAULT.id,
     savedCamera: EdgeZMapCamera? = null,
     onCameraChanged: (EdgeZMapCamera) -> Unit = {},
+    onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier.fillMaxSize(),
     previewMode: Boolean = false,
 ) {
@@ -139,6 +145,10 @@ fun MapScreen(
     var pendingRegionId by remember { mutableStateOf<String?>(null) }
     var downloadProgress by remember { mutableStateOf<MapDownloadProgress?>(null) }
     val requestedRegions = remember { mutableSetOf<String>() }
+
+    BackHandler(enabled = !previewMode && onBack != null) {
+        onBack?.invoke()
+    }
 
     fun refreshDownloadPrompt() {
         if (isDownloadPromptZoomAllowed()) {
@@ -439,7 +449,21 @@ fun MapScreen(
     if (previewMode) {
         MapContent(modifier)
     } else {
-        Scaffold(modifier = modifier.fillMaxSize()) { padding ->
+        Scaffold(
+            modifier = modifier.fillMaxSize(),
+            topBar = {
+                if (onBack != null) {
+                    TopAppBar(
+                        title = { Text("Map") },
+                        navigationIcon = {
+                            TextButton(onClick = onBack) {
+                                Text("Back")
+                            }
+                        },
+                    )
+                }
+            },
+        ) { padding ->
             MapContent(Modifier.padding(padding))
         }
     }

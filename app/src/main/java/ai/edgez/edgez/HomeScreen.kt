@@ -19,14 +19,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -38,9 +36,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,50 +58,14 @@ fun NodesScreen(
     selectedFilter: NodeListFilter,
     dashboardDeviceDisplays: Map<String, DashboardDeviceDisplay>,
     onSelectedFilterChange: (NodeListFilter) -> Unit,
-    onCreateGroup: (String) -> Unit,
     onOpenTopology: () -> Unit,
     onToggleDashboard: (HaLowUser) -> Unit,
     onRemoveNode: (HaLowUser) -> Unit,
     onOpenConversation: (HaLowUser) -> Unit,
 ) {
-    var showCreateGroupDialog by rememberSaveable { mutableStateOf(false) }
-    var groupName by rememberSaveable { mutableStateOf("") }
     Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
         val filteredUsers = remember(selectedFilter, users) {
             users.filter { user -> selectedFilter.includes(user) }
-        }
-
-        if (showCreateGroupDialog) {
-            AlertDialog(
-                onDismissRequest = { showCreateGroupDialog = false },
-                title = { Text("Create group") },
-                text = {
-                    OutlinedTextField(
-                        modifier = Modifier.fillMaxWidth(),
-                        value = groupName,
-                        onValueChange = { groupName = it },
-                        label = { Text("Group name") },
-                        singleLine = true,
-                    )
-                },
-                confirmButton = {
-                    TextButton(
-                        enabled = groupName.isNotBlank(),
-                        onClick = {
-                            onCreateGroup(groupName.trim())
-                            groupName = ""
-                            showCreateGroupDialog = false
-                        },
-                    ) {
-                        Text("Create")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showCreateGroupDialog = false }) {
-                        Text("Cancel")
-                    }
-                },
-            )
         }
 
         LazyColumn(
@@ -126,14 +86,6 @@ fun NodesScreen(
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.headlineMedium,
                     )
-                    TextButton(onClick = { showCreateGroupDialog = true }) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_account_box),
-                            contentDescription = null,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text("Create")
-                    }
                     TextButton(onClick = onOpenTopology) {
                         Icon(
                             painter = painterResource(R.drawable.ic_halow_mesh),
@@ -176,7 +128,6 @@ fun NodesScreen(
 
 enum class NodeListFilter(val label: String, val emptyLabel: String) {
     USERS("Users", "users"),
-    GROUPS("Groups", "groups"),
     DEVICES("Devices", "devices");
 
     fun includes(user: HaLowUser): Boolean {
@@ -185,7 +136,6 @@ enum class NodeListFilter(val label: String, val emptyLabel: String) {
             user.deviceType == EdgeZDeviceType.UNSPECIFIED
         return when (this) {
             USERS -> isUser
-            GROUPS -> isGroup
             DEVICES -> !isUser && !isGroup
         }
     }
@@ -378,7 +328,6 @@ private fun HomePreview() {
             selectedFilter = NodeListFilter.USERS,
             dashboardDeviceDisplays = emptyMap(),
             onSelectedFilterChange = {},
-            onCreateGroup = {},
             onOpenTopology = {},
             onToggleDashboard = {},
             onRemoveNode = {},

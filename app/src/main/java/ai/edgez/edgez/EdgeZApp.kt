@@ -72,7 +72,6 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.security.SecureRandom
 import java.util.ArrayDeque
 import java.util.UUID
 import java.util.concurrent.Executors
@@ -106,7 +105,6 @@ private const val LIBP2P_NO_TOPIC_PEER_QUEUE_DELAY_MS = 10_000L
 private const val LIBP2P_QUEUE_FLUSH_INTERVAL_MS = 3_000L
 private const val LIBP2P_PUBLISH_QUEUE_MAX = 128
 private const val LIBP2P_RUNTIME_ENABLED = false
-private val GROUP_RANDOM = SecureRandom()
 
 private fun paceVoiceChunkSend(index: Int, totalChunks: Int) {
     if (index >= totalChunks - 1) return
@@ -189,37 +187,6 @@ private fun isUserNode(user: HaLowUser): Boolean {
     private fun isConversationNode(user: HaLowUser): Boolean {
         return isUserNode(user) || user.deviceType == EdgeZDeviceType.GROUP
     }
-
-    private fun newGroupPsk(): ByteArray = ByteArray(32).also(GROUP_RANDOM::nextBytes)
-
-private fun newGroupNodeNum(existingNodeNums: Set<Long>): Long {
-    while (true) {
-        val candidate = GROUP_RANDOM.nextLong() and 0xffffffffffffL
-        if (candidate != 0L &&
-            candidate != HALOW_BROADCAST_NODE_48 &&
-            candidate != HALOW_BROADCAST_NODE_32 &&
-            candidate !in existingNodeNums
-        ) {
-            return candidate
-        }
-    }
-}
-
-private fun createGroupNode(name: String, existingNodeNums: Set<Long>): HaLowUser {
-    val groupUuid = UUID.randomUUID()
-    val groupName = name.ifBlank { "Group" }.take(64)
-    return HaLowUser(
-        nodeNum = newGroupNodeNum(existingNodeNums),
-        userId = groupUuid.leastSignificantBits,
-        userUuid = groupUuid.toString(),
-        shortName = groupName.take(4),
-        longName = groupName,
-        route = "LOCAL",
-        lastSeenMs = System.currentTimeMillis(),
-        publicKey = newGroupPsk(),
-        deviceType = EdgeZDeviceType.GROUP,
-    )
-}
 
 private fun normalizeDashboardWidgetOrder(
     savedOrder: List<String>,
@@ -2197,7 +2164,7 @@ fun EdgeZApp() {
     NavigationSuiteScaffold(
         navigationSuiteItems = {
             AppDestination.entries
-                .filterNot { it == AppDestination.TOPOLOGY }
+                .filterNot { it == AppDestination.TOPOLOGY || it == AppDestination.MAP }
                 .forEach { destination ->
                 item(
                     icon = {
@@ -2230,6 +2197,7 @@ AppDestination.MAP -> MapScreen(
                 gpsCursorMarker = mapCursorMarker,
                 savedCamera = savedMapCamera,
                 onCameraChanged = updateMapCamera,
+                onBack = { currentDestination = AppDestination.PROFILE },
             )
             AppDestination.NODES -> {
                 val conversationUser = selectedConversationUser
@@ -2511,13 +2479,6 @@ AppDestination.MAP -> MapScreen(
                         selectedFilter = selectedNodeListFilter,
                         dashboardDeviceDisplays = dashboardDeviceDisplays,
                         onSelectedFilterChange = { selectedNodeListFilter = it },
-                        onCreateGroup = { groupName ->
-                            val group = createGroupNode(groupName, haLowUsers.keys)
-                            edgeZDatabase.upsertUser(group)
-                            haLowUsers = haLowUsers + (group.nodeNum to group)
-                            selectedNodeListFilter = NodeListFilter.GROUPS
-                            openConversation(group)
-                        },
                         onOpenTopology = {
                             currentDestination = AppDestination.TOPOLOGY
                         },
