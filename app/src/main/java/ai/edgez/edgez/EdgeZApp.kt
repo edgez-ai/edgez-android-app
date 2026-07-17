@@ -2196,7 +2196,9 @@ fun EdgeZApp() {
 
     NavigationSuiteScaffold(
         navigationSuiteItems = {
-            AppDestination.entries.forEach { destination ->
+            AppDestination.entries
+                .filterNot { it == AppDestination.TOPOLOGY }
+                .forEach { destination ->
                 item(
                     icon = {
                         Icon(
@@ -2221,6 +2223,7 @@ fun EdgeZApp() {
 AppDestination.TOPOLOGY -> TopologyScreen(
     edgeZDatabase = edgeZDatabase,
     users = haLowUsers,
+    onBack = { currentDestination = AppDestination.NODES },
 )
 AppDestination.MAP -> MapScreen(
                 users = haLowUsers.values.sortedByDescending { it.lastSeenMs },
@@ -2514,6 +2517,9 @@ AppDestination.MAP -> MapScreen(
                             haLowUsers = haLowUsers + (group.nodeNum to group)
                             selectedNodeListFilter = NodeListFilter.GROUPS
                             openConversation(group)
+                        },
+                        onOpenTopology = {
+                            currentDestination = AppDestination.TOPOLOGY
                         },
                         onToggleDashboard = { user ->
                             val userKey = conversationKey(user)

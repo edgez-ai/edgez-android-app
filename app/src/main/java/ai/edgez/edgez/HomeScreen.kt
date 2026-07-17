@@ -63,6 +63,7 @@ fun NodesScreen(
     dashboardDeviceDisplays: Map<String, DashboardDeviceDisplay>,
     onSelectedFilterChange: (NodeListFilter) -> Unit,
     onCreateGroup: (String) -> Unit,
+    onOpenTopology: () -> Unit,
     onToggleDashboard: (HaLowUser) -> Unit,
     onRemoveNode: (HaLowUser) -> Unit,
     onOpenConversation: (HaLowUser) -> Unit,
@@ -132,6 +133,14 @@ fun NodesScreen(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text("Create")
+                    }
+                    TextButton(onClick = onOpenTopology) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_halow_mesh),
+                            contentDescription = null,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Topology")
                     }
                 }
                 Spacer(Modifier.height(6.dp))
@@ -370,6 +379,7 @@ private fun HomePreview() {
             dashboardDeviceDisplays = emptyMap(),
             onSelectedFilterChange = {},
             onCreateGroup = {},
+            onOpenTopology = {},
             onToggleDashboard = {},
             onRemoveNode = {},
             onOpenConversation = {},
