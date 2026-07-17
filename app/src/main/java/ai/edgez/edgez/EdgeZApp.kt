@@ -311,7 +311,10 @@ private data class PendingRawBinarySequenceMessage(
 
 @PreviewScreenSizes
 @Composable
-fun EdgeZApp() {
+fun EdgeZApp(
+    driverInstallRequest: MarketplaceDriverInstallRequest? = null,
+    onDriverInstallHandled: () -> Unit = {},
+) {
     val context = LocalContext.current
     val usbClient = remember { EdgezUsbClient(context.applicationContext) }
     val bleClient = remember { EdgezBleClient(context.applicationContext) }
@@ -377,6 +380,12 @@ fun EdgeZApp() {
     var shareLocation by rememberSaveable { mutableStateOf(lastConnectionPreferences.getShareLocation()) }
     var dashboardDeviceDisplays by remember { mutableStateOf(edgeZDatabase.getDashboardDeviceDisplays()) }
     var dashboardWidgetOrder by remember { mutableStateOf(lastConnectionPreferences.getDashboardWidgetOrder()) }
+
+    LaunchedEffect(driverInstallRequest) {
+        if (driverInstallRequest != null) {
+            currentDestination = AppDestination.DRIVERS
+        }
+    }
 
     fun resetHaLowInitTrigger() {
         pendingHaLowInitKey.set(null)
@@ -2576,7 +2585,10 @@ AppDestination.MAP -> MapScreen(
                     disconnectTransport(connection)
                 },
             )
-            AppDestination.DRIVERS -> DriversScreen()
+            AppDestination.DRIVERS -> DriversScreen(
+                installRequest = driverInstallRequest,
+                onInstallHandled = onDriverInstallHandled,
+            )
         }
     }
 }

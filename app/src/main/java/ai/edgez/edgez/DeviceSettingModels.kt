@@ -74,6 +74,7 @@ data class DeviceSensorDefinition(
     val image: String = "",
     val description: String = "",
     val purchaseUrl: String = "",
+    val globalBufferSize: Int = 4096,
 ) {
     val label: String
         get() = if (key.isBlank()) name else "$name [id=$id, v=$version]"
@@ -107,7 +108,9 @@ object DeviceSensorCatalog {
     )
 
     fun sensorDefinitionsFor(context: Context, connector: DeviceSensorConnector): List<DeviceSensorDefinition> {
-        val definitions = readManifestDefinitions(context, connector)
+        val definitions = (readManifestDefinitions(context, connector) + installedMarketplaceDriverDefinitions(context, connector))
+            .associateBy { it.key }
+            .values
             .sortedWith(compareBy<DeviceSensorDefinition> { it.name.lowercase() }.thenBy { it.key })
         return listOf(noneSensor) + definitions
     }
@@ -195,7 +198,6 @@ object DeviceSensorCatalog {
         key: String,
     ): DeviceSensorScriptConfig? {
         val definition = definitionFor(context, connector, key) ?: return null
-        val globalBufferSize = if (definition.key == "1004-1") 32768 else 4096
         return DeviceSensorScriptConfig(
             scriptId = definition.id,
             version = definition.version,
@@ -204,7 +206,7 @@ object DeviceSensorCatalog {
             selectUartI2c = connector == DeviceSensorConnector.UART_I2C,
             selectRs485 = connector == DeviceSensorConnector.RS485,
             script = definition.script,
-            globalBufferSize = globalBufferSize,
+            globalBufferSize = definition.globalBufferSize,
         )
     }
 
