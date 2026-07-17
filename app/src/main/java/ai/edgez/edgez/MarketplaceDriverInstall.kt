@@ -2,12 +2,15 @@ package ai.edgez.edgez
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import android.util.Log
 import org.json.JSONObject
 
 private const val EDGEZ_MARKETPLACE_API = "https://www.edgez.ai/api/marketplace/items"
+private const val TAG_DRIVER_INSTALL = "EdgeZDriverInstall"
 private val marketplaceIdPattern = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 private val marketplaceSlugPattern = Regex("^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -87,7 +90,7 @@ fun fetchMarketplaceDriver(request: MarketplaceDriverInstallRequest): Marketplac
             connector = connector,
             script = script,
             description = bundle.optString("description"),
-            imageUrl = bundle.optString("imageUrl"),
+            imageUrl = bundle.optString("imageUrl").ifBlank { item.optString("snapshotImageUrl") },
             globalBufferSize = bundle.optInt("globalBufferSize", 4096).coerceAtLeast(0),
         )
     } finally {
@@ -99,6 +102,14 @@ fun installMarketplaceDriver(context: Context, driver: MarketplaceDriver) {
     val directory = File(context.filesDir, "drivers/${driver.driverId}/${driver.version}")
     if (!directory.exists() && !directory.mkdirs()) {
         throw IllegalStateException("Unable to create the driver storage directory")
+    }
+    val imageName = if (driver.imageUrl.isBlank()) {
+        Log.d(TAG_DRIVER_INSTALL, "Installing ${driver.slug} without a marketplace image URL")
+        null
+    } else {
+        Log.d(TAG_DRIVER_INSTALL, "Downloading image for ${driver.slug} from ${driver.imageUrl}")
+        downloadDriverImage(driver.imageUrl, File(directory, "image"))
+            ?: throw IllegalStateException("Unable to download the published driver image")
     }
     val target = File(directory, "manifest.json")
     val temporary = File(directory, "manifest.tmp")
@@ -113,6 +124,7 @@ fun installMarketplaceDriver(context: Context, driver: MarketplaceDriver) {
         put("entrypoint", "driver.lua")
         put("description", driver.description)
         put("globalBufferSize", driver.globalBufferSize)
+        if (imageName != null) put("image", imageName)
         put("marketplaceItemId", driver.itemId)
         put("marketplaceSlug", driver.slug)
     }
@@ -120,9 +132,7 @@ fun installMarketplaceDriver(context: Context, driver: MarketplaceDriver) {
     if (target.exists() && !target.delete()) throw IllegalStateException("Unable to replace the installed driver")
     if (!temporary.renameTo(target)) throw IllegalStateException("Unable to save the installed driver")
     File(directory, "driver.lua").writeText(driver.script)
-    downloadDriverImage(driver.imageUrl, File(directory, "image"))?.let { imageName ->
-        target.writeText(JSONObject(target.readText()).put("image", imageName).toString())
-    }
+    Log.d(TAG_DRIVER_INSTALL, "Installed ${driver.slug} image=${imageName != null} path=${directory.absolutePath}")
 }
 
 fun installedMarketplaceDriverDefinitions(
@@ -173,16 +183,37 @@ fun parseDriverBundle(
 private fun downloadDriverImage(imageUrl: String, target: File): String? {
     if (!imageUrl.startsWith("https://")) return null
     return runCatching {
+        val temporary = File(target.parentFile, "${target.name}.tmp")
         val connection = (URL(imageUrl).openConnection() as HttpURLConnection).apply {
             connectTimeout = 10_000
             readTimeout = 15_000
+            useCaches = false
         }
         try {
-            if (connection.responseCode !in 200..299) return@runCatching null
-            connection.inputStream.use { input -> target.outputStream().use { output -> input.copyTo(output) } }
+            if (connection.responseCode !in 200..299) {
+                Log.w(TAG_DRIVER_INSTALL, "Image download failed: HTTP ${connection.responseCode}")
+                return@runCatching null
+            }
+            connection.inputStream.use { input -> temporary.outputStream().use { output -> input.copyTo(output) } }
+            if (BitmapFactory.decodeFile(temporary.absolutePath) == null) {
+                Log.w(TAG_DRIVER_INSTALL, "Downloaded image is not a decodable bitmap")
+                return@runCatching null
+            }
+            if (target.exists() && !target.delete()) {
+                Log.w(TAG_DRIVER_INSTALL, "Unable to replace existing image at ${target.absolutePath}")
+                return@runCatching null
+            }
+            if (!temporary.renameTo(target)) {
+                Log.w(TAG_DRIVER_INSTALL, "Unable to save image at ${target.absolutePath}")
+                return@runCatching null
+            }
+            Log.d(TAG_DRIVER_INSTALL, "Saved image to ${target.absolutePath}")
             "image"
         } finally {
             connection.disconnect()
+            temporary.delete()
         }
+    }.onFailure { error ->
+        Log.e(TAG_DRIVER_INSTALL, "Image download failed", error)
     }.getOrNull()
 }

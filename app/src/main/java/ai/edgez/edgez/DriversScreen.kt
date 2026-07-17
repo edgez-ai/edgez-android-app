@@ -20,11 +20,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val EDGEZ_MARKETPLACE_URL = "https://www.edgez.ai/mobile/marketplace"
@@ -40,6 +42,7 @@ fun DriversScreen(
     var pendingInstall by remember(installRequest) { mutableStateOf<MarketplaceDriver?>(null) }
     var installError by remember(installRequest) { mutableStateOf<String?>(null) }
     var loadingInstall by remember(installRequest) { mutableStateOf(false) }
+    val installScope = rememberCoroutineScope()
     val uartI2cDrivers = remember(context, installRequest) {
         DeviceSensorCatalog.sensorDefinitionsFor(context, DeviceSensorConnector.UART_I2C)
             .filter { it.key.isNotBlank() }
@@ -127,9 +130,18 @@ fun DriversScreen(
                 confirmButton = {
                     Button(
                         onClick = {
-                            runCatching { installMarketplaceDriver(context, driver) }
-                                .onSuccess { onInstallHandled() }
-                                .onFailure { installError = it.message ?: "Unable to install the driver" }
+                            installScope.launch {
+                                pendingInstall = null
+                                loadingInstall = true
+                                runCatching {
+                                    withContext(Dispatchers.IO) { installMarketplaceDriver(context, driver) }
+                                }.onSuccess {
+                                    onInstallHandled()
+                                }.onFailure { error ->
+                                    installError = error.message ?: "Unable to install the driver"
+                                }
+                                loadingInstall = false
+                            }
                         },
                     ) {
                         Text("Install")
