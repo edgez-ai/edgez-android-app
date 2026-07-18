@@ -11,6 +11,7 @@ import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -49,6 +50,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
@@ -81,7 +84,11 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.cos
 import kotlin.math.min
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 private const val RECONNECT_DELAY_MS = 2_000L
 private const val TAG_USERS = "EdgeZUsers"
@@ -3047,6 +3054,18 @@ private fun DashboardSensorCard(
                         style = MaterialTheme.typography.titleSmall,
                     )
                 }
+            } else if (item.display.widget == DashboardDeviceWidget.IMU_ORIENTATION) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(item.user.displayName, style = MaterialTheme.typography.titleSmall)
+                        Text("Object orientation", style = MaterialTheme.typography.bodySmall)
+                    }
+                    ImuAccelerationAnnotation(sample?.data)
+                }
             } else {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -3084,6 +3103,8 @@ private fun DashboardSensorCard(
                     DashboardSensorValueRow("Temp", sample.data.temperature, "°C")
                     DashboardSensorValueRow("Humidity", sample.data.humidity, "%")
                 }
+            } else if (item.display.widget == DashboardDeviceWidget.IMU_ORIENTATION) {
+                DashboardImuOrientation(sample.data)
             } else if (item.display.widget == DashboardDeviceWidget.BINARY_IMAGE) {
                 DashboardBinaryImageRow(
                     binaryImagePath = sample.data.binaryImagePath,
@@ -3105,6 +3126,128 @@ private fun DashboardSensorCard(
         }
     }
 }
+
+private data class ImuTilt(
+    val rollRadians: Double,
+    val pitchRadians: Double,
+)
+
+private data class ImuPoint3(
+    val x: Double,
+    val y: Double,
+    val z: Double,
+)
+
+private fun EdgeZSensorData.imuTilt(): ImuTilt? {
+    val ax = accelX ?: return null
+    val ay = accelY ?: return null
+    val az = accelZ ?: return null
+    if (sqrt(ax * ax + ay * ay + az * az) < 0.01) return null
+    return ImuTilt(
+        rollRadians = atan2(ay, az),
+        pitchRadians = atan2(-ax, sqrt(ay * ay + az * az)),
+    )
+}
+
+@Composable
+private fun ImuAccelerationAnnotation(data: EdgeZSensorData?) {
+    val ax = data?.accelX
+    val ay = data?.accelY
+    val az = data?.accelZ
+    Column(horizontalAlignment = Alignment.End) {
+        Text("Acceleration · m/s²", style = MaterialTheme.typography.labelSmall)
+        if (ax == null || ay == null || az == null) {
+            Text("—", style = MaterialTheme.typography.bodySmall)
+        } else {
+            Text(
+                "X ${formatSignedImuValue(ax)}  Y ${formatSignedImuValue(ay)}",
+                style = MaterialTheme.typography.labelSmall,
+            )
+            Text("Z ${formatSignedImuValue(az)}", style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
+private fun DashboardImuOrientation(data: EdgeZSensorData) {
+    val tilt = data.imuTilt()
+    if (tilt == null) {
+        Text("No acceleration orientation data", style = MaterialTheme.typography.bodySmall)
+        return
+    }
+
+    val objectColor = MaterialTheme.colorScheme.primary
+    val hiddenEdgeColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
+    val surfaceColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(112.dp),
+        ) {
+            val vertices = listOf(
+                ImuPoint3(-1.20, -0.55, -0.35), ImuPoint3(1.20, -0.55, -0.35),
+                ImuPoint3(1.20, 0.55, -0.35), ImuPoint3(-1.20, 0.55, -0.35),
+                ImuPoint3(-1.20, -0.55, 0.35), ImuPoint3(1.20, -0.55, 0.35),
+                ImuPoint3(1.20, 0.55, 0.35), ImuPoint3(-1.20, 0.55, 0.35),
+            )
+            val rotated = vertices.map { point ->
+                rotateImuPoint(point, tilt.rollRadians, tilt.pitchRadians)
+            }
+            val scale = min(size.width / 3.4f, size.height / 2.5f)
+            val projected = rotated.map { point ->
+                Offset(
+                    x = size.width / 2f + ((point.x + point.z * 0.38) * scale).toFloat(),
+                    y = size.height / 2f + ((point.y - point.z * 0.28) * scale).toFloat(),
+                )
+            }
+            val topFace = Path().apply {
+                moveTo(projected[4].x, projected[4].y)
+                lineTo(projected[5].x, projected[5].y)
+                lineTo(projected[6].x, projected[6].y)
+                lineTo(projected[7].x, projected[7].y)
+                close()
+            }
+            drawPath(topFace, surfaceColor)
+            val edges = listOf(
+                0 to 1, 1 to 2, 2 to 3, 3 to 0,
+                4 to 5, 5 to 6, 6 to 7, 7 to 4,
+                0 to 4, 1 to 5, 2 to 6, 3 to 7,
+            )
+            edges.forEachIndexed { index, edge ->
+                drawLine(
+                    color = if (index < 4) hiddenEdgeColor else objectColor,
+                    start = projected[edge.first],
+                    end = projected[edge.second],
+                    strokeWidth = if (index < 4) 2f else 3f,
+                )
+            }
+            drawCircle(
+                color = Color.Red.copy(alpha = 0.85f),
+                radius = 5f,
+                center = projected[5],
+            )
+        }
+        Text(
+            "Roll ${formatImuDegrees(tilt.rollRadians)}   Pitch ${formatImuDegrees(tilt.pitchRadians)}",
+            style = MaterialTheme.typography.labelSmall,
+        )
+    }
+}
+
+private fun rotateImuPoint(point: ImuPoint3, roll: Double, pitch: Double): ImuPoint3 {
+    val rollY = point.y * cos(roll) - point.z * sin(roll)
+    val rollZ = point.y * sin(roll) + point.z * cos(roll)
+    return ImuPoint3(
+        x = point.x * cos(pitch) + rollZ * sin(pitch),
+        y = rollY,
+        z = -point.x * sin(pitch) + rollZ * cos(pitch),
+    )
+}
+
+private fun formatSignedImuValue(value: Double): String = "%+.2f".format(value)
+
+private fun formatImuDegrees(radians: Double): String = "%.1f°".format(Math.toDegrees(radians))
 
 @Composable
 private fun DashboardSensorValueRows(data: EdgeZSensorData) {

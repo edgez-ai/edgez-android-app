@@ -58,6 +58,7 @@ enum class DashboardDeviceWidget(
 ) {
     TEMP_HUMIDITY("Temp & Humidity"),
     LATEST_VALUE("Latest value"),
+    IMU_ORIENTATION("IMU orientation"),
     BINARY_IMAGE("Binary image"),
     TIME_SERIES("Time series");
 
