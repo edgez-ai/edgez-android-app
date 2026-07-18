@@ -3114,6 +3114,12 @@ private fun DashboardSensorValueRows(data: EdgeZSensorData) {
         DashboardSensorValueRow("Pressure", data.pressure, "hPa")
         DashboardSensorValueRow("Pass-by score", data.vibrationAverage, "")
         DashboardSensorValueRow("Altitude", data.altitude, "m")
+        DashboardSensorValueRow("Accel X", data.accelX, "m/s²")
+        DashboardSensorValueRow("Accel Y", data.accelY, "m/s²")
+        DashboardSensorValueRow("Accel Z", data.accelZ, "m/s²")
+        DashboardSensorValueRow("Gyro X", data.gyroX, "rad/s")
+        DashboardSensorValueRow("Gyro Y", data.gyroY, "rad/s")
+        DashboardSensorValueRow("Gyro Z", data.gyroZ, "rad/s")
     }
 }
 

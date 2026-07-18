@@ -1164,6 +1164,54 @@ public final class UsbControl {
      * <code>SENSOR_LENGTH = 5;</code>
      */
     SENSOR_LENGTH(5),
+    /**
+     * <pre>
+     * acceleration in m/s^2
+     * </pre>
+     *
+     * <code>SENSOR_ACCEL_X = 6;</code>
+     */
+    SENSOR_ACCEL_X(6),
+    /**
+     * <pre>
+     * acceleration in m/s^2
+     * </pre>
+     *
+     * <code>SENSOR_ACCEL_Y = 7;</code>
+     */
+    SENSOR_ACCEL_Y(7),
+    /**
+     * <pre>
+     * acceleration in m/s^2
+     * </pre>
+     *
+     * <code>SENSOR_ACCEL_Z = 8;</code>
+     */
+    SENSOR_ACCEL_Z(8),
+    /**
+     * <pre>
+     * angular velocity in rad/s
+     * </pre>
+     *
+     * <code>SENSOR_GYRO_X = 9;</code>
+     */
+    SENSOR_GYRO_X(9),
+    /**
+     * <pre>
+     * angular velocity in rad/s
+     * </pre>
+     *
+     * <code>SENSOR_GYRO_Y = 10;</code>
+     */
+    SENSOR_GYRO_Y(10),
+    /**
+     * <pre>
+     * angular velocity in rad/s
+     * </pre>
+     *
+     * <code>SENSOR_GYRO_Z = 11;</code>
+     */
+    SENSOR_GYRO_Z(11),
     UNRECOGNIZED(-1),
     ;
 
@@ -1191,6 +1239,54 @@ public final class UsbControl {
      * <code>SENSOR_LENGTH = 5;</code>
      */
     public static final int SENSOR_LENGTH_VALUE = 5;
+    /**
+     * <pre>
+     * acceleration in m/s^2
+     * </pre>
+     *
+     * <code>SENSOR_ACCEL_X = 6;</code>
+     */
+    public static final int SENSOR_ACCEL_X_VALUE = 6;
+    /**
+     * <pre>
+     * acceleration in m/s^2
+     * </pre>
+     *
+     * <code>SENSOR_ACCEL_Y = 7;</code>
+     */
+    public static final int SENSOR_ACCEL_Y_VALUE = 7;
+    /**
+     * <pre>
+     * acceleration in m/s^2
+     * </pre>
+     *
+     * <code>SENSOR_ACCEL_Z = 8;</code>
+     */
+    public static final int SENSOR_ACCEL_Z_VALUE = 8;
+    /**
+     * <pre>
+     * angular velocity in rad/s
+     * </pre>
+     *
+     * <code>SENSOR_GYRO_X = 9;</code>
+     */
+    public static final int SENSOR_GYRO_X_VALUE = 9;
+    /**
+     * <pre>
+     * angular velocity in rad/s
+     * </pre>
+     *
+     * <code>SENSOR_GYRO_Y = 10;</code>
+     */
+    public static final int SENSOR_GYRO_Y_VALUE = 10;
+    /**
+     * <pre>
+     * angular velocity in rad/s
+     * </pre>
+     *
+     * <code>SENSOR_GYRO_Z = 11;</code>
+     */
+    public static final int SENSOR_GYRO_Z_VALUE = 11;
 
 
     @java.lang.Override
@@ -1220,6 +1316,12 @@ public final class UsbControl {
         case 3: return SENSOR_LATITUDE;
         case 4: return SENSOR_LONGITUDE;
         case 5: return SENSOR_LENGTH;
+        case 6: return SENSOR_ACCEL_X;
+        case 7: return SENSOR_ACCEL_Y;
+        case 8: return SENSOR_ACCEL_Z;
+        case 9: return SENSOR_GYRO_X;
+        case 10: return SENSOR_GYRO_Y;
+        case 11: return SENSOR_GYRO_Z;
         default: return null;
       }
     }

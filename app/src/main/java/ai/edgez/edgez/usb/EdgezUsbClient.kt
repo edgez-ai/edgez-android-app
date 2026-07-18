@@ -1268,6 +1268,12 @@ object EdgezUsbControlProto {
             longitude = value(UsbControl.SensorType.SENSOR_LONGITUDE),
             temperature = value(UsbControl.SensorType.SENSOR_TEMPERATURE),
             humidity = value(UsbControl.SensorType.SENSOR_HUMIDITY),
+            accelX = value(UsbControl.SensorType.SENSOR_ACCEL_X),
+            accelY = value(UsbControl.SensorType.SENSOR_ACCEL_Y),
+            accelZ = value(UsbControl.SensorType.SENSOR_ACCEL_Z),
+            gyroX = value(UsbControl.SensorType.SENSOR_GYRO_X),
+            gyroY = value(UsbControl.SensorType.SENSOR_GYRO_Y),
+            gyroZ = value(UsbControl.SensorType.SENSOR_GYRO_Z),
             binaryLengthBytes = intValue(UsbControl.SensorType.SENSOR_LENGTH),
         )
     }

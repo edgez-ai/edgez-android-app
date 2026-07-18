@@ -249,6 +249,12 @@ data class EdgeZSensorData(
     val humidity: Double? = null,
     val pressure: Double? = null,
     val vibrationAverage: Double? = null,
+    val accelX: Double? = null,
+    val accelY: Double? = null,
+    val accelZ: Double? = null,
+    val gyroX: Double? = null,
+    val gyroY: Double? = null,
+    val gyroZ: Double? = null,
     val binaryLengthBytes: Int? = null,
     val binaryImagePath: String? = null,
 ) {
@@ -260,6 +266,12 @@ data class EdgeZSensorData(
             humidity != null ||
             pressure != null ||
             vibrationAverage != null ||
+            accelX != null ||
+            accelY != null ||
+            accelZ != null ||
+            gyroX != null ||
+            gyroY != null ||
+            gyroZ != null ||
             binaryLengthBytes != null ||
             binaryImagePath != null
 }

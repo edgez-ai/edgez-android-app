@@ -135,6 +135,12 @@ enum SensorType {
   SENSOR_LATITUDE = 3;
   SENSOR_LONGITUDE = 4;
   SENSOR_LENGTH = 5;
+  SENSOR_ACCEL_X = 6;  // acceleration in m/s^2
+  SENSOR_ACCEL_Y = 7;  // acceleration in m/s^2
+  SENSOR_ACCEL_Z = 8;  // acceleration in m/s^2
+  SENSOR_GYRO_X = 9;   // angular velocity in rad/s
+  SENSOR_GYRO_Y = 10;  // angular velocity in rad/s
+  SENSOR_GYRO_Z = 11;  // angular velocity in rad/s
 }
 
 message SensorData {

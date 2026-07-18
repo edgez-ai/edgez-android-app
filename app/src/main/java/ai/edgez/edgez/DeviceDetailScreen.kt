@@ -320,6 +320,12 @@ private fun SensorValueRows(data: EdgeZSensorData) {
         SensorValueRow("Pressure", data.pressure, "hPa")
         SensorValueRow("Pass-by score", data.vibrationAverage, "")
         SensorValueRow("Altitude", data.altitude, "m")
+        SensorValueRow("Acceleration X", data.accelX, "m/s²")
+        SensorValueRow("Acceleration Y", data.accelY, "m/s²")
+        SensorValueRow("Acceleration Z", data.accelZ, "m/s²")
+        SensorValueRow("Gyroscope X", data.gyroX, "rad/s")
+        SensorValueRow("Gyroscope Y", data.gyroY, "rad/s")
+        SensorValueRow("Gyroscope Z", data.gyroZ, "rad/s")
         data.binaryLengthBytes?.let {
             SensorTextRow("Binary length", "${it} bytes")
         }

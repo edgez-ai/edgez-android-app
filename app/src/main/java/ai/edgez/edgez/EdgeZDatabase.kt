@@ -9,7 +9,7 @@ import ai.edgez.edgez.usb.PacketMime
 import java.util.UUID
 
 private const val DATABASE_NAME = "edgez_local.db"
-private const val DATABASE_VERSION = 13
+private const val DATABASE_VERSION = 14
 private const val TABLE_USERS = "halow_users"
 private const val TABLE_MESSAGES = "conversation_messages"
 private const val TABLE_SENSOR_DATA = "sensor_data"
@@ -149,6 +149,14 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
         }
         if (oldVersion < 13) {
             createTopologyTable(db)
+        }
+        if (oldVersion < 14) {
+            addColumnIfMissing(db, TABLE_SENSOR_DATA, "accel_x", "REAL")
+            addColumnIfMissing(db, TABLE_SENSOR_DATA, "accel_y", "REAL")
+            addColumnIfMissing(db, TABLE_SENSOR_DATA, "accel_z", "REAL")
+            addColumnIfMissing(db, TABLE_SENSOR_DATA, "gyro_x", "REAL")
+            addColumnIfMissing(db, TABLE_SENSOR_DATA, "gyro_y", "REAL")
+            addColumnIfMissing(db, TABLE_SENSOR_DATA, "gyro_z", "REAL")
         }
     }
 
@@ -554,6 +562,12 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 putNullableDouble("humidity", sensorData.humidity)
                 putNullableDouble("pressure", sensorData.pressure)
                 putNullableDouble("vibration_average", sensorData.vibrationAverage)
+                putNullableDouble("accel_x", sensorData.accelX)
+                putNullableDouble("accel_y", sensorData.accelY)
+                putNullableDouble("accel_z", sensorData.accelZ)
+                putNullableDouble("gyro_x", sensorData.gyroX)
+                putNullableDouble("gyro_y", sensorData.gyroY)
+                putNullableDouble("gyro_z", sensorData.gyroZ)
                 if (sensorData.binaryLengthBytes == null) {
                     putNull("sensor_data_length")
                 } else {
@@ -609,6 +623,12 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                 "humidity",
                 "pressure",
                 "vibration_average",
+                "accel_x",
+                "accel_y",
+                "accel_z",
+                "gyro_x",
+                "gyro_y",
+                "gyro_z",
                 "sensor_data_length",
                 "binary_image_path",
             ),
@@ -627,6 +647,12 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
             val humidityIndex = cursor.getColumnIndexOrThrow("humidity")
             val pressureIndex = cursor.getColumnIndexOrThrow("pressure")
             val vibrationAverageIndex = cursor.getColumnIndexOrThrow("vibration_average")
+            val accelXIndex = cursor.getColumnIndexOrThrow("accel_x")
+            val accelYIndex = cursor.getColumnIndexOrThrow("accel_y")
+            val accelZIndex = cursor.getColumnIndexOrThrow("accel_z")
+            val gyroXIndex = cursor.getColumnIndexOrThrow("gyro_x")
+            val gyroYIndex = cursor.getColumnIndexOrThrow("gyro_y")
+            val gyroZIndex = cursor.getColumnIndexOrThrow("gyro_z")
             val sensorDataLengthIndex = cursor.getColumnIndexOrThrow("sensor_data_length")
             val binaryImagePathIndex = cursor.getColumnIndexOrThrow("binary_image_path")
             while (cursor.moveToNext()) {
@@ -638,6 +664,12 @@ class EdgeZDatabase(context: Context) : SQLiteOpenHelper(
                     humidity = cursor.getNullableDouble(humidityIndex),
                     pressure = cursor.getNullableDouble(pressureIndex),
                     vibrationAverage = cursor.getNullableDouble(vibrationAverageIndex),
+                    accelX = cursor.getNullableDouble(accelXIndex),
+                    accelY = cursor.getNullableDouble(accelYIndex),
+                    accelZ = cursor.getNullableDouble(accelZIndex),
+                    gyroX = cursor.getNullableDouble(gyroXIndex),
+                    gyroY = cursor.getNullableDouble(gyroYIndex),
+                    gyroZ = cursor.getNullableDouble(gyroZIndex),
                     binaryLengthBytes = cursor.getInt(sensorDataLengthIndex).takeIf { !cursor.isNull(sensorDataLengthIndex) },
                     binaryImagePath = cursor.getString(binaryImagePathIndex).orEmpty().ifBlank { null },
                 )
@@ -788,6 +820,12 @@ private fun createSensorDataTable(db: SQLiteDatabase) {
                 humidity REAL,
                 pressure REAL,
                 vibration_average REAL,
+                accel_x REAL,
+                accel_y REAL,
+                accel_z REAL,
+                gyro_x REAL,
+                gyro_y REAL,
+                gyro_z REAL,
                 sensor_data_length INTEGER,
                 binary_image_path TEXT,
                 FOREIGN KEY(peer_user_uuid) REFERENCES $TABLE_USERS(user_uuid) ON DELETE CASCADE
