@@ -22,6 +22,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -30,7 +31,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val EDGEZ_MARKETPLACE_URL = "https://www.edgez.ai/mobile/marketplace"
-private const val EDGEZ_EDITOR_URL = "https://www.edgez.ai/mobile/editor"
 
 @Composable
 fun DriversScreen(
@@ -76,24 +76,14 @@ fun DriversScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                Text("Drivers", style = MaterialTheme.typography.headlineMedium)
-            }
-            item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Button(
-                        onClick = { openCustomTab(context, EDGEZ_MARKETPLACE_URL) },
-                        modifier = Modifier.weight(1f),
-                    ) {
+                    Text("Drivers", style = MaterialTheme.typography.headlineMedium)
+                    Button(onClick = { openCustomTab(context, EDGEZ_MARKETPLACE_URL) }) {
                         Text("Marketplace")
-                    }
-                    Button(
-                        onClick = { openCustomTab(context, EDGEZ_EDITOR_URL) },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text("Editor")
                     }
                 }
             }

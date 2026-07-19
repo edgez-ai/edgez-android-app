@@ -302,6 +302,7 @@ private fun ProvisioningContent(
     val showProvisionDeviceSettings = provisionMode && provisionStep != ProvisionStep.SELECT_BLE && provisionBleReady
     val deviceMode = provisionDeviceMode != DEVICE_MODE_RELAY
     val showDeviceSettingsOnly = showProvisionDeviceSettings
+    val hasDeviceUserId = !deviceIdentity?.userUuid.isNullOrBlank()
     val provisionStepNumber = when (provisionStep) {
         ProvisionStep.SELECT_BLE -> 1
         ProvisionStep.MODE -> 2
@@ -857,7 +858,13 @@ private fun ProvisioningContent(
                 }
                 provisionStep = ProvisionStep.DEVICE_USER
             }
-            ProvisionStep.DEVICE_USER -> provisionStep = ProvisionStep.NETWORK
+            ProvisionStep.DEVICE_USER -> {
+                if (!hasDeviceUserId) {
+                    status = "Generate a device user ID before continuing"
+                    return
+                }
+                provisionStep = ProvisionStep.NETWORK
+            }
             ProvisionStep.NETWORK -> {
                 connectionPreferences.setMeshCredentials(
                     meshCountry,
@@ -1057,6 +1064,8 @@ private fun ProvisioningContent(
                                 showDeviceSettingsOnly && !isSavingProvisionSettings
                             } else if (provisionStep == ProvisionStep.MODE) {
                                 showDeviceSettingsOnly && provisionDeviceMode != DEVICE_MODE_UNSET
+                            } else if (provisionStep == ProvisionStep.DEVICE_USER) {
+                                showDeviceSettingsOnly && hasDeviceUserId
                             } else {
                                 showDeviceSettingsOnly
                             }
@@ -1349,6 +1358,12 @@ private fun ProvisioningContent(
                         deviceIdentity?.userUuid ?: "Not loaded",
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    if (!hasDeviceUserId) {
+                        Text(
+                            "Generate an ID before continuing.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = deviceUserName,
@@ -1370,7 +1385,7 @@ private fun ProvisioningContent(
                     Text(deviceIdentity?.privateKey?.let(::formatHex) ?: "Not loaded", style = MaterialTheme.typography.bodySmall)
                     Spacer(Modifier.height(10.dp))
                     Button(onClick = { regenerateDeviceIdentity() }) {
-                        Text("Regenerate ID and key pair")
+                        Text(if (hasDeviceUserId) "Regenerate ID and key pair" else "Generate ID and key pair")
                     }
                     Spacer(Modifier.height(10.dp))
                     Box(modifier = Modifier.fillMaxWidth()) {
